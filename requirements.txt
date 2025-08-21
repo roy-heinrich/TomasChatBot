@@ -1,6 +1,6 @@
 aiofiles==24.1.0
 chromadb==1.0.15
-langchain-text-splitters==0.3.9
+langchain
 python-dotenv==1.1.1
 aklstemmer @ git+https://github.com/andrianllmm/aklanon-stemmer.git@921b887b7b682a90907128a9d43fca8f19539976
 httpx==0.28.1
@@ -13,4 +13,5 @@ fasttext-wheel==0.9.2
 fastapi
 uvicorn
 gunicorn
+
 
