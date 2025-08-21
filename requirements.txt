@@ -21,6 +21,9 @@ python-docx
 pandas
 requests
 tiktoken
+psycopg2
+fasttext
+
 
 
 
