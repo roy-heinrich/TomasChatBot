@@ -23,7 +23,8 @@ logger = logging.getLogger("chatbot_app")
 
 # ✅ Load fastText language detection model once
 
-lid_model = fasttext.load_model("lid.176.ftz")
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "lid.176.ftz")
+lid_model = fasttext.load_model(MODEL_PATH)
 
 
 def detect_language(text: str) -> str:
