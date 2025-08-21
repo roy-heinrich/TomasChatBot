@@ -61,3 +61,8 @@ async def reload_sources():
     except Exception as e:
         logger.exception("Error while reloading sources")
         return {"message": f"Reload failed: {str(e)}", "content": ""}
+        
+if __name__ == "__main__":
+    import os
+    port = int(os.environ.get("PORT", 8000))  # Render sets PORT env
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)
