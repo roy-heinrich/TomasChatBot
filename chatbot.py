@@ -1,7 +1,7 @@
 import os
 import aiofiles
 import chromadb
-from langchain.text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
 from aklstemmer import stem as aklanon_stem
 import logging
@@ -324,3 +324,4 @@ class ChatBotApp:
         answer = await self.groq_answer(combined_context, query, lang)
 
         return self.format_response_dynamic(answer, lang)
+
