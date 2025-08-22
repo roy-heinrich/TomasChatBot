@@ -30,13 +30,24 @@ async def root():
 
 @app.post("/chat")
 async def chat(payload: dict):
-    query = payload.get("query", "")
+    """
+    Main chatbot endpoint.
+    Calls ChatBot.answer() instead of ask() directly.
+    """
+    query = payload.get("query", "").strip()
     logger.info(f"Incoming query: {query}")
-    response = await chatbot.ask(query)
+    response = await chatbot.answer(query)   # ✅ now using answer()
     return {"response": response}
 
-@app.post("/admin/reload")
+@app.get("/admin/reload")
 async def reload_sources():
-    logger.info("Reloading and summarizing docs...")
-    await summarize_and_store()  # fetch docs, summarize via OpenRouter, upload summarized_text.md
-    return {"status": "ok", "message": "Docs reloaded and summarized"}
+    """
+    Summarizes docs from Supabase and saves summarized_text.md back to Supabase.
+    """
+    try:
+        logger.info("Reloading and summarizing docs from Supabase...")
+        summary_text = await summarize_and_store()
+        return {"message": "Summarized and stored in Supabase.", "content": summary_text}
+    except Exception as e:
+        logger.exception("Error during summarization")
+        return {"message": f"Reload failed: {str(e)}", "content": ""}

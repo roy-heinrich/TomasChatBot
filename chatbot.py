@@ -1,10 +1,7 @@
 import os
-import sys
 import logging
-import aiofiles
 import httpx
 import fasttext
-import pymysql
 from dotenv import load_dotenv
 from utils import fetch_summarized_text
 from fallback import FallbackHandler
@@ -12,28 +9,21 @@ from fallback import FallbackHandler
 logger = logging.getLogger("chatbot")
 load_dotenv()
 
+
 class ChatBot:
     def __init__(self):
-        # MySQL
-        self.mysql_conn = pymysql.connect(
-            host=os.getenv("MYSQL_HOST", "localhost"),
-            user=os.getenv("MYSQL_USER", "root"),
-            password=os.getenv("MYSQL_PASSWORD", ""),
-            database=os.getenv("MYSQL_DATABASE", "tomasdb"),
-            cursorclass=pymysql.cursors.DictCursor
-        )
-
-        # Fallback
+        # Fallback handler (when LLM fails)
         self.fallback_handler = FallbackHandler()
 
-        # Language detection
+        # Language detection model
         self.lang_model = fasttext.load_model("lid.176.ftz")
 
-        # OpenRouter
+        # OpenRouter API
         self.openrouter_api = "https://openrouter.ai/api/v1/chat/completions"
         self.openrouter_key = os.getenv("OPENROUTER_API_KEY")
 
     async def detect_language(self, text: str) -> str:
+        """Detect the language of the input text (default: en)."""
         try:
             prediction = self.lang_model.predict(text.replace("\n", " "))
             lang = prediction[0][0].replace("__label__", "")
@@ -43,10 +33,13 @@ class ChatBot:
             return "en"
 
     async def ask_openrouter(self, query: str, context: str, lang: str) -> str:
+        """Send query + context to OpenRouter and return the answer."""
         headers = {
             "Authorization": f"Bearer {self.openrouter_key}",
             "Content-Type": "application/json",
         }
+
+        # System prompt for polite school-specific chatbot
         system_prompt = (
             "You are the polite, respectful chatbot of Tomas SM. Bautista Elementary School. "
             "Always keep answers short, clear, and helpful. If the question is unrelated to the school, politely decline."
@@ -65,7 +58,7 @@ class ChatBot:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Context:\n{context}\n\nUser: {query}"}
             ],
-            "temperature": 0.7
+            "temperature": 0.7,
         }
 
         async with httpx.AsyncClient(timeout=60) as client:
@@ -78,33 +71,15 @@ class ChatBot:
                 logger.error(f"OpenRouter request failed: {e}")
                 return self.fallback_handler.get_fallback_message(lang)
 
-    async def get_mysql_context(self, query: str) -> str:
-        try:
-            with self.mysql_conn.cursor() as cursor:
-                cursor.execute("SELECT answer FROM chatbot_prompts WHERE question LIKE %s", (f"%{query}%",))
-                result = cursor.fetchone()
-                return result["answer"] if result else ""
-        except Exception as e:
-            logger.error(f"MySQL query failed: {e}")
-            return ""
-
     async def answer(self, query: str) -> str:
+        """Main entrypoint: detect language, fetch Supabase context, ask OpenRouter."""
         lang = await self.detect_language(query)
 
-        # Fetch summarized knowledge from Supabase
+        # Only fetch from Supabase summarized_text.md
         summarized_text = await fetch_summarized_text()
 
-        # Also try MySQL
-        mysql_context = await self.get_mysql_context(query)
-
-        # Combine
-        context = ""
-        if mysql_context:
-            context += f"MySQL:\n{mysql_context}\n\n"
-        if summarized_text:
-            context += f"Docs:\n{summarized_text}\n\n"
-
-        if not context:
+        if not summarized_text:
+            logger.warning("No summarized_text.md found in Supabase.")
             return self.fallback_handler.get_fallback_message(lang)
 
-        return await self.ask_openrouter(query, context, lang)
+        return await self.ask_openrouter(query, summarized_text, lang)
