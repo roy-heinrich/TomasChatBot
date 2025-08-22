@@ -16,7 +16,8 @@ class ChatBot:
         self.fallback_handler = FallbackHandler()
 
         # Language detection model
-        self.lang_model = fasttext.load_model("lid.176.ftz")
+        model_path = os.path.join(os.path.dirname(__file__), "model", "lid.176.ftz")
+        self.lang_model = fasttext.load_model(model_path)
 
         # OpenRouter API
         self.openrouter_api = "https://openrouter.ai/api/v1/chat/completions"
