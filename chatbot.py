@@ -1,7 +1,7 @@
 import os
 import logging
 import httpx
-import fasttext
+import langid
 from dotenv import load_dotenv
 from utils import fetch_summarized_text
 from fallback import FallbackHandler
@@ -15,19 +15,16 @@ class ChatBot:
         # Fallback handler (when LLM fails)
         self.fallback_handler = FallbackHandler()
 
-        # Language detection model
-        model_path = os.path.join(os.path.dirname(__file__), "model", "lid.176.ftz")
-        self.lang_model = fasttext.load_model(model_path)
-
         # OpenRouter API
         self.openrouter_api = "https://openrouter.ai/api/v1/chat/completions"
         self.openrouter_key = os.getenv("OPENROUTER_API_KEY")
 
     async def detect_language(self, text: str) -> str:
-        """Detect the language of the input text (default: en)."""
         try:
-            prediction = self.lang_model.predict(text.replace("\n", " "))
-            lang = prediction[0][0].replace("__label__", "")
+            lang, confidence = langid.classify(text)
+            # Only care about English and Tagalog
+            if lang not in ["en", "tl"]:
+                lang = "en"
             return lang
         except Exception as e:
             logger.error(f"Language detection failed: {e}")
