@@ -1,29 +1,16 @@
 fastapi
 uvicorn
 gunicorn
-pymysql
-pymupdf
-chromadb
-sentence-transformers
-fasttext-wheel
 python-dotenv
 aiofiles
 httpx
 requests
+fasttext-wheel
 docx2txt
 PyPDF2
 openpyxl
 python-pptx
-langchain-text-splitters
-aklstemmer @ git+https://github.com/andrianllmm/aklanon-stemmer.git@921b887b7b682a90907128a9d43fca8f19539976
-aiohttp
-python-docx
 pandas
-requests
-tiktoken
 psycopg2
 supabase
-
-
-
-
+aklstemmer @ git+https://github.com/andrianllmm/aklanon-stemmer.git@921b887b7b682a90907128a9d43fca8f19539976
