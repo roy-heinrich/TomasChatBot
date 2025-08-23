@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from chatbot import ChatBot
+from pydantic import BaseModel
 from summarizer import summarize_and_store
 
 load_dotenv()
@@ -39,24 +40,39 @@ app.add_middleware(
 )
 
 # -----------------------
+# Pydantic model for request
+# -----------------------
+class ChatRequest(BaseModel):
+    query: str
+async def fetch_supabase_context() -> str:
+    # Supabase python client is synchronous, so run in threadpool
+    import asyncio
+    loop = asyncio.get_event_loop()
+
+    def fetch_sync():
+        result = supabase.table("chatbot_prompts").select("prompt, response").execute()
+        context = ""
+        if result.data:
+            for row in result.data:
+                context += f"Prompt: {row['prompt']}\nResponse: {row['response']}\n\n"
+        return context
+
+    return await loop.run_in_executor(None, fetch_sync)
+
+# -----------------------
 # Chat endpoint
 # -----------------------
 @app.post("/chat")
-async def chat_endpoint(request: Request):
-    data = await request.json()
-    query = data.get("query", "").strip()
-
+async def chat_endpoint(data: ChatRequest):
+    query = data.query.strip()
     if not query:
         return {"response": "No query provided."}
 
-    # Optional: fetch context from Supabase if needed
-    result = supabase.table("chatbot_prompts").select("prompt, response").execute()
-    context = ""
-    if result.data:
-        for row in result.data:
-            context += f"Prompt: {row['prompt']}\nResponse: {row['response']}\n\n"
+    # Fetch context asynchronously
+    supabase_context = await fetch_supabase_context()
 
-    answer = await chatbot.answer(query, context=context)
+    # Ask ChatBot with the context
+    answer = await chatbot.answer(query, context=supabase_context)
     return {"response": answer}
 
 # -----------------------
@@ -65,6 +81,7 @@ async def chat_endpoint(request: Request):
 @app.post("/admin/reload")
 async def reload_sources():
     try:
+        logger.info("🔄 Starting /admin/reload: summarizing all docs...")
         summary_text = await summarize_and_store()
         if not summary_text:
             return JSONResponse(status_code=500, content={"message": "Summarization failed."})
