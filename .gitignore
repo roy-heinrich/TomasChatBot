@@ -2,3 +2,6 @@ docs/
 .env
 .venv/
 __pycache__
+/vendor
+composer.lock
+composer.json
