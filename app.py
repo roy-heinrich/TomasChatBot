@@ -1,12 +1,22 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
+import requests
 import asyncio
+from supabase import create_client, Client
 from summarizer import summarize_and_store
 import os, httpx
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_MODEL = "openai/gpt-oss-20b:free"
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Groq API credentials
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"  # replace with actual endpoint
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
 app = FastAPI()
 logging.basicConfig(level=logging.INFO)
@@ -52,9 +62,40 @@ async def get_logs():
 # Chat endpoint (placeholder)
 # -----------------------
 @app.post("/chat")
-async def chat(request: dict):
-    query = request.get("query", "")
-    return {"response": f"Received query: {query}"}
+async def chat(request: Request):
+    data = await request.json()
+    query = data.get("query", "").strip()
+
+    if not query:
+        return {"response": "No query provided."}
+
+    # 1️⃣ Fetch context from Supabase
+    result = supabase.table("chatbot_prompts").select("prompt, response").execute()
+    context = ""
+    if result.data:
+        for row in result.data:
+            context += f"Prompt: {row['prompt']}\nResponse: {row['response']}\n\n"
+
+    # 2️⃣ Send query + context to Groq API (async)
+    groq_payload = {
+        "query": query,
+        "context": context
+    }
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    async with httpx.AsyncClient() as client:
+        groq_response = await client.post(GROQ_API_URL, json=groq_payload, headers=headers)
+
+    if groq_response.status_code == 200:
+        llm_answer = groq_response.json().get("answer", "Sorry, I couldn't generate a response.")
+    else:
+        llm_answer = f"Groq API error: {groq_response.text}"
+
+    return {"response": llm_answer}
 
 @app.get("/test_openrouter")
 async def test_openrouter():
