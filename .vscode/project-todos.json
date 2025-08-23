@@ -1,0 +1,17 @@
+[
+  {
+    "id": "1755874252591",
+    "text": "fix chatbot not answering queries (possible api problem)",
+    "completed": false
+  },
+  {
+    "id": "1755872706069",
+    "text": "fix summarizing failing to fetch",
+    "completed": false
+  },
+  {
+    "id": "1755872679893",
+    "text": "Make sure your frontend fetch URLs point to the same backend environment (local vs. Render).",
+    "completed": false
+  }
+]
