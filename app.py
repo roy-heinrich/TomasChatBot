@@ -4,18 +4,17 @@ from fastapi.responses import JSONResponse
 import logging
 import asyncio
 
-from summarizer import summarize_and_store  # updated function
+from summarizer import summarize_and_store
+from utils import get_supabase_client, DOCS_BUCKET
 
 # -----------------------
 # FastAPI app setup
 # -----------------------
 app = FastAPI()
 
-# Logger setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chatbot")
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # restrict to frontend domain in production
@@ -30,25 +29,35 @@ app.add_middleware(
 @app.post("/admin/reload")
 async def reload_sources():
     try:
-        logger.info("🔄 Starting document summarization via /admin/reload...")
+        logger.info("🔄 Starting /admin/reload: summarizing all docs...")
 
-        # Call summarize_and_store with explicit input/output buckets
-        # The function itself should handle listing all files in DOCS_BUCKET
-        summary_text = await summarize_and_store(
-            input_filename=None,   # None triggers "all files in DOCS_BUCKET"
-            output_filename="summarized_text.md"  # store result in SUMMARY_BUCKET
-        )
+        # Get a Supabase client to list files
+        supabase = get_supabase_client()
+        files_list = supabase.storage.from_(DOCS_BUCKET).list()
+        if not files_list:
+            logger.warning("⚠ No files found in DOCS_BUCKET")
+            return JSONResponse(
+                status_code=500,
+                content={"message": "No files found in DOCS_BUCKET."}
+            )
 
+        logger.info(f"📄 {len(files_list)} files found in DOCS_BUCKET:")
+        for f in files_list:
+            logger.info(f"  - {f['name']}")
+
+        # Call the summarizer
+        summary_text = await summarize_and_store()
         if not summary_text:
+            logger.warning("⚠ Summarization returned empty result")
             return JSONResponse(
                 status_code=500,
                 content={"message": "Summarization completed but returned empty result."}
             )
 
-        logger.info("✅ All files summarized successfully into SUMMARY_BUCKET.")
+        logger.info("✅ /admin/reload completed successfully")
         return JSONResponse(
             status_code=200,
-            content={"message": "All documents summarized and stored successfully."}
+            content={"message": "Sources reloaded and summarized successfully."}
         )
 
     except Exception as e:
@@ -57,18 +66,3 @@ async def reload_sources():
             status_code=500,
             content={"message": f"Failed to reload sources: {str(e)}"}
         )
-
-# -----------------------
-# Optional /admin/logs route
-# -----------------------
-@app.get("/admin/logs")
-async def get_logs():
-    return {"logs": "No logs available"}
-
-# -----------------------
-# Chat endpoint (placeholder)
-# -----------------------
-@app.post("/chat")
-async def chat(request: dict):
-    query = request.get("query", "")
-    return {"response": f"Received query: {query}"}
