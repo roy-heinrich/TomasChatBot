@@ -4,6 +4,9 @@ from fastapi.responses import JSONResponse
 import logging
 import asyncio
 from summarizer import summarize_and_store
+import os, httpx
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_MODEL = "openai/gpt-oss-20b:free"
 
 app = FastAPI()
 logging.basicConfig(level=logging.INFO)
@@ -52,3 +55,22 @@ async def get_logs():
 async def chat(request: dict):
     query = request.get("query", "")
     return {"response": f"Received query: {query}"}
+
+@app.get("/test_openrouter")
+async def test_openrouter():
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
+                json={
+                    "model": OPENROUTER_MODEL,
+                    "messages":[
+                        {"role":"system","content":"You are a helpful assistant."},
+                        {"role":"user","content":"Hello"}
+                    ]
+                }
+            )
+        return {"status_code": resp.status_code, "response_text": resp.text}
+    except Exception as e:
+        return {"error": str(e)}
