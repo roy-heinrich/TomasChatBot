@@ -24,8 +24,8 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # -----------------------
 # Groq key
 # -----------------------
-GROQ_KEY = os.getenv("GROQ_API_KEY")
-chatbot = ChatBot(groq_key=GROQ_KEY)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+chatbot = ChatBot(groq_key=GROQ_API_KEY)
 
 # -----------------------
 # FastAPI app
