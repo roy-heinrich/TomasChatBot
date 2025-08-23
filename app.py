@@ -4,17 +4,18 @@ from fastapi.responses import JSONResponse
 import logging
 import asyncio
 
-# Import your summarizer
-from summarizer import summarize_and_store
+from summarizer import summarize_and_store  # updated function
 
 # -----------------------
 # FastAPI app setup
 # -----------------------
 app = FastAPI()
 
+# Logger setup
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chatbot")
 
-
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # restrict to frontend domain in production
@@ -23,10 +24,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("chatbot")
-
 # -----------------------
 # Admin reload route
 # -----------------------
@@ -34,16 +31,24 @@ logger = logging.getLogger("chatbot")
 async def reload_sources():
     try:
         logger.info("🔄 Starting document summarization via /admin/reload...")
-        summary_text = await summarize_and_store()
+
+        # Call summarize_and_store with explicit input/output buckets
+        # The function itself should handle listing all files in DOCS_BUCKET
+        summary_text = await summarize_and_store(
+            input_filename=None,   # None triggers "all files in DOCS_BUCKET"
+            output_filename="summarized_text.md"  # store result in SUMMARY_BUCKET
+        )
+
         if not summary_text:
             return JSONResponse(
                 status_code=500,
                 content={"message": "Summarization completed but returned empty result."}
             )
 
+        logger.info("✅ All files summarized successfully into SUMMARY_BUCKET.")
         return JSONResponse(
             status_code=200,
-            content={"message": "Sources reloaded and summarized successfully."}
+            content={"message": "All documents summarized and stored successfully."}
         )
 
     except Exception as e:
