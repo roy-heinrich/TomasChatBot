@@ -1,67 +1,71 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 import asyncio
 
-# Initialize FastAPI app
+# Import your summarizer
+from summarizer import summarize_and_store
+
+# -----------------------
+# FastAPI app setup
+# -----------------------
 app = FastAPI(title="Tomas Chatbot API")
 
-# Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # You can restrict to your frontend domain
+    allow_origins=["*"],  # restrict to frontend domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Configure logging
+# Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chatbot")
 
-# ---------------------
-# Placeholder Chatbot
-# ---------------------
-@app.post("/chat")
-async def chat(request: Request):
-    data = await request.json()
-    query = data.get("query", "")
-    if not query:
-        return JSONResponse(content={"error": "No query provided"}, status_code=400)
-    
-    # TODO: Replace with your chatbot logic
-    response_text = f"Received query: {query}"
-    return {"response": response_text}
-
-# ---------------------
-# Reload summarized docs
-# ---------------------
+# -----------------------
+# Admin reload route
+# -----------------------
 @app.post("/admin/reload")
 async def reload_sources():
+    """
+    Summarizes all documents from Supabase DOCS_BUCKET using summarizer.py
+    and uploads summarized_text.md to SUMMARY_BUCKET.
+    """
     try:
-        logger.info("Reloading sources...")
+        logger.info("🔄 Starting document summarization...")
 
-        # TODO: Replace with your actual document summarization logic
-        await asyncio.sleep(1)  # Simulate async work
+        # Call the async summarizer from summarizer.py
+        final_summary = await summarize_and_store()
 
-        logger.info("Sources reloaded successfully")
-        return {"message": "Sources reloaded successfully"}
+        if final_summary:
+            logger.info("✅ Summarization complete!")
+            return {"message": "Sources reloaded and summarized successfully."}
+        else:
+            logger.warning("⚠ Summarization returned empty result.")
+            return JSONResponse(
+                content={"error": "Summarization completed but returned empty result."},
+                status_code=500,
+            )
+
     except Exception as e:
-        logger.error(f"Failed to reload sources: {e}")
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+        logger.exception("❌ Failed to reload sources")
+        return JSONResponse(
+            content={"error": f"Failed to reload sources: {str(e)}"}, status_code=500
+        )
 
-# ---------------------
-# Admin logs route (optional)
-# ---------------------
+# -----------------------
+# Optional /admin/logs route
+# -----------------------
 @app.get("/admin/logs")
 async def get_logs():
-    # Placeholder: replace with actual log retrieval if needed
     return {"logs": "No logs available"}
 
-# ---------------------
-# Root route
-# ---------------------
-@app.get("/")
-async def root():
-    return {"message": "Tomas Chatbot API is running"}
+# -----------------------
+# Chat endpoint (placeholder)
+# -----------------------
+@app.post("/chat")
+async def chat(request: dict):
+    query = request.get("query", "")
+    return {"response": f"Received query: {query}"}
