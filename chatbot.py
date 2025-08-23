@@ -1,83 +1,57 @@
+# chatbot.py
 import os
 import logging
 import httpx
 import langid
-from dotenv import load_dotenv
 from utils import fetch_summarized_text
 from fallback import FallbackHandler
 
 logger = logging.getLogger("chatbot")
-load_dotenv()
-
 
 class ChatBot:
-    def __init__(self):
-        # Fallback handler (when LLM fails)
+    def __init__(self, groq_key: str):
         self.fallback_handler = FallbackHandler()
-
-        # OpenRouter API
-        self.openrouter_api = "https://openrouter.ai/api/v1/chat/completions"
-        self.openrouter_key = os.getenv("OPENROUTER_API_KEY")
+        self.groq_key = groq_key
+        self.openrouter_api = "https://api.groq.com/openai/v1/chat/completions"
 
     async def detect_language(self, text: str) -> str:
-        try:
-            lang, confidence = langid.classify(text)
-            # Only care about English and Tagalog
-            if lang not in ["en", "tl"]:
-                lang = "en"
-            return lang
-        except Exception as e:
-            logger.error(f"Language detection failed: {e}")
-            return "en"
+        lang, _ = langid.classify(text)
+        return lang if lang in ["en", "tl"] else "en"
 
     async def ask_openrouter(self, query: str, context: str, lang: str) -> str:
-        """Send query + context to OpenRouter and return the answer."""
+        system_prompt = "You are the polite, respectful chatbot of Tomas SM. Bautista Elementary School. Keep answers short, clear, and helpful."
+        if lang == "tl":
+            system_prompt = "Ikaw ay isang magalang na chatbot ng Tomas SM. Bautista Elementary School. Sagutin nang malinaw at maikli."
+        
+        payload = {
+            "model": "openai/gpt-oss-120b",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Context:\n{context}\n\nUser: {query}"}
+            ],
+            "temperature": 0.7
+        }
+
         headers = {
             "Authorization": f"Bearer {self.openrouter_key}",
             "Content-Type": "application/json",
         }
 
-        # System prompt for polite school-specific chatbot
-        system_prompt = (
-            "You are the polite, respectful chatbot of Tomas SM. Bautista Elementary School. "
-            "Always keep answers short, clear, and helpful. If the question is unrelated to the school, politely decline."
-        )
-
-        if lang == "tl":
-            system_prompt = (
-                "Ikaw ay isang magalang na chatbot ng Tomas SM. Bautista Elementary School. "
-                "Sagutin nang malinaw at maikli. Kung hindi tungkol sa paaralan ang tanong, "
-                "magalang na sabihin na hindi mo masasagot."
-            )
-
-        payload = {
-            "model": "google/gemma-3n-e2b-it:free",
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Context:\n{context}\n\nUser: {query}"}
-            ],
-            "temperature": 0.7,
-        }
-
         async with httpx.AsyncClient(timeout=60) as client:
             try:
-                response = await client.post(self.openrouter_api, headers=headers, json=payload)
+                response = await client.post(self.openrouter_api, json=payload, headers=headers)
                 response.raise_for_status()
-                data = response.json()
-                return data["choices"][0]["message"]["content"].strip()
+                return response.json()["choices"][0]["message"]["content"].strip()
             except Exception as e:
-                logger.error(f"OpenRouter request failed: {e}")
+                logger.error(f"OpenRouter failed: {e}")
                 return self.fallback_handler.get_fallback_message(lang)
 
-    async def answer(self, query: str) -> str:
-        """Main entrypoint: detect language, fetch Supabase context, ask OpenRouter."""
+    async def answer(self, query: str, context: str = None) -> str:
         lang = await self.detect_language(query)
 
-        # Only fetch from Supabase summarized_text.md
-        summarized_text = await fetch_summarized_text()
-
-        if not summarized_text:
-            logger.warning("No summarized_text.md found in Supabase.")
+        if not context:
+            context = await fetch_summarized_text() or ""
+        if not context:
             return self.fallback_handler.get_fallback_message(lang)
 
-        return await self.ask_openrouter(query, summarized_text, lang)
+        return await self.ask_openrouter(query, context, lang)
