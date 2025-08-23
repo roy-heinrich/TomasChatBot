@@ -46,12 +46,9 @@ class ChatBot:
                 logger.error(f"OpenRouter failed: {e}")
                 return self.fallback_handler.get_fallback_message(lang)
 
-    async def answer(self, query: str, context: str = None) -> str:
+    async def answer(self, query: str, context: str) -> str:
+        # Use the context fetched from keywords + response
         lang = await self.detect_language(query)
-
-        if not context:
-            context = await fetch_summarized_text() or ""
         if not context:
             return self.fallback_handler.get_fallback_message(lang)
-
         return await self.ask_openrouter(query, context, lang)
