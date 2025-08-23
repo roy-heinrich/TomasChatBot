@@ -10,63 +10,67 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_MODEL = "google/gemma-3n-e2b-it:free"
 
 
-async def summarize_and_store(
-    input_filename: str = SUMMARY_FILENAME,
-    output_filename: str = SUMMARY_FILENAME
-) -> str:
+async def summarize_and_store(output_filename: str = SUMMARY_FILENAME) -> str:
     """
-    Streams docs from Supabase → OpenRouter (chunked summarization) →
-    saves summary back to Supabase (summarized_text.md).
+    Summarizes all documents from DOCS_BUCKET and uploads the final summary to SUMMARY_BUCKET.
     """
     try:
         supabase = get_supabase_client()
 
-        logger.info(f"⬇ Downloading {input_filename} from Supabase bucket {DOCS_BUCKET}...")
-
-        # Download raw docs
-        raw_data = supabase.storage.from_(DOCS_BUCKET).download(input_filename)
-        if raw_data is None:
-            logger.warning(f"⚠ {input_filename} not found in bucket {DOCS_BUCKET}.")
+        # List all raw docs in DOCS_BUCKET
+        files = supabase.storage.from_(DOCS_BUCKET).list()
+        if not files:
+            logger.warning(f"⚠ No files found in bucket {DOCS_BUCKET}")
             return ""
 
-        raw_text = raw_data.decode("utf-8")
-
-        # ---- Chunk docs to avoid token limits ----
-        CHUNK_SIZE = 3000
-        chunks = [raw_text[i:i+CHUNK_SIZE] for i in range(0, len(raw_text), CHUNK_SIZE)]
         summaries = []
 
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            for idx, chunk in enumerate(chunks):
-                logger.info(f"📝 Summarizing chunk {idx+1}/{len(chunks)} ({len(chunk)} chars)...")
+        async with httpx.AsyncClient(timeout=None) as client:
+            for file in files:
+                file_name = file["name"]
+                logger.info(f"⬇ Downloading {file_name} for summarization...")
 
-                resp = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
-                    json={
-                        "model": OPENROUTER_MODEL,
-                        "messages": [
-                            {
-                                "role": "system",
-                                "content": "Summarize this document into clear Markdown with sections: Personnel, Departments, Events, Locations, Contact Info. Preserve names and titles."
-                            },
-                            {"role": "user", "content": chunk},
-                        ],
-                    },
-                )
+                raw_data = supabase.storage.from_(DOCS_BUCKET).download(file_name)
+                text = raw_data.decode("utf-8", errors="ignore")
 
-                if resp.status_code != 200:
-                    logger.error(f"❌ OpenRouter failed on chunk {idx+1}")
-                    continue
+                # Chunk text to avoid token limits
+                CHUNK_SIZE = 3000
+                chunks = [text[i:i+CHUNK_SIZE] for i in range(0, len(text), CHUNK_SIZE)]
 
-                data = resp.json()
-                summary_part = data["choices"][0]["message"]["content"].strip()
-                summaries.append(summary_part)
+                for idx, chunk in enumerate(chunks, 1):
+                    logger.info(f"📝 Summarizing chunk {idx}/{len(chunks)} of {file_name} ({len(chunk)} chars)...")
+
+                    resp = await client.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
+                        json={
+                            "model": OPENROUTER_MODEL,
+                            "messages": [
+                                {
+                                    "role": "system",
+                                    "content": (
+                                        "Summarize this document into clear Markdown with sections: "
+                                        "Personnel, Departments, Events, Locations, Contact Info. "
+                                        "Preserve names and titles."
+                                    ),
+                                },
+                                {"role": "user", "content": chunk},
+                            ],
+                        },
+                    )
+
+                    if resp.status_code != 200:
+                        logger.error(f"❌ OpenRouter failed on chunk {idx} of {file_name}")
+                        continue
+
+                    data = resp.json()
+                    summary_part = data["choices"][0]["message"]["content"].strip()
+                    summaries.append(summary_part)
 
         final_summary = "\n\n".join(summaries)
 
-        # Upload summary back to Supabase
-        logger.info(f"⬆ Uploading {output_filename} to {SUMMARY_BUCKET}...")
+        # Upload summary to SUMMARY_BUCKET
+        logger.info(f"⬆ Uploading summary to {SUMMARY_BUCKET}/{output_filename}...")
         supabase.storage.from_(SUMMARY_BUCKET).upload(
             output_filename,
             final_summary.encode("utf-8"),
