@@ -2,7 +2,10 @@
 import os
 import logging
 import httpx
-from utils import supabase, RAW_BUCKET, SUMMARY_BUCKET, RAW_DOCS_FILE, SUMMARY_FILE
+from utils import get_supabase_client, RAW_BUCKET, SUMMARY_BUCKET, RAW_DOCS_FILE, SUMMARY_FILE
+# Inside your function:
+supabase = get_supabase_client()
+    
 
 logger = logging.getLogger("summarizer")
 
