@@ -10,7 +10,10 @@ from summarizer import summarize_and_store
 # -----------------------
 # FastAPI app setup
 # -----------------------
-app = FastAPI(title="Tomas Chatbot API")
+app = FastAPI()
+
+logger = logging.getLogger("chatbot")
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,30 +32,25 @@ logger = logging.getLogger("chatbot")
 # -----------------------
 @app.post("/admin/reload")
 async def reload_sources():
-    """
-    Summarizes all documents from Supabase DOCS_BUCKET using summarizer.py
-    and uploads summarized_text.md to SUMMARY_BUCKET.
-    """
     try:
-        logger.info("🔄 Starting document summarization...")
-
-        # Call the async summarizer from summarizer.py
-        final_summary = await summarize_and_store()
-
-        if final_summary:
-            logger.info("✅ Summarization complete!")
-            return {"message": "Sources reloaded and summarized successfully."}
-        else:
-            logger.warning("⚠ Summarization returned empty result.")
+        logger.info("🔄 Starting document summarization via /admin/reload...")
+        summary_text = await summarize_and_store()
+        if not summary_text:
             return JSONResponse(
-                content={"error": "Summarization completed but returned empty result."},
                 status_code=500,
+                content={"message": "Summarization completed but returned empty result."}
             )
 
-    except Exception as e:
-        logger.exception("❌ Failed to reload sources")
         return JSONResponse(
-            content={"error": f"Failed to reload sources: {str(e)}"}, status_code=500
+            status_code=200,
+            content={"message": "Sources reloaded and summarized successfully."}
+        )
+
+    except Exception as e:
+        logger.exception("❌ /admin/reload failed")
+        return JSONResponse(
+            status_code=500,
+            content={"message": f"Failed to reload sources: {str(e)}"}
         )
 
 # -----------------------
