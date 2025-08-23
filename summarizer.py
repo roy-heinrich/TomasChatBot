@@ -1,20 +1,50 @@
 # summarizer.py
 import os
+import io
 import logging
 import httpx
 from utils import get_supabase_client, DOCS_BUCKET, SUMMARY_BUCKET, SUMMARY_FILENAME
+
+from docx import Document
+import PyPDF2
+import openpyxl
+from pptx import Presentation
 
 logger = logging.getLogger("summarizer")
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_MODEL = "google/gemma-3n-e2b-it:free"
 
-async def summarize_and_store(
-    output_filename: str = SUMMARY_FILENAME
-) -> str:
+def extract_text(file_name: str, raw_bytes: bytes) -> str:
+    """Extract text from multiple document formats."""
+    text = ""
+    try:
+        if file_name.endswith(".txt"):
+            text = raw_bytes.decode("utf-8", errors="ignore")
+        elif file_name.endswith(".docx"):
+            doc = Document(io.BytesIO(raw_bytes))
+            text = "\n".join([p.text for p in doc.paragraphs])
+        elif file_name.endswith(".pdf"):
+            reader = PyPDF2.PdfReader(io.BytesIO(raw_bytes))
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        elif file_name.endswith(".xlsx"):
+            wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True)
+            for sheet in wb.worksheets:
+                for row in sheet.iter_rows(values_only=True):
+                    text += " ".join([str(cell) if cell is not None else "" for cell in row]) + "\n"
+        elif file_name.endswith(".pptx"):
+            prs = Presentation(io.BytesIO(raw_bytes))
+            for slide in prs.slides:
+                for shape in slide.shapes:
+                    if hasattr(shape, "text"):
+                        text += shape.text + "\n"
+    except Exception as e:
+        logger.warning(f"⚠ Failed to extract text from {file_name}: {e}")
+    return text.strip()
+
+async def summarize_and_store(output_filename: str = SUMMARY_FILENAME) -> str:
     """
-    Streams all docs from DOCS_BUCKET → OpenRouter (chunked summarization) →
-    saves summary into SUMMARY_BUCKET.
+    Summarize all documents in DOCS_BUCKET → OpenRouter → upload summary to SUMMARY_BUCKET.
     """
     try:
         supabase = get_supabase_client()
@@ -32,10 +62,12 @@ async def summarize_and_store(
             logger.info(f"⬇ Downloading {file_name}...")
             raw_data = supabase.storage.from_(DOCS_BUCKET).download(file_name)
             if raw_data:
-                combined_text += raw_data.decode("utf-8") + "\n\n"
+                text = extract_text(file_name, raw_data)
+                if text:
+                    combined_text += text + "\n\n"
 
         if not combined_text.strip():
-            logger.warning("⚠ All files in DOCS_BUCKET were empty")
+            logger.warning("⚠ All files in DOCS_BUCKET were empty or unsupported")
             return ""
 
         # ---- Chunk docs to avoid token limits ----
