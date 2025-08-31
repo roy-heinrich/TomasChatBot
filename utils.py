@@ -108,13 +108,16 @@ async def summarize_and_store():
     # Join all extracted text
     final_summary = "\n\n---\n\n".join(compiled_parts)
 
-    # Upload to Supabase summarized-text bucket
+    # Upload to Supabase summarized-text bucket (with overwrite)
     try:
         supabase.storage.from_(SUMMARY_BUCKET).upload(
             SUMMARY_FILENAME,
             final_summary.encode("utf-8"),
-            {"content-type": "text/markdown"},
+            {
+                "content-type": "text/markdown"
+            },
+            upsert=True   # ✅ This ensures overwrite instead of duplicate error
         )
-        print(f"[utils] Uploaded summarized_text.md to {SUMMARY_BUCKET}")
+        print(f"[utils] Uploaded summarized_text.md to {SUMMARY_BUCKET} (overwrite mode)")
     except Exception as e:
         print(f"[utils] Failed to upload summary: {e}")
