@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from chatbot import ChatBot
 from pydantic import BaseModel
 from utils import summarize_and_store
-
+from fastapi.responses import JSONResponse
 load_dotenv()
 logger = logging.getLogger("chatbot")
 logging.basicConfig(level=logging.INFO)
@@ -84,7 +84,7 @@ async def chat_endpoint(data: ChatRequest):
 @app.post("/admin/reload")
 async def reload_sources():
     try:
-        result = summarize_and_store()
+        result = await summarize_and_store()   # <-- await para async
         return JSONResponse(content=result, status_code=200)
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
