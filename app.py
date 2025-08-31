@@ -81,10 +81,25 @@ async def chat_endpoint(data: ChatRequest):
 # -----------------------
 # Admin reload endpoint (FastAPI style)
 # -----------------------
+# Admin reload endpoint
 @app.post("/admin/reload")
 async def reload_sources():
     try:
-        result = await summarize_and_store()   # <-- await para async
-        return JSONResponse(content=result, status_code=200)
+        result = summarize_and_store()
+        # Ensure consistent response format
+        return JSONResponse(
+            content={
+                "success": True,
+                "message": "Reload complete",
+                "details": result  # optional: extra info
+            },
+            status_code=200
+        )
     except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+        return JSONResponse(
+            content={
+                "success": False,
+                "message": f"Reload failed: {str(e)}"
+            },
+            status_code=500
+        )
