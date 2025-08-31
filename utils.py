@@ -1,8 +1,13 @@
 # utils.py
 import os
-import aiofiles
-import httpx
+import io
 from supabase import create_client, Client
+
+# File readers
+import docx2txt
+import PyPDF2
+import openpyxl
+from pptx import Presentation
 
 # -------------------------
 # Shared Supabase constants
@@ -36,13 +41,47 @@ async def fetch_summarized_text() -> str:
         return ""
 
 # -------------------------
-# Summarize docs and store
+# Extract text helpers
+# -------------------------
+def extract_text(filename: str, file_bytes: bytes) -> str:
+    text = ""
+    if filename.endswith(".pdf"):
+        reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+        for page in reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
+    elif filename.endswith(".docx"):
+        temp_path = f"/tmp/{filename}"
+        with open(temp_path, "wb") as f:
+            f.write(file_bytes)
+        text = docx2txt.process(temp_path)
+        os.remove(temp_path)
+    elif filename.endswith(".pptx"):
+        prs = Presentation(io.BytesIO(file_bytes))
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    text += shape.text + "\n"
+    elif filename.endswith(".xlsx"):
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes))
+        for sheet in wb:
+            for row in sheet.iter_rows(values_only=True):
+                text += " ".join([str(cell) if cell else "" for cell in row]) + "\n"
+    elif filename.endswith(".txt") or filename.endswith(".md"):
+        text = file_bytes.decode("utf-8", errors="ignore")
+    else:
+        text = f"[utils] Unsupported file type: {filename}\n"
+    return text.strip()
+
+# -------------------------
+# Compile docs and store
 # -------------------------
 async def summarize_and_store():
     """
-    Streams documents from Supabase DOCS_BUCKET,
-    summarizes them in chunks with OpenRouter,
-    then saves the final summarized_text.md into SUMMARY_BUCKET.
+    Reads documents from Supabase DOCS_BUCKET,
+    extracts text without AI summarization,
+    and saves compiled summarized_text.md into SUMMARY_BUCKET.
     """
     supabase = get_supabase_client()
 
@@ -52,52 +91,22 @@ async def summarize_and_store():
         print("[utils] No files found in chatbot-docs bucket")
         return
 
-    # Collect and stream text content chunk by chunk
-    collected_summary_parts = []
+    compiled_parts = []
 
-    async with httpx.AsyncClient(timeout=None) as client:
-        for file in files:
-            file_name = file["name"]
-            print(f"[utils] Downloading {file_name}...")
+    for file in files:
+        file_name = file["name"]
+        print(f"[utils] Downloading {file_name}...")
 
-            # Download each file
+        try:
             raw_bytes = supabase.storage.from_(DOCS_BUCKET).download(file_name)
-            text = raw_bytes.decode("utf-8", errors="ignore")
+            text = extract_text(file_name, raw_bytes)
+            if text:
+                compiled_parts.append(f"## {file_name}\n\n{text}")
+        except Exception as e:
+            print(f"[utils] Failed to process {file_name}: {e}")
 
-            # Split into safe chunks (4k chars each to avoid token issues)
-            chunk_size = 4000
-            chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
-
-            for idx, chunk in enumerate(chunks, 1):
-                prompt = (
-                    "Summarize the following text into clear, structured bullet points. "
-                    "Group information under categories like Personnel, Departments, "
-                    "Events, Locations, and Contact Info. Keep names and titles intact.\n\n"
-                    f"---\n{chunk}\n---"
-                )
-
-                # Send chunk to OpenRouter
-                try:
-                    response = await client.post(
-                        "https://openrouter.ai/api/v1/chat/completions",
-                        headers={
-                            "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}",
-                            "Content-Type": "application/json",
-                        },
-                        json={
-                            "model": "openai/gpt-oss-20b:free",
-                            "messages": [{"role": "user", "content": prompt}],
-                        },
-                    )
-                    data = response.json()
-                    summary_text = data["choices"][0]["message"]["content"]
-                    print(f"[utils] Summarized chunk {idx}/{len(chunks)} of {file_name}")
-                    collected_summary_parts.append(summary_text)
-                except Exception as e:
-                    print(f"[utils] Error summarizing chunk {idx} of {file_name}: {e}")
-
-    # Join all summaries into one markdown
-    final_summary = "\n\n".join(collected_summary_parts)
+    # Join all extracted text
+    final_summary = "\n\n---\n\n".join(compiled_parts)
 
     # Upload to Supabase summarized-text bucket
     try:

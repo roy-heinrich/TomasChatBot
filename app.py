@@ -1,14 +1,14 @@
 # app.py
 import os, httpx
 import logging
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from chatbot import ChatBot
 from pydantic import BaseModel
-from summarizer import summarize_and_store
+from utils import compile_documents
 
 load_dotenv()
 logger = logging.getLogger("chatbot")
@@ -44,12 +44,15 @@ app.add_middleware(
 # -----------------------
 class ChatRequest(BaseModel):
     query: str
+
+# -----------------------
+# Supabase fetch helper
+# -----------------------
 async def fetch_supabase_context() -> str:
     import asyncio
     loop = asyncio.get_event_loop()
 
     def fetch_sync():
-        # Use correct column names
         result = supabase.table("chatbot_prompts").select("keywords, response").execute()
         context = ""
         if result.data:
@@ -76,16 +79,12 @@ async def chat_endpoint(data: ChatRequest):
     return {"response": answer}
 
 # -----------------------
-# Admin reload endpoint
+# Admin reload endpoint (FastAPI style)
 # -----------------------
 @app.post("/admin/reload")
 async def reload_sources():
     try:
-        logger.info("🔄 Starting /admin/reload: summarizing all docs...")
-        summary_text = await summarize_and_store()
-        if not summary_text:
-            return JSONResponse(status_code=500, content={"message": "Summarization failed."})
-        return JSONResponse(status_code=200, content={"message": "Sources reloaded successfully."})
+        result = compile_documents()
+        return JSONResponse(content=result, status_code=200)
     except Exception as e:
-        logger.exception("Reload failed")
-        return JSONResponse(status_code=500, content={"message": str(e)})
+        return JSONResponse(content={"error": str(e)}, status_code=500)
