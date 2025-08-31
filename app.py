@@ -8,7 +8,7 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 from chatbot import ChatBot
 from pydantic import BaseModel
-from utils import compile_documents
+from utils import summarize_and_store
 
 load_dotenv()
 logger = logging.getLogger("chatbot")
@@ -84,7 +84,7 @@ async def chat_endpoint(data: ChatRequest):
 @app.post("/admin/reload")
 async def reload_sources():
     try:
-        result = compile_documents()
+        result = summarize_and_store()
         return JSONResponse(content=result, status_code=200)
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
