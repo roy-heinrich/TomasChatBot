@@ -85,13 +85,12 @@ async def chat_endpoint(data: ChatRequest):
 @app.post("/admin/reload")
 async def reload_sources():
     try:
-        result = summarize_and_store()
-        # Ensure consistent response format
+        result = await summarize_and_store()  # ✅ await here
         return JSONResponse(
             content={
                 "success": True,
                 "message": "Reload complete",
-                "details": result  # optional: extra info
+                "details": result
             },
             status_code=200
         )
