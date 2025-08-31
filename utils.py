@@ -75,7 +75,7 @@ def extract_text(filename: str, file_bytes: bytes) -> str:
     return text.strip()
 
 # -------------------------
-# Compile docs and store
+# Compile docs and store (overwrite safe)
 # -------------------------
 async def summarize_and_store():
     """
@@ -108,16 +108,22 @@ async def summarize_and_store():
     # Join all extracted text
     final_summary = "\n\n---\n\n".join(compiled_parts)
 
-    # Upload to Supabase summarized-text bucket (with overwrite)
+    # Delete old summary if exists
+    try:
+        supabase.storage.from_(SUMMARY_BUCKET).remove([SUMMARY_FILENAME])
+        print(f"[utils] Removed old {SUMMARY_FILENAME}")
+    except Exception as e:
+        print(f"[utils] No old summary to delete: {e}")
+
+    # Upload new one
     try:
         supabase.storage.from_(SUMMARY_BUCKET).upload(
             SUMMARY_FILENAME,
             final_summary.encode("utf-8"),
             {
                 "content-type": "text/markdown"
-            },
-            upsert=True   # ✅ This ensures overwrite instead of duplicate error
+            }
         )
-        print(f"[utils] Uploaded summarized_text.md to {SUMMARY_BUCKET} (overwrite mode)")
+        print(f"[utils] Uploaded summarized_text.md to {SUMMARY_BUCKET} (overwrite via delete+upload)")
     except Exception as e:
         print(f"[utils] Failed to upload summary: {e}")
