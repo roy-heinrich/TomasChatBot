@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 import httpx
 import langid
@@ -121,37 +122,55 @@ class ChatBot:
         return "\n".join(f"Q: {row['prompt']}\nA: {row['response']}" for row in data)
 
 
-    async def answer(self, query: str, context: str = None) -> str:
+    async def extract_snippet(self, text: str, query: str, window: int = 200) -> str:
+        """
+        Extract a snippet of the summarized_text.md around the query term.
+        Default window = 200 chars before & after the match.
+        """
+        query_lower = query.lower()
+        text_lower = text.lower()
+
+        match = re.search(re.escape(query_lower), text_lower)
+        if match:
+            start = max(0, match.start() - window)
+            end = min(len(text), match.end() + window)
+            snippet = text[start:end]
+            return snippet.strip()
+        return ""
+
+    async def answer(self, query: str) -> str:
         lang = await self.detect_language(query)
+ 
+        # --- Get context from both sources ---
+        summarized_text = await self.fetch_summarized_file()
+        supabase_prompts = await self.fetch_prompts_from_supabase(query)
 
-        # --- If no context is passed, gather from both sources ---
-        if not context:
-            summarized_text = await self.fetch_summarized_file()
-            supabase_prompts = await self.fetch_prompts_from_supabase(query)
-
-            # Merge sources
-            full_context = ""
-            if supabase_prompts:
-                logger.info("✅ Found matching context in Supabase database.")
-                full_context += f"Database Context:\n{supabase_prompts}\n\n"
-            else:
-                logger.info("⚠️ No matching context found in Supabase database.")
-
-            if summarized_text:
-                logger.info("✅ Found summarized_text.md context.")
-                full_context += f"Summary Context:\n{summarized_text}"
-            else:
-                logger.info("⚠️ No summarized_text.md context found.")
+        # Logging
+        if supabase_prompts:
+            logger.info("✅ Found matching context in Supabase prompts.")
         else:
-            # Use the provided context (e.g., from endpoint)
-            full_context = context
-            logger.info("ℹ️ Using provided external context.")
+            logger.info("⚠️ No Supabase context found.")
+
+        snippet = ""
+        if summarized_text:
+            snippet = await self.extract_snippet(summarized_text, query)
+            if snippet:
+                logger.info(f"🎯 Snippet extracted from summary for query: {query}")
+            else:
+                logger.info("⚠️ No relevant snippet found in summarized_text.md.")
+        else:
+            logger.info("⚠️ No summarized_text.md context available.")
+
+        # Merge sources
+        full_context = ""
+        if supabase_prompts:
+            full_context += f"Database Context:\n{supabase_prompts}\n\n"
+        if snippet:
+            full_context += f"Summary Context:\n{snippet}"
 
         # --- No context at all → fallback ---
         if not full_context.strip():
-            logger.warning("⚠️ No context found at all. Using fallback response.")
             return self.fallback_handler.get_fallback_message(lang)
 
-        # --- Ask Groq with merged context ---
         logger.info("🤖 Sending query to Groq with merged context.")
         return await self.ask_groq(query, full_context, lang)
