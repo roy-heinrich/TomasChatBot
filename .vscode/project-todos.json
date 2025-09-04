@@ -1,5 +1,10 @@
 [
   {
+    "id": "1756611541574",
+    "text": "add summarized_text.md as one of the source for groq's answer",
+    "completed": false
+  },
+  {
     "id": "1755957412962",
     "text": "fix the welcome greetings and make the response more human",
     "completed": false
@@ -10,23 +15,18 @@
     "completed": false
   },
   {
-    "id": "1755920371698",
-    "text": "change summarization from openrouter to google api",
-    "completed": false
-  },
-  {
     "id": "1755874252591",
     "text": "fix chatbot not answering queries (possible api problem)",
-    "completed": false
+    "completed": true
   },
   {
     "id": "1755872706069",
     "text": "fix summarizing failing to fetch",
-    "completed": false
+    "completed": true
   },
   {
     "id": "1755872679893",
     "text": "Make sure your frontend fetch URLs point to the same backend environment (local vs. Render).",
-    "completed": false
+    "completed": true
   }
 ]

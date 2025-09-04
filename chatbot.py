@@ -3,17 +3,23 @@ import logging
 import httpx
 import langid
 import random
+from supabase import create_client, Client
 from utils import fetch_summarized_text
 from fallback import FallbackHandler
+import time
 
 logger = logging.getLogger("chatbot")
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 class ChatBot:
     def __init__(self, groq_key: str):
         self.fallback_handler = FallbackHandler()
         self.groq_key = groq_key  
         self.groq_api = "https://api.groq.com/openai/v1/chat/completions"
-
+        self.bucket = "summarized-text"
+        self.file = "summarized_text.md"
         # Greeting options
         self.greetings_en = ["Good day!", "Hello!", "Hi there!", "Greetings!"]
         self.greetings_tl = ["Magandang araw po!", "Kumusta po!", "Mabuhay!", "Magandang umaga po!"]
@@ -22,14 +28,40 @@ class ChatBot:
         self.followup_en = " What else can I do for you today?"
         self.followup_tl = " Ano pa po ang maitutulong ko sa inyo ngayon?"
 
+        # Cache variables
+        self._cached_summary = None
+        self._last_fetched = 0
+        self.cache_ttl = 300  # cache for 5 minutes (adjust as needed)
+
     async def detect_language(self, text: str) -> str:
         lang, _ = langid.classify(text)
         return lang if lang in ["en", "tl"] else "en"
 
+    async def fetch_summarized_file(self) -> str:
+        now = time.time()
+
+        # If cached & still valid → return cached version
+        if self._cached_summary and now - self._last_fetched < self.cache_ttl:
+            return self._cached_summary
+
+        # Otherwise fetch from Supabase
+        url = f"{SUPABASE_URL}/storage/v1/object/{self.bucket}/{self.file}"
+        headers = {"Authorization": f"Bearer {SUPABASE_KEY}"}
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            text = response.text
+
+        # Save in cache
+        self._cached_summary = text
+        self._last_fetched = now
+        return text
+
+
     async def ask_groq(self, query: str, context: str, lang: str) -> str:
-        system_prompt = "You are the polite, respectful chatbot of Tomas SM. Bautista Elementary School. Keep answers short, clear, and helpful. Always sound natural and conversational."
+        system_prompt = "You are the polite, respectful chatbot of Tomas SM. Bautista Elementary School called TOMAS. Keep answers short, clear, and helpful. Always sound natural and conversational."
         if lang == "tl":
-            system_prompt = "Ikaw ay isang magalang na chatbot ng Tomas SM. Bautista Elementary School. Sagutin nang malinaw at maikli. Lagi kang magsimula sa isang maikling pagbati at panatilihing magalang ang tono."
+            system_prompt = "Ikaw ay isang magalang na chatbot ng Tomas SM. Bautista Elementary School na si TOMAS. Sagutin nang malinaw at maikli. Lagi kang magsimula sa isang maikling pagbati at panatilihing magalang ang tono."
 
         payload = {
             "model": "openai/gpt-oss-120b",
@@ -60,9 +92,52 @@ class ChatBot:
             except Exception as e:
                 logger.error(f"Groq failed: {e}")
                 return self.fallback_handler.get_fallback_message(lang)
+            
+    async def fetch_prompts_from_supabase(self, query: str) -> str:
+        """Search chatbot_prompts table in Supabase for matching context."""
+        url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
 
-    async def answer(self, query: str, context: str) -> str:
+        params = {
+            "select": "prompt,response",
+            # Simple case-insensitive search (adjust to your schema)
+            "prompt=ilike": f"%{query}%",
+        }
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, headers=headers, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+
+        if not data:
+            return ""
+
+        # Concatenate multiple matches
+        return "\n".join(f"Q: {row['prompt']}\nA: {row['response']}" for row in data)
+
+
+    async def answer(self, query: str) -> str:
         lang = await self.detect_language(query)
-        if not context:
+
+        # --- Get context from both sources ---
+        summarized_text = await self.fetch_summarized_file()
+        supabase_prompts = await self.fetch_prompts_from_supabase(query)
+
+        # Merge sources
+        full_context = ""
+        if supabase_prompts:
+            full_context += f"Database Context:\n{supabase_prompts}\n\n"
+        if summarized_text:
+            full_context += f"Summary Context:\n{summarized_text}"
+
+        # --- No context at all → fallback ---
+        if not full_context.strip():
             return self.fallback_handler.get_fallback_message(lang)
-        return await self.ask_groq(query, context, lang)
+
+        # --- Ask Groq with merged context ---
+        return await self.ask_groq(query, full_context, lang)
