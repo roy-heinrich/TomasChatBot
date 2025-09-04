@@ -132,16 +132,26 @@ class ChatBot:
             # Merge sources
             full_context = ""
             if supabase_prompts:
+                logger.info("✅ Found matching context in Supabase database.")
                 full_context += f"Database Context:\n{supabase_prompts}\n\n"
+            else:
+                logger.info("⚠️ No matching context found in Supabase database.")
+
             if summarized_text:
+                logger.info("✅ Found summarized_text.md context.")
                 full_context += f"Summary Context:\n{summarized_text}"
+            else:
+                logger.info("⚠️ No summarized_text.md context found.")
         else:
             # Use the provided context (e.g., from endpoint)
             full_context = context
+            logger.info("ℹ️ Using provided external context.")
 
         # --- No context at all → fallback ---
         if not full_context.strip():
+            logger.warning("⚠️ No context found at all. Using fallback response.")
             return self.fallback_handler.get_fallback_message(lang)
 
         # --- Ask Groq with merged context ---
+        logger.info("🤖 Sending query to Groq with merged context.")
         return await self.ask_groq(query, full_context, lang)
