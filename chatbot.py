@@ -121,19 +121,23 @@ class ChatBot:
         return "\n".join(f"Q: {row['prompt']}\nA: {row['response']}" for row in data)
 
 
-    async def answer(self, query: str) -> str:
+    async def answer(self, query: str, context: str = None) -> str:
         lang = await self.detect_language(query)
 
-        # --- Get context from both sources ---
-        summarized_text = await self.fetch_summarized_file()
-        supabase_prompts = await self.fetch_prompts_from_supabase(query)
+        # --- If no context is passed, gather from both sources ---
+        if not context:
+            summarized_text = await self.fetch_summarized_file()
+            supabase_prompts = await self.fetch_prompts_from_supabase(query)
 
-        # Merge sources
-        full_context = ""
-        if supabase_prompts:
-            full_context += f"Database Context:\n{supabase_prompts}\n\n"
-        if summarized_text:
-            full_context += f"Summary Context:\n{summarized_text}"
+            # Merge sources
+            full_context = ""
+            if supabase_prompts:
+                full_context += f"Database Context:\n{supabase_prompts}\n\n"
+            if summarized_text:
+                full_context += f"Summary Context:\n{summarized_text}"
+        else:
+            # Use the provided context (e.g., from endpoint)
+            full_context = context
 
         # --- No context at all → fallback ---
         if not full_context.strip():
