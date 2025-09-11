@@ -20,6 +20,9 @@ class ChatBot:
     def __init__(self, groq_key: str):
         self.fallback_handler = FallbackHandler()
         self.groq_key = groq_key  
+        self._cached_summary = None
+        self._last_fetched = 0
+        self.cache_ttl = 300  # e.g., 5 minutes (adjust as needed)
         self.groq_api = "https://api.groq.com/openai/v1/chat/completions"
         self.bucket = "summarized-text"
         self.file = "summarized_text.md"
