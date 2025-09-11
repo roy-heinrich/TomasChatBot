@@ -96,7 +96,7 @@ class ChatBot:
             )
 
         payload = {
-            "model": "moonshotai/kimi-k2-instruct-0905",
+            "model": "openai/gpt-oss-120b",
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Context:\n{context}\n\nUser: {query}"}
@@ -109,39 +109,22 @@ class ChatBot:
             "Content-Type": "application/json",
         }
 
-        import httpx
         async with httpx.AsyncClient(timeout=60) as client:
             try:
                 response = await client.post(self.groq_api, json=payload, headers=headers)
                 response.raise_for_status()
                 ai_response = response.json()["choices"][0]["message"]["content"].strip()
 
-                # Decide whether to greet or follow-up
-                if not self.session.get("greeted", False):
-                    self.session["greeted"] = True
-                    return f"{self.get_greeting(lang)}\n\n{ai_response}"
-                else:
-                    return f"{ai_response}\n\n{self.get_followup(lang)}"
-
-            except Exception as e:
-                logger.error(f"Groq failed: {e}")
-                return self.fallback_handler.generate_fallback_message(lang)
-
-        async with httpx.AsyncClient(timeout=60) as client:
-            try:
-                response = await client.post(self.groq_api, json=payload, headers=headers)
-                response.raise_for_status()
-                ai_response = response.json()["choices"][0]["message"]["content"].strip()
-
-                # Add random greeting + follow-up
+                # Always add greeting + follow-up
                 greeting = random.choice(self.greetings_tl if lang == "tl" else self.greetings_en)
                 followup = self.followup_tl if lang == "tl" else self.followup_en
 
-                return f"{greeting} {ai_response}{followup}"
+                return f"{greeting}\n\n{ai_response}\n\n{followup}"
 
             except Exception as e:
                 logger.error(f"Groq failed: {e}")
                 return self.fallback_handler.generate_fallback_message(lang)
+
             
     async def fetch_prompts_from_supabase(self, query: str) -> str:
         """Search chatbot_prompts table in Supabase for matching context using different methods."""
