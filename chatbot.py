@@ -142,31 +142,24 @@ class ChatBot:
             logger.info(f"⚠️ No strong fuzzy match found in summarized_text.md (best score: {score if best_match else 'N/A'}).")
             return ""
 
-    async def answer(self, query: str) -> str:
+    async def answer(self, query: str, context: str = None) -> str:
         lang = await self.detect_language(query)
 
         # --- Get context from both sources ---
         summarized_text = await self.fetch_summarized_file()
         supabase_prompts = await self.fetch_prompts_from_supabase(query)
 
-        # Logging
-        if supabase_prompts:
-            logger.info("✅ Found matching context in Supabase prompts.")
-        else:
-            logger.info("⚠️ No Supabase context found.")
-
-        snippet = ""
-        if summarized_text:
-            snippet = await self.extract_snippet(summarized_text, query)
-        else:
-            logger.info("⚠️ No summarized_text.md context available.")
-
-        # Merge sources
+        # Merge external context if provided
         full_context = ""
+        if context:
+            logger.info("ℹ️ External context provided, merging into sources.")
+            full_context += f"External Context:\n{context}\n\n"
         if supabase_prompts:
+            logger.info("✅ Found context in Supabase chatbot_prompts table.")
             full_context += f"Database Context:\n{supabase_prompts}\n\n"
-        if snippet:
-            full_context += f"Summary Context:\n{snippet}"
+        if summarized_text:
+            logger.info("✅ Found context in summarized_text.md file.")
+            full_context += f"Summary Context:\n{summarized_text}"
 
         # --- No context at all → fallback ---
         if not full_context.strip():
