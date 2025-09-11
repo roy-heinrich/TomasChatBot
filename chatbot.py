@@ -99,7 +99,7 @@ class ChatBot:
                 return self.fallback_handler.get_fallback_message(lang)
             
     async def fetch_prompts_from_supabase(self, query: str) -> str:
-        """Search chatbot_prompts table in Supabase for matching context."""
+        """Search chatbot_prompts table in Supabase for matching context using FTS."""
         url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
         headers = {
             "apikey": SUPABASE_KEY,
@@ -108,10 +108,10 @@ class ChatBot:
             "Accept": "application/json",
         }
 
+        # Use FTS (Full Text Search) instead of ilike
         params = {
             "select": "prompt,response",
-            # Simple case-insensitive search (adjust to your schema)
-            "prompt=ilike": f"%{query}%",
+            "prompt": f"fts(english).{query}",   # 🔥 Postgres FTS
         }
 
         async with httpx.AsyncClient() as client:
@@ -122,8 +122,9 @@ class ChatBot:
         if not data:
             return ""
 
-        # Concatenate multiple matches
+        # Concatenate multiple matches into one string
         return "\n".join(f"Q: {row['prompt']}\nA: {row['response']}" for row in data)
+
 
 
     async def extract_snippet(self, text: str, query: str, window: int = 200, threshold: int = 80) -> str:
