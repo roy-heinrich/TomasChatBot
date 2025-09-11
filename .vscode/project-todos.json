@@ -17,7 +17,7 @@
   {
     "id": "1755921023401",
     "text": "upgrade it further to only send the most relevant rows from Supabase instead of all rows—this drastically improves LLM responses and speed.",
-    "completed": false
+    "completed": true
   },
   {
     "id": "1755874252591",

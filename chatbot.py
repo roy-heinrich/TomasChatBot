@@ -23,19 +23,37 @@ class ChatBot:
         self.groq_api = "https://api.groq.com/openai/v1/chat/completions"
         self.bucket = "summarized-text"
         self.file = "summarized_text.md"
-        # Greeting options
-        self.greetings_en = ["Good day!", "Hello!", "Hi there!", "Greetings!"]
-        self.greetings_tl = ["Magandang araw po!", "Kumusta po!", "Mabuhay!", "Magandang umaga po!"]
+        self.greetings_en = [
+            "Hi, I’m TOMAS — the personal chatbot of Tomas SM. Bautista Elementary School. How can I help you today?",
+            "Hello! I’m TOMAS, here to assist you with anything about Tomas SM. Bautista Elementary School. What do you need help with?",
+            "Good day! I’m TOMAS, your school’s chatbot assistant. How may I help you?"
+        ]
+        self.greetings_tl = [
+            "Magandang araw po! Ako si TOMAS — ang chatbot ng Tomas SM. Bautista Elementary School. Paano ko po kayo matutulungan?",
+            "Kumusta po! Ako si TOMAS, handang tumulong sa inyong mga tanong tungkol sa Tomas SM. Bautista Elementary School. Ano pong maitutulong ko?",
+            "Mabuhay! Ako si TOMAS, ang chatbot ng inyong paaralan. Ano po ang kailangan ninyo?"
+        ]
 
-        # Follow-up prompts
-        self.followup_en = " What else can I do for you today?"
-        self.followup_tl = " Ano pa po ang maitutulong ko sa inyo ngayon?"
+        # Polite follow-ups
+        self.followup_en = "Is there anything else I can help you with?"
+        self.followup_tl = "May iba pa po ba akong maitutulong sa inyo?"
 
+    def get_greeting(self, lang="en") -> str:
+        return random.choice(self.greetings_tl if lang.startswith("tl") else self.greetings_en)
+
+    def get_followup(self, lang="en") -> str:
+        return self.followup_tl if lang.startswith("tl") else self.followup_en
         # Cache variables
         self._cached_summary = None
         self._last_fetched = 0
         self.cache_ttl = 300  # cache for 5 minutes (adjust as needed)
+    def get_greeting(self, lang="en") -> str:
+        if lang.startswith("tl"):
+            return random.choice(self.greetings_tl)
+        return random.choice(self.greetings_en)
 
+    def get_followup(self, lang="en") -> str:
+        return self.followup_tl if lang.startswith("tl") else self.followup_en
     async def detect_language(self, text: str) -> str:
         lang, _ = langid.classify(text)
         return lang if lang in ["en", "tl"] else "en"
@@ -64,13 +82,15 @@ class ChatBot:
         return text
 
     async def ask_groq(self, query: str, context: str, lang: str) -> str:
-        system_prompt = "You are the polite, respectful chatbot of Tomas SM. Bautista Elementary School called TOMAS. Keep answers short, clear, and helpful. Always sound natural and conversational."
+        system_prompt = (
+            "You are the polite, respectful chatbot of Tomas SM. Bautista Elementary School called TOMAS. "
+            "Keep answers short, clear, and helpful. Always sound natural and conversational."
+        )
         if lang == "tl":
-            system_prompt = "Ikaw ay isang magalang na chatbot ng Tomas SM. Bautista Elementary School na si TOMAS. Sagutin nang malinaw at maikli. Lagi kang magsimula sa isang maikling pagbati at panatilihing magalang ang tono."
-
-        MAX_CONTEXT_CHARS = 4000
-        if context and len(context) > MAX_CONTEXT_CHARS:
-            context = context[:MAX_CONTEXT_CHARS] + "\n...[truncated]"
+            system_prompt = (
+                "Ikaw ay isang magalang na chatbot ng Tomas SM. Bautista Elementary School na si TOMAS. "
+                "Sagutin nang malinaw at maikli. Panatilihing magalang at natural ang tono."
+            )
 
         payload = {
             "model": "openai/gpt-oss-120b",
@@ -85,6 +105,24 @@ class ChatBot:
             "Authorization": f"Bearer {self.groq_key}",
             "Content-Type": "application/json",
         }
+
+        import httpx
+        async with httpx.AsyncClient(timeout=60) as client:
+            try:
+                response = await client.post(self.groq_api, json=payload, headers=headers)
+                response.raise_for_status()
+                ai_response = response.json()["choices"][0]["message"]["content"].strip()
+
+                # Decide whether to greet or follow-up
+                if not self.session.get("greeted", False):
+                    self.session["greeted"] = True
+                    return f"{self.get_greeting(lang)}\n\n{ai_response}"
+                else:
+                    return f"{ai_response}\n\n{self.get_followup(lang)}"
+
+            except Exception as e:
+                logger.error(f"Groq failed: {e}")
+                return self.fallback_handler.generate_fallback_message(lang)
 
         async with httpx.AsyncClient(timeout=60) as client:
             try:
