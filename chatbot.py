@@ -72,7 +72,7 @@ class ChatBot:
         MAX_CONTEXT_CHARS = 4000
         if context and len(context) > MAX_CONTEXT_CHARS:
             context = context[:MAX_CONTEXT_CHARS] + "\n...[truncated]"
-            
+
         payload = {
             "model": "openai/gpt-oss-120b",
             "messages": [
@@ -116,7 +116,7 @@ class ChatBot:
         # ✅ Use parentheses, not quotes
         params = {
             "select": "keywords,response",
-            "keywords": f"fts(english).{query}",
+            "keywords": f"fts(english),{query}",
             "limit": 5   
         }
 
