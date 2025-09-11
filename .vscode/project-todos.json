@@ -2,12 +2,12 @@
   {
     "id": "1756972192960",
     "text": "also add fuzzy search",
-    "completed": false
+    "completed": true
   },
   {
     "id": "1756611541574",
     "text": "add summarized_text.md as one of the source for groq's answer",
-    "completed": false
+    "completed": true
   },
   {
     "id": "1755957412962",

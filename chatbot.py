@@ -113,7 +113,7 @@ class ChatBot:
                 greeting = random.choice(self.greetings_tl if lang == "tl" else self.greetings_en)
                 followup = self.followup_tl if lang == "tl" else self.followup_en
 
-                return f"{greeting}\n\n{ai_response}\n\n{followup}"
+                return f"{ai_response}\n\n{followup}"
 
             except Exception as e:
                 logger.error(f"Groq failed: {e}")
