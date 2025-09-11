@@ -127,3 +127,5 @@ async def summarize_and_store():
         print(f"[utils] Uploaded summarized_text.md to {SUMMARY_BUCKET} (overwrite via delete+upload)")
     except Exception as e:
         print(f"[utils] Failed to upload summary: {e}")
+
+

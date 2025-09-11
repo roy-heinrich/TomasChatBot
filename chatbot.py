@@ -111,7 +111,7 @@ class ChatBot:
 
         # ✅ Use parentheses, not quotes
         params = {
-            "select": "prompt,response",
+            "select": "keywords,response",
             "keywords": f"fts(english).{query}",  
         }
 
