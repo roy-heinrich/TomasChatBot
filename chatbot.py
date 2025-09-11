@@ -108,10 +108,9 @@ class ChatBot:
             "Accept": "application/json",
         }
 
-        # Use FTS (Full Text Search) instead of ilike
         params = {
             "select": "prompt,response",
-            "prompt": f"fts(english).{query}",   # 🔥 Postgres FTS
+            "prompt": f"fts.english.{query}",   # ✅ Correct PostgREST syntax
         }
 
         async with httpx.AsyncClient() as client:
@@ -122,8 +121,8 @@ class ChatBot:
         if not data:
             return ""
 
-        # Concatenate multiple matches into one string
         return "\n".join(f"Q: {row['prompt']}\nA: {row['response']}" for row in data)
+
 
 
 
