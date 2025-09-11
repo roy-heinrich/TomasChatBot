@@ -96,7 +96,7 @@ class ChatBot:
             )
 
         payload = {
-            "model": "openai/gpt-oss-120b",
+            "model": "moonshotai/kimi-k2-instruct-0905",
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Context:\n{context}\n\nUser: {query}"}
@@ -215,7 +215,6 @@ class ChatBot:
             return ""
         
         try:
-            # Join search terms with & for AND search or | for OR search
             search_query = " & ".join(search_terms)  # AND search
             
             url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
@@ -226,11 +225,10 @@ class ChatBot:
                 "Accept": "application/json",
             }
 
-            # Use proper FTS syntax
             params = {
                 "select": "keywords,response",
                 "keywords": f"fts.{search_query}",
-                "limit": 5
+                "limit": 2  # FIX 2: limit results
             }
 
             async with httpx.AsyncClient() as client:
@@ -239,10 +237,10 @@ class ChatBot:
                     data = resp.json()
                     if data:
                         logger.info(f"✅ FTS search successful, found {len(data)} results")
-                        return "\n".join(f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}" for row in data)
-                else:
-                    logger.warning(f"FTS search failed with status {resp.status_code}")
-                    
+                        return "\n".join(
+                            f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}"
+                            for row in data[:2]  # FIX 2
+                        )
         except Exception as e:
             logger.warning(f"FTS search failed: {e}")
         
@@ -262,12 +260,11 @@ class ChatBot:
                 "Accept": "application/json",
             }
 
-            # Try each search term
-            for term in search_terms[:3]:  # Limit to first 3 terms
+            for term in search_terms[:3]:
                 params = {
                     "select": "keywords,response",
                     "or": f"keywords.ilike.%{term}%,response.ilike.%{term}%",
-                    "limit": 5
+                    "limit": 2  # FIX 2: limit results
                 }
 
                 async with httpx.AsyncClient() as client:
@@ -276,8 +273,10 @@ class ChatBot:
                         data = resp.json()
                         if data:
                             logger.info(f"✅ ILIKE search successful for term '{term}', found {len(data)} results")
-                            return "\n".join(f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}" for row in data)
-                    
+                            return "\n".join(
+                                f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}"
+                                for row in data[:2]  # FIX 2
+                            )
         except Exception as e:
             logger.warning(f"ILIKE search failed: {e}")
         
@@ -296,7 +295,7 @@ class ChatBot:
 
             params = {
                 "select": "keywords,response",
-                "limit": 100  # Limit to avoid huge responses
+                "limit": 50  # FIX 2: smaller pull
             }
 
             async with httpx.AsyncClient() as client:
@@ -304,13 +303,12 @@ class ChatBot:
                 if resp.status_code == 200:
                     data = resp.json()
                     if data:
-                        # Use fuzzy matching to find best matches
                         keywords = [row.get('keywords', '') for row in data]
-                        matches = process.extract(query, keywords, limit=3, scorer=fuzz.partial_ratio)
+                        matches = process.extract(query, keywords, limit=2, scorer=fuzz.partial_ratio)  # FIX 2
                         
                         results = []
                         for match, score, idx in matches:
-                            if score >= 60:  # Minimum similarity threshold
+                            if score >= 60:
                                 row = data[idx]
                                 results.append(f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}")
                         
@@ -358,7 +356,6 @@ class ChatBot:
         summarized_text = await self.fetch_summarized_file()
         supabase_prompts = await self.fetch_prompts_from_supabase(query)
 
-        # Merge external context if provided
         full_context = ""
         if context:
             logger.info("ℹ️ External context provided, merging into sources.")
@@ -367,12 +364,20 @@ class ChatBot:
             logger.info("✅ Found context in Supabase chatbot_prompts table.")
             full_context += f"Database Context:\n{supabase_prompts}\n\n"
         if summarized_text:
-            logger.info("✅ Found context in summarized_text.md file.")
-            full_context += f"Summary Context:\n{summarized_text}"
+            snippet = await self.extract_snippet(summarized_text, query)  # FIX 1: only relevant snippet
+            if snippet:
+                logger.info("✅ Added snippet from summarized_text.md")
+                full_context += f"Summary Context:\n{snippet}"
 
         # --- No context at all → fallback ---
         if not full_context.strip():
             return self.fallback_handler.generate_fallback_message(lang)
 
-        logger.info("🤖 Sending query to Groq with merged context.")
+        # FIX 3: truncate before sending to Groq
+        max_len = 4000  # chars
+        if len(full_context) > max_len:
+            logger.warning("⚠️ Context too long, truncating before Groq call.")
+            full_context = full_context[:max_len] + "\n...(truncated)..."
+
+        logger.info("🤖 Sending query to Groq with trimmed context.")
         return await self.ask_groq(query, full_context, lang)
