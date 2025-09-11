@@ -133,6 +133,41 @@ class ChatBot:
         words = re.findall(r'\w+', query.lower())
         return [word for word in words if word not in stop_words and len(word) > 2]
 
+    async def debug_table_structure(self) -> dict:
+        """Debug method to check table structure and sample data."""
+        try:
+            url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
+            headers = {
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+
+            params = {
+                "select": "*",
+                "limit": 1
+            }
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, headers=headers, params=params)
+                logger.info(f"Debug - Table check status: {resp.status_code}")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data:
+                        logger.info(f"Debug - Sample record: {data[0]}")
+                        return {"success": True, "sample": data[0], "columns": list(data[0].keys())}
+                    else:
+                        logger.info("Debug - Table is empty")
+                        return {"success": True, "sample": None, "columns": []}
+                else:
+                    logger.error(f"Debug - Table check failed: {resp.text}")
+                    return {"success": False, "error": resp.text}
+                    
+        except Exception as e:
+            logger.error(f"Debug - Exception: {e}")
+            return {"success": False, "error": str(e)}
+
     async def _try_fts_search(self, search_terms: list) -> str:
         """Try Full Text Search - requires FTS to be properly configured in Supabase."""
         if not search_terms:
