@@ -87,7 +87,7 @@ class ChatBot:
     async def ask_groq(self, query: str, context: str, lang: str) -> str:
         system_prompt = (
             "You are the polite, respectful chatbot of Tomas SM. Bautista Elementary School called TOMAS. "
-            "Keep answers short, clear, and helpful. Always sound natural and conversational."
+            "Keep answers short, clear, and helpful. Do not greet the user. Always sound natural and conversational."
         )
         if lang == "tl":
             system_prompt = (
