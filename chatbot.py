@@ -63,7 +63,6 @@ class ChatBot:
         self._last_fetched = now
         return text
 
-
     async def ask_groq(self, query: str, context: str, lang: str) -> str:
         system_prompt = "You are the polite, respectful chatbot of Tomas SM. Bautista Elementary School called TOMAS. Keep answers short, clear, and helpful. Always sound natural and conversational."
         if lang == "tl":
@@ -104,32 +103,149 @@ class ChatBot:
                 return self.fallback_handler.get_fallback_message(lang)
             
     async def fetch_prompts_from_supabase(self, query: str) -> str:
-        """Search chatbot_prompts table in Supabase for matching context using FTS."""
-        url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
-        headers = {
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-
-        # ✅ Use parentheses, not quotes
-        params = {
-            "select": "keywords,response",
-            "keywords": f"fts(english).{query}",
-            "limit": 5   
-        }
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url, headers=headers, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-
-        if not data:
+        """Search chatbot_prompts table in Supabase for matching context using different methods."""
+        try:
+            # Clean and prepare search query
+            search_terms = self._extract_search_terms(query)
+            
+            # Method 1: Try text search using textsearch (if FTS is configured)
+            result = await self._try_fts_search(search_terms)
+            if result:
+                return result
+            
+            # Method 2: Try ILIKE pattern matching
+            result = await self._try_ilike_search(search_terms)
+            if result:
+                return result
+            
+            # Method 3: Try fuzzy matching with all records (fallback)
+            result = await self._try_fuzzy_search(query)
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in fetch_prompts_from_supabase: {e}")
             return ""
 
-        return "\n".join(f"Q: {row['prompt']}\nA: {row['response']}" for row in data)
+    def _extract_search_terms(self, query: str) -> list:
+        """Extract meaningful search terms from query."""
+        # Remove common stop words and clean the query
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'can', 'you', 'me', 'who', 'what', 'where', 'when', 'why', 'how', 'tell'}
+        words = re.findall(r'\w+', query.lower())
+        return [word for word in words if word not in stop_words and len(word) > 2]
 
+    async def _try_fts_search(self, search_terms: list) -> str:
+        """Try Full Text Search - requires FTS to be properly configured in Supabase."""
+        if not search_terms:
+            return ""
+        
+        try:
+            # Join search terms with & for AND search or | for OR search
+            search_query = " & ".join(search_terms)  # AND search
+            
+            url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
+            headers = {
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+
+            # Use proper FTS syntax
+            params = {
+                "select": "keywords,response",
+                "keywords": f"fts.{search_query}",
+                "limit": 5
+            }
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, headers=headers, params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data:
+                        logger.info(f"✅ FTS search successful, found {len(data)} results")
+                        return "\n".join(f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}" for row in data)
+                else:
+                    logger.warning(f"FTS search failed with status {resp.status_code}")
+                    
+        except Exception as e:
+            logger.warning(f"FTS search failed: {e}")
+        
+        return ""
+
+    async def _try_ilike_search(self, search_terms: list) -> str:
+        """Try ILIKE pattern matching search."""
+        if not search_terms:
+            return ""
+        
+        try:
+            url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
+            headers = {
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+
+            # Try each search term
+            for term in search_terms[:3]:  # Limit to first 3 terms
+                params = {
+                    "select": "keywords,response",
+                    "or": f"keywords.ilike.%{term}%,response.ilike.%{term}%",
+                    "limit": 5
+                }
+
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(url, headers=headers, params=params)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data:
+                            logger.info(f"✅ ILIKE search successful for term '{term}', found {len(data)} results")
+                            return "\n".join(f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}" for row in data)
+                    
+        except Exception as e:
+            logger.warning(f"ILIKE search failed: {e}")
+        
+        return ""
+
+    async def _try_fuzzy_search(self, query: str) -> str:
+        """Fallback: fetch all records and do fuzzy matching locally."""
+        try:
+            url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
+            headers = {
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+
+            params = {
+                "select": "keywords,response",
+                "limit": 100  # Limit to avoid huge responses
+            }
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, headers=headers, params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data:
+                        # Use fuzzy matching to find best matches
+                        keywords = [row.get('keywords', '') for row in data]
+                        matches = process.extract(query, keywords, limit=3, scorer=fuzz.partial_ratio)
+                        
+                        results = []
+                        for match, score, idx in matches:
+                            if score >= 60:  # Minimum similarity threshold
+                                row = data[idx]
+                                results.append(f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}")
+                        
+                        if results:
+                            logger.info(f"✅ Fuzzy search successful, found {len(results)} matches")
+                            return "\n".join(results)
+                        
+        except Exception as e:
+            logger.warning(f"Fuzzy search failed: {e}")
+        
+        return ""
 
     async def extract_snippet(self, text: str, query: str, window: int = 200, threshold: int = 80) -> str:
         """
