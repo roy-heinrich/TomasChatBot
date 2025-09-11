@@ -112,7 +112,7 @@ class ChatBot:
         # ✅ Use parentheses, not quotes
         params = {
             "select": "prompt,response",
-            "prompt": f"fts(english).{query}",  
+            "keywords": f"fts(english).{query}",  
         }
 
         async with httpx.AsyncClient() as client:
