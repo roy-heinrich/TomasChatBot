@@ -9,6 +9,7 @@ from utils import fetch_summarized_text
 from fallback import FallbackHandler
 import time
 from rapidfuzz import fuzz, process
+import urllib.parse
 
 logger = logging.getLogger("chatbot")
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -98,6 +99,8 @@ class ChatBot:
                 logger.error(f"Groq failed: {e}")
                 return self.fallback_handler.get_fallback_message(lang)
             
+
+
     async def fetch_prompts_from_supabase(self, query: str) -> str:
         """Search chatbot_prompts table in Supabase for matching context using FTS."""
         url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
@@ -108,9 +111,12 @@ class ChatBot:
             "Accept": "application/json",
         }
 
+        # ✅ Wrap query in quotes so PostgREST accepts it
+        query_quoted = f'"{query}"'
+
         params = {
             "select": "prompt,response",
-            "prompt": f"fts.english.{query}",   # ✅ Correct PostgREST syntax
+            "prompt": f"fts.english.{query_quoted}",  # correct syntax
         }
 
         async with httpx.AsyncClient() as client:
@@ -122,9 +128,6 @@ class ChatBot:
             return ""
 
         return "\n".join(f"Q: {row['prompt']}\nA: {row['response']}" for row in data)
-
-
-
 
     async def extract_snippet(self, text: str, query: str, window: int = 200, threshold: int = 80) -> str:
         """
