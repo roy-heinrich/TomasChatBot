@@ -1,4 +1,3 @@
-# app.py
 import os, httpx
 import logging
 from fastapi import FastAPI
@@ -9,7 +8,7 @@ from dotenv import load_dotenv
 from chatbot import ChatBot
 from pydantic import BaseModel
 from utils import summarize_and_store
-from fastapi.responses import JSONResponse
+
 load_dotenv()
 logger = logging.getLogger("chatbot")
 logging.basicConfig(level=logging.INFO)
@@ -31,9 +30,11 @@ chatbot = ChatBot(groq_key=GROQ_API_KEY)
 # FastAPI app
 # -----------------------
 app = FastAPI()
+
+# ✅ Proper CORS config
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # for testing; restrict later to your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -79,13 +80,12 @@ async def chat_endpoint(data: ChatRequest):
     return {"response": answer}
 
 # -----------------------
-# Admin reload endpoint (FastAPI style)
-# -----------------------
 # Admin reload endpoint
+# -----------------------
 @app.post("/admin/reload")
 async def reload_sources():
     try:
-        result = await summarize_and_store()  # ✅ await here
+        result = await summarize_and_store()
         return JSONResponse(
             content={
                 "success": True,
