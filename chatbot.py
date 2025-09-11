@@ -100,7 +100,7 @@ class ChatBot:
 
             except Exception as e:
                 logger.error(f"Groq failed: {e}")
-                return self.fallback_handler.get_fallback_message(lang)
+                return self.fallback_handler.generate_fallback_message(lang)
             
     async def fetch_prompts_from_supabase(self, query: str) -> str:
         """Search chatbot_prompts table in Supabase for matching context using different methods."""
@@ -322,7 +322,7 @@ class ChatBot:
 
         # --- No context at all → fallback ---
         if not full_context.strip():
-            return self.fallback_handler.get_fallback_message(lang)
+            return self.fallback_handler.generate_fallback_message(lang)
 
         logger.info("🤖 Sending query to Groq with merged context.")
         return await self.ask_groq(query, full_context, lang)
