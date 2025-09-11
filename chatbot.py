@@ -8,6 +8,7 @@ from supabase import create_client, Client
 from utils import fetch_summarized_text
 from fallback import FallbackHandler
 import time
+from rapidfuzz import fuzz, process
 
 logger = logging.getLogger("chatbot")
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -122,25 +123,28 @@ class ChatBot:
         return "\n".join(f"Q: {row['prompt']}\nA: {row['response']}" for row in data)
 
 
-    async def extract_snippet(self, text: str, query: str, window: int = 200) -> str:
+    async def extract_snippet(self, text: str, query: str, window: int = 200, threshold: int = 80) -> str:
         """
-        Extract a snippet of the summarized_text.md around the query term.
-        Default window = 200 chars before & after the match.
+        Extracts a relevant snippet from the summarized_text.md using fuzzy matching.
+        Only returns a snippet if the match confidence >= threshold (default 80%).
         """
-        query_lower = query.lower()
-        text_lower = text.lower()
+        lines = text.splitlines()
+        best_match, score, idx = process.extractOne(query, lines, scorer=fuzz.partial_ratio)
 
-        match = re.search(re.escape(query_lower), text_lower)
-        if match:
-            start = max(0, match.start() - window)
-            end = min(len(text), match.end() + window)
-            snippet = text[start:end]
-            return snippet.strip()
-        return ""
+        if best_match and score >= threshold:
+            logger.info(f"🎯 Fuzzy match found in summary (score: {score}) → '{best_match[:50]}...'")
+            
+            # Find where in the text the match occurred
+            start = max(0, text.find(best_match) - window)
+            end = min(len(text), start + len(best_match) + (2 * window))
+            return text[start:end].strip()
+        else:
+            logger.info(f"⚠️ No strong fuzzy match found in summarized_text.md (best score: {score if best_match else 'N/A'}).")
+            return ""
 
     async def answer(self, query: str) -> str:
         lang = await self.detect_language(query)
- 
+
         # --- Get context from both sources ---
         summarized_text = await self.fetch_summarized_file()
         supabase_prompts = await self.fetch_prompts_from_supabase(query)
@@ -154,10 +158,6 @@ class ChatBot:
         snippet = ""
         if summarized_text:
             snippet = await self.extract_snippet(summarized_text, query)
-            if snippet:
-                logger.info(f"🎯 Snippet extracted from summary for query: {query}")
-            else:
-                logger.info("⚠️ No relevant snippet found in summarized_text.md.")
         else:
             logger.info("⚠️ No summarized_text.md context available.")
 

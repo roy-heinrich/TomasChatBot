@@ -18,3 +18,4 @@ docx
 python-docx
 PyPDF2
 storage3
+rapidfuzz
