@@ -42,23 +42,23 @@ class ChatBot:
     async def fetch_summarized_file(self) -> str:
         now = time.time()
 
-        # If cached & still valid → return cached version
+        # Use cache if still valid
         if self._cached_summary and now - self._last_fetched < self.cache_ttl:
             return self._cached_summary
 
-        # Otherwise fetch from Supabase
-        url = f"{SUPABASE_URL}/storage/v1/object/{self.bucket}/{self.file}"
+        # Correct URL for private bucket
+        url = f"{SUPABASE_URL}/storage/v1/object/sign/{self.bucket}/{self.file}"
         headers = {"Authorization": f"Bearer {SUPABASE_KEY}"}
+
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=headers)
             response.raise_for_status()
             text = response.text
 
-        # Save in cache
+        # Cache the file
         self._cached_summary = text
         self._last_fetched = now
         return text
-
 
     async def ask_groq(self, query: str, context: str, lang: str) -> str:
         system_prompt = "You are the polite, respectful chatbot of Tomas SM. Bautista Elementary School called TOMAS. Keep answers short, clear, and helpful. Always sound natural and conversational."
