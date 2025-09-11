@@ -304,6 +304,15 @@ class ChatBot:
     async def answer(self, query: str, context: str = None) -> str:
         lang = await self.detect_language(query)
 
+        # --- Detect if user explicitly wants human support ---
+        human_keywords = ["talk to a person", "talk to human", "live agent", 
+                        "real person", "makipag usap sa tao", "tao", "gusto ko ng tao"]
+
+        lowered = query.lower()
+        if any(k in lowered for k in human_keywords):
+            logger.info("👤 User requested live person → triggering fallback handler.")
+            return self.fallback_handler.generate_fallback_message(lang)
+
         # --- Get context from both sources ---
         summarized_text = await self.fetch_summarized_file()
         supabase_prompts = await self.fetch_prompts_from_supabase(query)
