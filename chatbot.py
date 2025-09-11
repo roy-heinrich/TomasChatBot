@@ -40,12 +40,6 @@ class ChatBot:
         # Polite follow-ups
         self.followup_en = "Is there anything else I can help you with?"
         self.followup_tl = "May iba pa po ba akong maitutulong sa inyo?"
-
-    def get_greeting(self, lang="en") -> str:
-        return random.choice(self.greetings_tl if lang.startswith("tl") else self.greetings_en)
-
-    def get_followup(self, lang="en") -> str:
-        return self.followup_tl if lang.startswith("tl") else self.followup_en
         # Cache variables
         self._cached_summary = None
         self._last_fetched = 0
@@ -92,11 +86,11 @@ class ChatBot:
         if lang == "tl":
             system_prompt = (
                 "Ikaw ay isang magalang na chatbot ng Tomas SM. Bautista Elementary School na si TOMAS. "
-                "Sagutin nang malinaw at maikli. Panatilihing magalang at natural ang tono."
+                "Sagutin nang malinaw at maikli. Wag na batiin ang user. Panatilihing magalang at natural ang tono."
             )
 
         payload = {
-            "model": "openai/gpt-oss-120b",
+            "model": "moonshotai/kimi-k2-instruct-0905",
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Context:\n{context}\n\nUser: {query}"}
