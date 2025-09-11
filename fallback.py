@@ -38,12 +38,12 @@ class FallbackHandler:
             return (
                 "Paumanhin po kung hindi ko masagot ang inyong katanungan. "
                 "Maaari po kayong lumapit sa admin office para sa karagdagang tulong. "
-                f"Kung nais niyo pong makipag-ugnayan sa isang tao, {messenger_button}"
+                f"Kung nais niyo pong makipag-ugnayan sa isang tao, maari niyo po silang makontak gamit ang {messenger_button}"
             )
         else:  # Default English
             return (
                 "I'm sorry I couldn't answer your questions. "
                 "You may visit the admin office for further assistance. "
-                f"If you’d like to talk to a person, {messenger_button}"
+                f"If you’d like to talk to a person, you can contact them at {messenger_button}"
             )
 
