@@ -25,15 +25,25 @@ class FallbackHandler:
         """
         Generates a polite fallback message based on language.
         """
+        messenger_button = (
+            f'<a href="{FB_MESSENGER_LINK}" target="_blank" '
+            'style="background-color:#0084FF; color:white; padding:10px 18px; '
+            'border-radius:20px; font-weight:bold; text-decoration:none; '
+            'font-family:sans-serif; display:inline-block;">'
+            '💬 Contact Us'
+            '</a>'
+        )
+
         if language.startswith("tl"):  # Tagalog
             return (
-                "Paumanhin po, wala akong sapat na impormasyon tungkol dito. "
+                "Paumanhin po kung hindi ko masagot ang inyong katanungan. "
                 "Maaari po kayong lumapit sa admin office para sa karagdagang tulong. "
-                f"Kung nais niyo pong makipag-ugnayan sa isang tao, maaari kayong magpadala ng mensahe dito: {FB_MESSENGER_LINK}"
+                f"Kung nais niyo pong makipag-ugnayan sa isang tao, {messenger_button}"
             )
         else:  # Default English
             return (
-                "Sorry, I don’t have enough information about that. "
+                "I'm sorry I couldn't answer your questions. "
                 "You may visit the admin office for further assistance. "
-                f"If you’d like to talk to a person, you can send a message here: {FB_MESSENGER_LINK}"
+                f"If you’d like to talk to a person, {messenger_button}"
             )
+
