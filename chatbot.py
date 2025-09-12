@@ -34,7 +34,8 @@ class ChatBot:
         self.groq_api = "https://api.groq.com/openai/v1/chat/completions"
         self.bucket = "summarized-text"
         self.file = "summarized_text.md"
- # English sets
+        self.messages = []
+        # English sets
         self.greetings_en = [
             "Hello! How can I help you today?",
             "Hi there! What can I do for you?"
@@ -58,7 +59,24 @@ class ChatBot:
         self._cached_summary = None
         self._last_fetched = 0
         self.cache_ttl = 300  # cache for 5 minutes (adjust as needed)
-    
+
+    def reset_conversation(self, lang="en"):
+        """Reset chat history with a proper system prompt + greeting."""
+        self.messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are TOMAS, a polite and helpful assistant for "
+                    "Tomas SM. Bautista Elementary School. Always answer "
+                    "clearly in the user's language (English, Tagalog, or Aklanon)."
+                ),
+            },
+            {
+                "role": "assistant",
+                "content": self.get_greeting(lang),  # 👈 use your greeting helper
+            },
+        ]
+
     def get_greeting(self, lang="en") -> str:
         if lang.startswith("tl"):
             return random.choice(self.greetings_tl)
@@ -90,7 +108,6 @@ class ChatBot:
             except Exception as e2:
                 logger.error(f"OpenAI translation failed: {e2}")
                 return text
-
     
     def get_message(self, key: str, lang: str) -> str:
         """Safe getter for greeting/follow-up/goodbye messages with fallback."""
@@ -145,7 +162,7 @@ class ChatBot:
         system_prompts = {
             "en": "You are TOMAS, the helpful school assistant. Respond politely and clearly in English.",
             "tl": "Ikaw si TOMAS, ang mabait na assistant ng paaralan. Sumagot nang malinaw at magalang sa Tagalog.",
-            "akl": "Ikaw si TOMAS, bulig nga assistant sang eskwelahan. Sabat sa Aklanon kon mahimo."
+            "akl": "Ikaw si TOMAS, bulig nga assistant it eskwelahan. Sabat sa Aklanon kon mahimo."
         }
         if lang not in system_prompts:
             logger.warning(f"⚠️ Unsupported language {lang}, defaulting to English")
@@ -172,7 +189,7 @@ class ChatBot:
                 ai_response = response.json()["choices"][0]["message"]["content"].strip()
 
                 # Add follow-up in correct language
-                followup = self.get_message("follow_up", lang)
+                followup = self.get_followup(lang)
                 return f"{ai_response}\n\n{followup}"
 
             except Exception as e:
