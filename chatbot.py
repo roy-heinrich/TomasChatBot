@@ -34,35 +34,43 @@ class ChatBot:
         self.groq_api = "https://api.groq.com/openai/v1/chat/completions"
         self.bucket = "summarized-text"
         self.file = "summarized_text.md"
-        self.messages = {
-            "en": {
-                "greeting": "Hello! How can I help you today?",
-                "follow_up": "Is there anything else you’d like to know?",
-                "goodbye": "Goodbye! Have a great day!"
-            },
-            "tl": {
-                "greeting": "Magandang araw po! Paano po ako makakatulong?",
-                "follow_up": "May iba pa po ba kayong gustong itanong?",
-                "goodbye": "Paalam po! Ingat lagi."
-            },
-            "akl": {  # Quick dictionary style translations
-                "greeting": "Maáyo nga adlaw! Unó ro akon ma bulig sa imo?",
-                "follow_up": "May iba pa bala nga kinahanglanon ro imo?",
-                "goodbye": "Paalam eon! Mag-amping ka."
-            }
-        }
-        # Cache variables
+ # English sets
+        self.greetings_en = [
+            "Hello! How can I help you today?",
+            "Hi there! What can I do for you?"
+        ]
+        self.followup_en = "Do you have any other questions?"
+
+        # Tagalog sets
+        self.greetings_tl = [
+            "Magandang araw! Paano po ako makakatulong?",
+            "Kamusta! Ano po ang maitutulong ko sa inyo?"
+        ]
+        self.followup_tl = "May iba pa po ba kayong katanungan?"
+
+        # Aklanon sets (basic, extend as needed)
+        self.greetings_akl = [
+            "Hay! Unhon ko ikaw matabangan?",
+            "Kumusta! Ano ro mahimu ko para kimo?"
+        ]
+        self.followup_akl = "May iba ka pa nga pangutana?"
+
         self._cached_summary = None
         self._last_fetched = 0
         self.cache_ttl = 300  # cache for 5 minutes (adjust as needed)
     
-    def get_greeting(self, lang: str = "en") -> str:
-        """Return a random greeting in the given language (fallback → English)."""
-        if lang not in self.messages:
-            lang = "en"
-        greetings = self.messages[lang].get("greeting", self.messages["en"]["greeting"])
-        return random.choice(greetings)
-        
+    def get_greeting(self, lang="en") -> str:
+        if lang.startswith("tl"):
+            return random.choice(self.greetings_tl)
+        elif lang == "akl":
+            return random.choice(self.greetings_akl)
+        return random.choice(self.greetings_en)
+    def get_followup(self, lang="en") -> str:
+        if lang.startswith("tl"):
+            return self.followup_tl
+        elif lang == "akl":
+            return self.followup_akl
+        return self.followup_en
     async def translate(self, text: str, source: str = "auto", target: str = "en") -> str:
         """Try deep_translator, fallback to OpenAI if needed."""
         try:
@@ -83,11 +91,6 @@ class ChatBot:
                 logger.error(f"OpenAI translation failed: {e2}")
                 return text
 
-    def get_followup(self, lang: str = "en") -> str:
-        """Return a follow-up message in the given language (fallback → English)."""
-        if lang not in self.messages:
-            lang = "en"
-        return self.messages[lang].get("follow_up", self.messages["en"]["follow_up"])
     
     def get_message(self, key: str, lang: str) -> str:
         """Safe getter for greeting/follow-up/goodbye messages with fallback."""
@@ -105,9 +108,11 @@ class ChatBot:
                 return lang
             if lang.startswith("tl") or lang.startswith("fil"):
                 return "tl"
-            if lang.startswith("ak"):  # "akl" or other variants
+            aklanon_aliases = {"nn", "ilo", "war", "ceb"}  # langid guesses for Aklanon
+            if lang in aklanon_aliases:
+                logger.info(f"🌐 Language override: {lang} → akl (Aklanon)")
                 return "akl"
-            return "en"
+            return lang
         except Exception as e:
             logger.error(f"❌ Language detection failed: {e}")
             return "en"
