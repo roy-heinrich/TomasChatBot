@@ -114,22 +114,22 @@ class ChatBot:
         return value  # fixed follow-up
 
     async def detect_language(self, text: str) -> str:
-        """Async wrapper for langid.classify"""
+        """Detect language with langid, with Aklanon override heuristics."""
         try:
-            lang, _ = await asyncio.to_thread(langid.classify, text)
-            if lang in ["tl", "fil"]:
-                return "tl"
-            elif lang in ["akl", "ak"]:
+            lang, prob = langid.classify(text)
+            # --- Force Aklanon if text contains Aklanon markers ---
+            akl_markers = ["it", "du", "nga", "ro", "eon", "baga", "man"]
+            if any(m in text.lower() for m in akl_markers):
+                logger.info("🔎 Heuristic override → detected as akl")
                 return "akl"
-            elif lang == "en":
+            if lang.startswith("tl"):
+                return "tl"
+            if lang.startswith("en"):
                 return "en"
-            else:
-                logger.warning(f"🌐 Unrecognized langid code → {lang}, defaulting to en")
-                return "en"
+            return lang
         except Exception as e:
             logger.warning(f"Language detection failed: {e}")
-            return "en"
-
+            return "en"  # safe fallback
     async def fetch_summarized_file(self) -> str:
         now = time.time()
 
@@ -156,10 +156,10 @@ class ChatBot:
     async def ask_groq(self, query: str, context: str, lang: str) -> str:
         """Send query + context to Groq API with safe system prompt."""
         system_prompts = {
-            "en": "You are TOMAS, the helpful school assistant. Respond politely and clearly in English.",
-            "tl": "Ikaw si TOMAS, ang mabait na assistant ng paaralan. Sumagot nang malinaw at magalang sa Tagalog.",
-            "akl": "Ikaw si TOMAS, bulig nga assistant sang eskwelahan. Sabat sa Aklanon kon mahimo."
-        }
+                "en": "You are TOMAS, the helpful school assistant. Always respond in English.",
+                "tl": "Ikaw si TOMAS, ang mabait na assistant ng paaralan. Laging sumagot sa Tagalog.",
+                "akl": "Ikaw si TOMAS, bulig nga assistant sang eskwelahan. IMPORTANTE: Ang sabat mo dapat naka-Aklanon lang, indi English."
+            }
         if lang not in system_prompts:
             logger.warning(f"⚠️ Unsupported language {lang}, defaulting to English")
             lang = "en"
