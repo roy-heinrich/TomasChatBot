@@ -12,6 +12,7 @@ from rapidfuzz import fuzz, process
 import json
 from deep_translator import GoogleTranslator
 import openai
+import asyncio
 import urllib.parse
 
 logger = logging.getLogger("chatbot")
@@ -112,20 +113,19 @@ class ChatBot:
             return random.choice(value)  # random greeting
         return value  # fixed follow-up
 
-    def detect_language(self, text: str) -> str:
+    async def detect_language(self, text: str) -> str:
+        """Async wrapper for langid.classify"""
         try:
-            lang, prob = self.lang_model.predict(text)
-            lang = lang[0].replace("__label__", "")
-            prob = prob[0]
-
-            # ✅ Override with Aklanon heuristic
-            akl_markers = ["du", "it", "nga", "anay", "hay", "gid", "eon", "baga"]
-            if any(word in text.lower() for word in akl_markers):
+            lang, _ = await asyncio.to_thread(langid.classify, text)
+            if lang in ["tl", "fil"]:
+                return "tl"
+            elif lang in ["akl", "ak"]:
                 return "akl"
-
-            if lang not in ["en", "tl", "akl"] or prob < 0.5:
+            elif lang == "en":
                 return "en"
-            return lang
+            else:
+                logger.warning(f"🌐 Unrecognized langid code → {lang}, defaulting to en")
+                return "en"
         except Exception as e:
             logger.warning(f"Language detection failed: {e}")
             return "en"
@@ -184,13 +184,13 @@ class ChatBot:
                 response.raise_for_status()
                 ai_response = response.json()["choices"][0]["message"]["content"].strip()
 
-                # Add follow-up in correct language
-                followup = self.get_followup(lang)
-                return f"{ai_response}\n\n{followup}"
+                # ✅ Return only the AI answer; let answer() append greeting + follow-up
+                return ai_response
 
             except Exception as e:
                 logger.error(f"Groq failed: {e}")
                 return self.fallback_handler.generate_fallback_message(lang)
+
             
     async def fetch_prompts_from_supabase(self, query: str) -> str:
         """Search chatbot_prompts table in Supabase for matching context using different methods."""
@@ -432,6 +432,12 @@ class ChatBot:
         logger.info("🤖 Sending query to Groq with trimmed context.")
         ai_reply = await self.ask_groq(query, full_context, lang)
 
-        # Prepend greeting
-        greeting = self.get_greeting(lang)
-        return f"{greeting}\n\n{ai_reply}"
+        # --- Conversation start → prepend greeting once ---
+        if not hasattr(self, "conversation_started") or not self.conversation_started:
+            self.conversation_started = True
+            greeting = self.get_greeting(lang)
+            return f"{greeting}\n\n{ai_reply}\n\n{self.get_followup(lang)}"
+
+        # --- Normal flow → always append follow-up ---
+        return f"{ai_reply}\n\n{self.get_followup(lang)}"
+
