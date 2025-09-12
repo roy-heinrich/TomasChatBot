@@ -81,6 +81,14 @@ class ChatBot:
 
     def get_followup(self, lang: str = "en") -> str:
         return self.messages["follow_up"].get(lang, self.messages["follow_up"]["en"])
+
+    def get_goodbye(self, lang: str) -> str:
+        messages = {
+            "en": "Thank you for chatting! Goodbye 👋",
+            "tl": "Maraming salamat sa pakikipag-usap! Paalam 👋",
+            "akl": "Salamat gid sa pagpakig-angut! Paalam 👋"
+        }
+        return messages.get(lang, messages["en"])
     
     async def translate(self, text: str, source: str = "auto", target: str = "en") -> str:
         """Try deep_translator, fallback to OpenAI if needed."""
@@ -397,15 +405,24 @@ class ChatBot:
             "talk to a person", "talk to human", "live agent", "real person",
             "makipag usap sa tao", "tao", "gusto ko ng tao"
         ]
-        lowered = query.lower()
+        lowered = query.lower().strip()
         if any(k in lowered for k in human_keywords):
             logger.info("👤 User requested live person → triggering fallback handler.")
             return self.fallback_handler.generate_fallback_message(lang)
 
+        # --- Detect goodbye / end of conversation ---
+        goodbye_keywords = [
+            "wala na", "none", "no more", "wa eun", "tapos na",
+            "that’s all", "finished", "done", "nope"
+        ]
+        if any(k in lowered for k in goodbye_keywords):
+            logger.info("👋 User ended the conversation.")
+            return self.get_goodbye(lang)
+
         # --- Detect if input is just a greeting ---
         greetings = ["hi", "hello", "hey", "kamusta", "kumusta",
                     "yo", "good morning", "good afternoon", "good evening"]
-        if query.strip().lower() in greetings:
+        if lowered in greetings:
             logger.info("👋 User sent a greeting only.")
             return self.get_greeting(lang)
 
@@ -441,5 +458,4 @@ class ChatBot:
 
         # --- Always append follow-up consistently ---
         return f"{ai_reply.strip()}\n\n{self.get_followup(lang)}"
-
 
