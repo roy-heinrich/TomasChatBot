@@ -402,6 +402,13 @@ class ChatBot:
             logger.info("👤 User requested live person → triggering fallback handler.")
             return self.fallback_handler.generate_fallback_message(lang)
 
+        # --- Detect if input is just a greeting ---
+        greetings = ["hi", "hello", "hey", "kamusta", "kumusta",
+                    "yo", "good morning", "good afternoon", "good evening"]
+        if query.strip().lower() in greetings:
+            logger.info("👋 User sent a greeting only.")
+            return self.get_greeting(lang)
+
         # --- Get context from both sources ---
         summarized_text = await self.fetch_summarized_file()
         supabase_prompts = await self.fetch_prompts_from_supabase(query)
@@ -414,7 +421,7 @@ class ChatBot:
             logger.info("✅ Found context in Supabase chatbot_prompts table.")
             full_context += f"Database Context:\n{supabase_prompts}\n\n"
         if summarized_text:
-            snippet = await self.extract_snippet(summarized_text, query)  # only relevant snippet
+            snippet = await self.extract_snippet(summarized_text, query)
             if snippet:
                 logger.info("✅ Added snippet from summarized_text.md")
                 full_context += f"Summary Context:\n{snippet}"
@@ -432,12 +439,7 @@ class ChatBot:
         logger.info("🤖 Sending query to Groq with trimmed context.")
         ai_reply = await self.ask_groq(query, full_context, lang)
 
-        # --- Conversation start → prepend greeting once ---
-        if not hasattr(self, "conversation_started") or not self.conversation_started:
-            self.conversation_started = True
-            greeting = self.get_greeting(lang)
-            return f"{greeting}\n\n{ai_reply}\n\n{self.get_followup(lang)}"
+        # --- Always append follow-up consistently ---
+        return f"{ai_reply.strip()}\n\n{self.get_followup(lang)}"
 
-        # --- Normal flow → always append follow-up ---
-        return f"{ai_reply}\n\n{self.get_followup(lang)}"
 
