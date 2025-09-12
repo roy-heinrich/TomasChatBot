@@ -166,7 +166,7 @@ class ChatBot:
         system_prompt = system_prompts[lang]
 
         payload = {
-            "model": "moonshotai/kimi-k2-instruct-0905",
+            "model": "meta-llama/llama-prompt-guard-2-22m",
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Context:\n{context}\n\nUser: {query}"}
