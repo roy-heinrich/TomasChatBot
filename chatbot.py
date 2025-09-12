@@ -417,12 +417,21 @@ class ChatBot:
         ]
         if any(k in lowered for k in goodbye_keywords):
             logger.info("👋 User ended the conversation.")
+
+            # Language overrides for more natural goodbye
+            if "wala na" in lowered or "wa eun" in lowered or "waay na" in lowered:
+                lang = "akl"
+            elif "tapos na" in lowered:
+                lang = "tl"
+            elif any(k in lowered for k in ["done", "finished", "none", "no more", "that’s all", "nope"]):
+                lang = "en"
+
             return self.get_goodbye(lang)
 
         # --- Detect if input is just a greeting ---
         greetings = ["hi", "hello", "hey", "kamusta", "kumusta",
-                    "yo", "good morning", "good afternoon", "good evening"]
-        if lowered in greetings:
+                     "yo", "good morning", "good afternoon", "good evening"]
+        if any(lowered.startswith(g) for g in greetings):
             logger.info("👋 User sent a greeting only.")
             return self.get_greeting(lang)
 
