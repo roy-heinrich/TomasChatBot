@@ -166,7 +166,7 @@ class ChatBot:
         system_prompt = system_prompts[lang]
 
         payload = {
-            "model": "meta-llama/llama-prompt-guard-2-22m",
+            "model": "llama-3.3-70b-versatile",
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Context:\n{context}\n\nUser: {query}"}
