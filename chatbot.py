@@ -30,36 +30,33 @@ class ChatBot:
         self.groq_key = groq_key  
         self._cached_summary = None
         self._last_fetched = 0
-        self.cache_ttl = 300  # e.g., 5 minutes (adjust as needed)
+        self.cache_ttl = 300  # e.g., 5 minutes
         self.groq_api = "https://api.groq.com/openai/v1/chat/completions"
         self.bucket = "summarized-text"
         self.file = "summarized_text.md"
-        self.messages = []
-        # English sets
-        self.greetings_en = [
-            "Hello! How can I help you today?",
-            "Hi there! What can I do for you?"
-        ]
-        self.followup_en = "Do you have any other questions?"
 
-        # Tagalog sets
-        self.greetings_tl = [
-            "Magandang araw! Paano po ako makakatulong?",
-            "Kamusta! Ano po ang maitutulong ko sa inyo?"
-        ]
-        self.followup_tl = "May iba pa po ba kayong katanungan?"
-
-        # Aklanon sets (basic, extend as needed)
-        self.greetings_akl = [
-            "Hay! Unhon ko ikaw matabangan?",
-            "Kumusta! Ano ro mahimu ko para kimo?"
-        ]
-        self.followup_akl = "May iba ka pa nga pangutana?"
-
-        self._cached_summary = None
-        self._last_fetched = 0
-        self.cache_ttl = 300  # cache for 5 minutes (adjust as needed)
-
+        # ✅ Centralized greetings + followups
+        self.messages = {
+            "greeting": {
+                "en": [
+                    "Hello! How can I help you today?",
+                    "Hi there! What can I do for you?"
+                ],
+                "tl": [
+                    "Magandang araw! Paano po ako makakatulong?",
+                    "Kamusta! Ano po ang maitutulong ko sa inyo?"
+                ],
+                "akl": [
+                    "Hay! Unhon ko ikaw matabangan?",
+                    "Kumusta! Ano ro mahimu ko para kimo?"
+                ]
+            },
+            "follow_up": {
+                "en": "Do you have any other questions?",
+                "tl": "May iba pa po ba kayong katanungan?",
+                "akl": "May ara pa baga ikaw it iba nga pamangkot?"
+            }
+    }
     def reset_conversation(self, lang="en"):
         """Reset chat history with a proper system prompt + greeting."""
         self.messages = [
@@ -77,18 +74,13 @@ class ChatBot:
             },
         ]
 
-    def get_greeting(self, lang="en") -> str:
-        if lang.startswith("tl"):
-            return random.choice(self.greetings_tl)
-        elif lang == "akl":
-            return random.choice(self.greetings_akl)
-        return random.choice(self.greetings_en)
-    def get_followup(self, lang="en") -> str:
-        if lang.startswith("tl"):
-            return self.followup_tl
-        elif lang == "akl":
-            return self.followup_akl
-        return self.followup_en
+    def get_greeting(self, lang: str = "en") -> str:
+        greetings = self.messages["greeting"].get(lang, self.messages["greeting"]["en"])
+        return random.choice(greetings)
+
+    def get_followup(self, lang: str = "en") -> str:
+        return self.messages["follow_up"].get(lang, self.messages["follow_up"]["en"])
+    
     async def translate(self, text: str, source: str = "auto", target: str = "en") -> str:
         """Try deep_translator, fallback to OpenAI if needed."""
         try:
@@ -110,28 +102,32 @@ class ChatBot:
                 return text
     
     def get_message(self, key: str, lang: str) -> str:
-        """Safe getter for greeting/follow-up/goodbye messages with fallback."""
-        if lang not in self.messages:
-            logger.warning(f"⚠️ Unsupported language '{lang}', defaulting to English")
-            lang = "en"
-        return self.messages[lang].get(key, self.messages["en"][key])
+        """Return a localized message for the given key and lang."""
+        if key not in self.messages:
+            return ""
+        if lang not in self.messages[key]:
+            lang = "en"  # fallback
+        value = self.messages[key][lang]
+        if isinstance(value, list):
+            return random.choice(value)  # random greeting
+        return value  # fixed follow-up
 
-    async def detect_language(self, text: str) -> str:
-        """Detects language and maps to supported set."""
+    def detect_language(self, text: str) -> str:
         try:
-            lang, _ = langid.classify(text)
-            logger.info(f"🌐 Detected language → {lang}")
-            if lang in self.messages:
-                return lang
-            if lang.startswith("tl") or lang.startswith("fil"):
-                return "tl"
-            aklanon_aliases = {"nn", "ilo", "war", "ceb", "fr"}  # langid guesses for Aklanon
-            if lang in aklanon_aliases:
-                logger.info(f"🌐 Language override: {lang} → akl (Aklanon)")
+            lang, prob = self.lang_model.predict(text)
+            lang = lang[0].replace("__label__", "")
+            prob = prob[0]
+
+            # ✅ Override with Aklanon heuristic
+            akl_markers = ["du", "it", "nga", "anay", "hay", "gid", "eon", "baga"]
+            if any(word in text.lower() for word in akl_markers):
                 return "akl"
+
+            if lang not in ["en", "tl", "akl"] or prob < 0.5:
+                return "en"
             return lang
         except Exception as e:
-            logger.error(f"❌ Language detection failed: {e}")
+            logger.warning(f"Language detection failed: {e}")
             return "en"
 
     async def fetch_summarized_file(self) -> str:
@@ -162,7 +158,7 @@ class ChatBot:
         system_prompts = {
             "en": "You are TOMAS, the helpful school assistant. Respond politely and clearly in English.",
             "tl": "Ikaw si TOMAS, ang mabait na assistant ng paaralan. Sumagot nang malinaw at magalang sa Tagalog.",
-            "akl": "Ikaw si TOMAS, bulig nga assistant it eskwelahan. Sabat sa Aklanon kon mahimo."
+            "akl": "Ikaw si TOMAS, bulig nga assistant sang eskwelahan. Sabat sa Aklanon kon mahimo."
         }
         if lang not in system_prompts:
             logger.warning(f"⚠️ Unsupported language {lang}, defaulting to English")
@@ -399,10 +395,8 @@ class ChatBot:
         # --- Detect if user explicitly wants human support ---
         human_keywords = [
             "talk to a person", "talk to human", "live agent", "real person",
-            "makipag usap sa tao", "tao", "gusto ko ng tao",
-            "istorya sa tawo", "tao guid"  # added Aklanon flavor
+            "makipag usap sa tao", "tao", "gusto ko ng tao"
         ]
-
         lowered = query.lower()
         if any(k in lowered for k in human_keywords):
             logger.info("👤 User requested live person → triggering fallback handler.")
@@ -420,7 +414,7 @@ class ChatBot:
             logger.info("✅ Found context in Supabase chatbot_prompts table.")
             full_context += f"Database Context:\n{supabase_prompts}\n\n"
         if summarized_text:
-            snippet = await self.extract_snippet(summarized_text, query)
+            snippet = await self.extract_snippet(summarized_text, query)  # only relevant snippet
             if snippet:
                 logger.info("✅ Added snippet from summarized_text.md")
                 full_context += f"Summary Context:\n{snippet}"
@@ -429,11 +423,15 @@ class ChatBot:
         if not full_context.strip():
             return self.fallback_handler.generate_fallback_message(lang)
 
-        # --- Truncate context before Groq ---
-        max_len = 4000
+        # Truncate before sending to Groq
+        max_len = 4000  # chars
         if len(full_context) > max_len:
             logger.warning("⚠️ Context too long, truncating before Groq call.")
             full_context = full_context[:max_len] + "\n...(truncated)..."
 
         logger.info("🤖 Sending query to Groq with trimmed context.")
-        return await self.ask_groq(query, full_context, lang)
+        ai_reply = await self.ask_groq(query, full_context, lang)
+
+        # Prepend greeting
+        greeting = self.get_greeting(lang)
+        return f"{greeting}\n\n{ai_reply}"
