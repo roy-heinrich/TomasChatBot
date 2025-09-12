@@ -125,7 +125,7 @@ class ChatBot:
                 return lang
             if lang.startswith("tl") or lang.startswith("fil"):
                 return "tl"
-            aklanon_aliases = {"nn", "ilo", "war", "ceb"}  # langid guesses for Aklanon
+            aklanon_aliases = {"nn", "ilo", "war", "ceb", "fr"}  # langid guesses for Aklanon
             if lang in aklanon_aliases:
                 logger.info(f"🌐 Language override: {lang} → akl (Aklanon)")
                 return "akl"
