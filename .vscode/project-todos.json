@@ -1,5 +1,15 @@
 [
   {
+    "id": "1757690296387",
+    "text": "fix the answer, remove the \"Do you have any other questions?\"",
+    "completed": false
+  },
+  {
+    "id": "1757690148127",
+    "text": "fix the chatbot widget because it is fixed when typing a long message",
+    "completed": false
+  },
+  {
     "id": "1756972192960",
     "text": "also add fuzzy search",
     "completed": true
@@ -12,7 +22,7 @@
   {
     "id": "1755957412962",
     "text": "fix the welcome greetings and make the response more human",
-    "completed": false
+    "completed": true
   },
   {
     "id": "1755921023401",

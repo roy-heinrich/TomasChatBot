@@ -402,7 +402,7 @@ class ChatBot:
 
         # --- Detect if user explicitly wants human support ---
         human_keywords = [
-            "talk to a person", "talk to human", "live agent", "real person",
+            "talk to a person", "talk to human", "live agent", "real person", "live person",
             "makipag usap sa tao", "tao", "gusto ko ng tao"
         ]
         lowered = query.lower().strip()
