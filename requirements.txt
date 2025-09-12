@@ -11,7 +11,6 @@ python-pptx
 pandas
 psycopg2
 supabase
-aklstemmer @ git+https://github.com/andrianllmm/aklanon-stemmer.git@921b887b7b682a90907128a9d43fca8f19539976
 langid
 python-multipart
 docx
@@ -20,3 +19,5 @@ PyPDF2
 storage3
 rapidfuzz
 flask-cors
+deep_translator
+openai
