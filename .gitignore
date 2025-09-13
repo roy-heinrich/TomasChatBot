@@ -5,4 +5,4 @@ __pycache__
 /vendor
 composer.lock
 composer.json
-chatbot_widget.py
+chatbot_widget.php
