@@ -50,7 +50,7 @@
 <div class="chat-input-container">
     <div class="status-indicator" id="statusIndicator"></div>
     <div class="chat-input">
-        <input type="text" id="messageInput" placeholder="Type your message here..." onkeypress="handleKeyPress(event)">
+        <textarea id="messageInput" placeholder="Type your message here..." onkeypress="handleKeyPress(event)" oninput="autoResize(this)" rows="1"></textarea>
         <button class="send-btn" onclick="sendMessage()">
             <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
                 <path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/>
@@ -115,6 +115,27 @@ function addMessage(sender, text, showTime = true) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+function autoResize(textarea) {
+    // Reset height to auto to get the correct scrollHeight
+    textarea.style.height = 'auto';
+    
+    // Calculate the new height
+    const maxHeight = 120; // Maximum height in pixels (about 6 lines)
+    const minHeight = 20;  // Minimum height
+    let newHeight = Math.max(minHeight, textarea.scrollHeight);
+    
+    // Apply maximum height constraint
+    if (newHeight > maxHeight) {
+        newHeight = maxHeight;
+        textarea.style.overflowY = 'auto';
+    } else {
+        textarea.style.overflowY = 'hidden';
+    }
+    
+    // Set the new height
+    textarea.style.height = newHeight + 'px';
+}
+
 async function sendMessage() {
     if (isWaitingForResponse) return;
     const input = document.getElementById('messageInput');
@@ -123,6 +144,8 @@ async function sendMessage() {
 
     addMessage('user', message);
     input.value = '';
+    // Reset the height after clearing the input
+    autoResize(input);
     showTypingIndicator();
     isWaitingForResponse = true;
 
@@ -174,9 +197,23 @@ function handleKeyPress(event) {
 .typing-dot:nth-child(3) { animation-delay: 0.4s; }
 .chat-input-container { background: white; padding: 12px 16px; border-top: 1px solid #e0e0e0; }
 .form-row input:focus { border-color: #667eea; }
-.chat-input { display: flex; align-items: center; gap: 8px; }
-.chat-input input { flex: 1; padding: 10px 15px; border: 1px solid #e0e0e0; border-radius: 25px; font-size: 1em; outline: none; transition: border-color 0.3s; }
-.chat-input input:focus { border-color: #667eea; }
+.chat-input { display: flex; align-items: flex-end; gap: 8px; }
+.chat-input textarea { 
+    flex: 1; 
+    padding: 10px 15px; 
+    border: 1px solid #e0e0e0; 
+    border-radius: 20px; 
+    font-size: 1em; 
+    outline: none; 
+    transition: border-color 0.3s;
+    resize: none;
+    min-height: 20px;
+    max-height: 120px;
+    line-height: 1.4;
+    font-family: inherit;
+    overflow-y: auto;
+}
+.chat-input textarea:focus { border-color: #667eea; }
 .send-btn { background: #667eea; color: white; border: none; border-radius: 50%; width: 40px; height: 40px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.3s, transform 0.2s; }
 .send-btn:hover { background: #5a6fd8; transform: scale(1.05); }
 .send-btn:active { transform: scale(0.95); }

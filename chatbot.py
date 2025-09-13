@@ -167,21 +167,18 @@ class ChatBot:
             "en": (
                 "You are TOMAS, the school assistant for Tomas SM. Bautista Elementary School. "
                 "You answer only using the provided context. "
-                "If the answer is not in the context, say politely that no record was found "
                 "and suggest visiting the school office. "
                 "Do NOT ask the user for more details or clarification."
             ),
             "tl": (
                 "Ikaw si TOMAS, ang school assistant ng Tomas SM. Bautista Elementary School. "
                 "Sumasagot ka lang base sa context na ibinigay. "
-                "Kung wala sa context ang sagot, sabihin na wala itong record at irekomenda na "
                 "lumapit sa opisina ng paaralan. "
                 "Huwag humingi ng dagdag na detalye sa user."
             ),
             "akl": (
                 "Ikaw si TOMAS, bulig nga assistant sang Tomas SM. Bautista Elementary School. "
                 "Mag sabat ka lang base sa ginhatag nga context. "
-                "Kung wara sa context ro sabat, hambala nga wara record kag suhestyonan nga "
                 "magadto sa opisina it eskwelahan. "
                 "Indi magpangayo it dugang nga detalye sa user."
             )
@@ -470,9 +467,16 @@ class ChatBot:
                 logger.info("✅ Added snippet from summarized_text.md")
                 full_context += f"Summary Context:\n{snippet}"
 
-        # --- No context at all → fallback ---
+        # --- No context at all → custom no record message ---
         if not full_context.strip():
-            return self.fallback_handler.generate_fallback_message(lang)
+            record_found = False
+            if not record_found:
+                response = (
+                    "I checked our records, but I wasn't able to find any information about "
+                    f"{query}. You may visit the school office for further details."
+                )
+                # Append a conversational follow-up based on detected language
+                return response + " " + self.get_followup(lang)
 
         # Truncate before sending to Groq
         max_len = 4000  # chars
