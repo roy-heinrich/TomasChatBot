@@ -1,5 +1,15 @@
 [
   {
+    "id": "1757690755391",
+    "text": "add session",
+    "completed": false
+  },
+  {
+    "id": "1757690579995",
+    "text": "fix the fallback message",
+    "completed": false
+  },
+  {
     "id": "1757690296387",
     "text": "fix the answer, remove the \"Do you have any other questions?\"",
     "completed": false
