@@ -26,6 +26,7 @@ aklanon_translator = AklanonTranslator(dict_path)
 
 class ChatBot:
     def __init__(self, groq_key: str):
+        self.aklanon_translator = aklanon_translator
         self.fallback_handler = FallbackHandler()
         self.groq_key = groq_key  
         self._cached_summary = None
