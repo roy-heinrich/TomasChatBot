@@ -189,12 +189,25 @@ class ChatBot:
             lang = "en"
         system_prompt = system_prompts[lang]
 
-        # Add Aklanon dictionary reference for Aklanon responses
+        # Add Aklanon dictionary reference and example sentences for Aklanon responses
         if lang == "akl":
-            # Get a sample of Aklanon words to help the AI
-            aklanon_words = list(self.aklanon_translator.dictionary.keys())[:50]  # First 50 words as reference
+            aklanon_words = list(self.aklanon_translator.dictionary.keys())[:50]
             aklanon_reference = ", ".join(aklanon_words)
-            system_prompt += f"\n\nAklanon word reference (use these words when possible): {aklanon_reference}"
+            example_sentences = [
+                "Siin du lokasyon it eskwelahan? Amo ina sa Fatima, Bag-o Washington, Aklan.",
+                "Pila ro bayad sa enrollment? Amo ina nga P500.",
+                "Ano ro oras it klase? Nagsugod ro klase 7:00 AM hasta 5:00 PM.",
+                "Sino ro principal it eskwelahan? Si Ma'am Bautista ro principal.",
+                "Pwede ako mag-enroll bisan late? Pwede, bisitaha ro opisina para sa detalye.",
+                "Ano ro requirements para sa enrollment? Birth certificate, report card, kag barangay clearance.",
+                "May uniform guid ro mga estudyante? Oo, may uniform guid.",
+                "San-o ro graduation? Sa Marso ro graduation.",
+                "Diin pwede magkuha it school ID? Sa opisina it eskwelahan.",
+                "Salamat guid sa bulig!", 
+                "May ara pa baga ikaw it iba nga pamangkot?"
+            ]
+            example_block = "\n\nAklanon Example Sentences (mimic these for natural phrasing):\n" + "\n".join(example_sentences)
+            system_prompt += f"\n\nAklanon word reference (use these words when possible): {aklanon_reference}" + example_block
 
         payload = {
             "model": "llama-3.1-8b-instant",
