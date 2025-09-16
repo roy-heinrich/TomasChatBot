@@ -507,11 +507,11 @@ class ChatBot:
             if not full_context.strip():
                 return "Pasensya na, hindi pa ako naiintindihan ang Aklanon pero mukhang walang nahanap na impormasyon tungkol sa inyong katanungan. Maaari po kayong magpunta sa opisina ng paaralan para sa dagdag na detalye. May iba pa po ba kayong katanungan?"
             
-            # Get answer using translated query for better context understanding
-            english_reply = await self.ask_groq(translated_query, full_context, "en")
+            # Get answer using translated query for better context understanding - use Tagalog for response
+            english_reply = await self.ask_groq(translated_query, full_context, "tl")
             
-            # Create Tagalog response with apology
-            tagalog_response = f"Pasensya na, hindi pa ako marunong mag-Aklanon pero base sa aking pag-unawa sa inyong tanong, {english_reply.lower()}"
+            # Create Tagalog response with apology (preserve proper capitalization for names)
+            tagalog_response = f"Pasensya na, hindi pa ako marunong mag-Aklanon pero base sa aking pag-unawa sa inyong tanong, {english_reply}"
             return f"{tagalog_response}\n\nMay iba pa po ba kayong katanungan?"
 
         # --- Get context from both sources ---
