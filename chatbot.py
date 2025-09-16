@@ -14,23 +14,14 @@ from deep_translator import GoogleTranslator
 import openai
 import asyncio
 import urllib.parse
-from translator import AklanonTranslator
 
 logger = logging.getLogger("chatbot")
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-dict_path = os.path.join(os.path.dirname(__file__), "aklanon_dict.json")
-aklanon_translator = AklanonTranslator(dict_path)
-
-def capitalize_sentences(text):
-    """Capitalize the first letter of each sentence in the text."""
-    return re.sub(r'([.!?]\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), text.capitalize())
-
 class ChatBot:
     def __init__(self, groq_key: str):
-        self.aklanon_translator = aklanon_translator
         self.fallback_handler = FallbackHandler()
         self.groq_key = groq_key  
         self._cached_summary = None
@@ -50,16 +41,11 @@ class ChatBot:
                 "tl": [
                     "Magandang araw! Paano po ako makakatulong?",
                     "Kamusta! Ano po ang maitutulong ko sa inyo?"
-                ],
-                "akl": [
-                    "Hi! Unhon ko ikaw matabangan?",
-                    "Kumusta! Ano ro mahimu ko para kimo?"
                 ]
             },
             "follow_up": {
                 "en": "Do you have any other questions?",
-                "tl": "May iba pa po ba kayong katanungan?",
-                "akl": "May ara pa baga ikaw it iba nga pamangkot?"
+                "tl": "May iba pa po ba kayong katanungan?"
             }
     }
     def reset_conversation(self, lang="en"):
@@ -89,8 +75,7 @@ class ChatBot:
     def get_goodbye(self, lang: str) -> str:
         messages = {
             "en": "Thank you for chatting! Goodbye 👋",
-            "tl": "Maraming salamat sa pakikipag-usap! Paalam 👋",
-            "akl": "Salamat gid sa pagpakig-angut! Paalam 👋"
+            "tl": "Maraming salamat sa pakikipag-usap! Paalam 👋"
         }
         return messages.get(lang, messages["en"])
     
@@ -129,18 +114,11 @@ class ChatBot:
         """Detect language with langid, with Aklanon override heuristics."""
         try:
             lang, prob = langid.classify(text)
-            # --- Force Aklanon if text contains Aklanon markers ---
-            akl_markers = ["it", "du", "nga", "ro", "eon", "baga", "man", "dun", "hay", "eun", "ngaron", "haron,", "pagid"]
-            if any(m in text.lower() for m in akl_markers):
-                logger.info("🔎 Heuristic override → detected as akl")
-                return "akl"
             if lang.startswith("tl"):
                 return "tl"
-            if lang == "es" or lang.startswith("akl"):
-                return "akl"
             if lang.startswith("en"):
                 return "en"
-            return lang
+            return "en"  # fallback to English for all others
         except Exception as e:
             logger.warning(f"Language detection failed: {e}")
             return "en"  # safe fallback
@@ -181,39 +159,12 @@ class ChatBot:
                 "Sumasagot ka lang base sa context na ibinigay. "
                 "lumapit sa opisina ng paaralan. "
                 "Huwag humingi ng dagdag na detalye sa user."
-            ),
-            "akl": (
-                "Ikaw si TOMAS, bulig nga assistant sang Tomas SM. Bautista Elementary School. "
-                "Mag sabat ka lang base sa ginhatag nga context sa Aklanon language. "
-                "Gamiton ang mga Aklanon nga pulong gikan sa dictionary reference. "
-                "Kung wara ka makita sa context, mag-suggest nga mag-adto sa opisina it eskwelahan. "
-                "Indi magpangayo it dugang nga detalye sa user."
             )
         }
         if lang not in system_prompts:
             logger.warning(f"⚠️ Unsupported language {lang}, defaulting to English")
             lang = "en"
         system_prompt = system_prompts[lang]
-
-        # Add Aklanon dictionary reference and example sentences for Aklanon responses
-        if lang == "akl":
-            aklanon_words = list(self.aklanon_translator.dictionary.keys())[:50]
-            aklanon_reference = ", ".join(aklanon_words)
-            example_sentences = [
-                "Siin du lokasyon it eskwelahan? Amo ina sa Fatima, New Washington, Aklan.",
-                "Ano ro oras it klase? Nagsugod ro klase 7:30 AM hasta 4:15 PM.",
-                "Sino ro principal it eskwelahan? Si Ma'am Meliza A. Delgado ro principal.",
-                "Pwede ako mag-enroll bisan late? Pwede, bisitaha ro opisina para sa detalye.",
-                "Ano ro requirements para sa enrollment? Bisitaha ro opisina para sa iba pa na mga detalye",
-                "May uniform guid ro mga estudyante? Oo, may uniform guid.",
-                "San-o ro graduation? Sa Marso ro graduation.",
-                "Diin pwede magkuha it school ID? Sa opisina it eskwelahan.",
-                "Salamat gid sa bulig!", 
-                "May ara pa baga ikaw it iba nga pamangkot?"
-            ]
-            example_block = "\n\nAklanon Example Sentences (mimic these for natural phrasing):\n" + "\n".join(example_sentences)
-            system_prompt += f"\n\nAklanon word reference (use these words when possible): {aklanon_reference}" + example_block
-
         payload = {
             "model": "llama-3.1-8b-instant",
             "messages": [
@@ -226,16 +177,12 @@ class ChatBot:
             "Authorization": f"Bearer {self.groq_key}",
             "Content-Type": "application/json",
         }
-
         async with httpx.AsyncClient(timeout=60) as client:
             try:
                 response = await client.post(self.groq_api, json=payload, headers=headers)
                 response.raise_for_status()
                 ai_response = response.json()["choices"][0]["message"]["content"].strip()
-
-                # ✅ Return only the AI answer; let answer() append greeting + follow-up
                 return ai_response
-
             except Exception as e:
                 logger.error(f"Groq failed: {e}")
                 return self.fallback_handler.generate_fallback_message(lang)
@@ -511,10 +458,6 @@ class ChatBot:
 
         logger.info("🤖 Sending query to Groq with trimmed context.")
         ai_reply = await self.ask_groq(query, full_context, lang)
-
-        if lang == "akl":
-            ai_reply = self.aklanon_translator.to_aklanon(ai_reply, "en")
-            ai_reply = capitalize_sentences(ai_reply)
 
         # --- Always append follow-up consistently ---
         return f"{ai_reply.strip()}\n\n{self.get_followup(lang)}"
