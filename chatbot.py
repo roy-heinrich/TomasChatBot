@@ -194,12 +194,11 @@ class ChatBot:
             aklanon_words = list(self.aklanon_translator.dictionary.keys())[:50]
             aklanon_reference = ", ".join(aklanon_words)
             example_sentences = [
-                "Siin du lokasyon it eskwelahan? Amo ina sa Fatima, Bag-o Washington, Aklan.",
-                "Pila ro bayad sa enrollment? Amo ina nga P500.",
-                "Ano ro oras it klase? Nagsugod ro klase 7:00 AM hasta 5:00 PM.",
-                "Sino ro principal it eskwelahan? Si Ma'am Bautista ro principal.",
+                "Siin du lokasyon it eskwelahan? Amo ina sa Fatima, New Washington, Aklan.",
+                "Ano ro oras it klase? Nagsugod ro klase 7:30 AM hasta 4:15 PM.",
+                "Sino ro principal it eskwelahan? Si Ma'am Meliza A. Delgado ro principal.",
                 "Pwede ako mag-enroll bisan late? Pwede, bisitaha ro opisina para sa detalye.",
-                "Ano ro requirements para sa enrollment? Birth certificate, report card, kag barangay clearance.",
+                "Ano ro requirements para sa enrollment? Bisitaha ro opisina para sa iba pa na mga detalye",
                 "May uniform guid ro mga estudyante? Oo, may uniform guid.",
                 "San-o ro graduation? Sa Marso ro graduation.",
                 "Diin pwede magkuha it school ID? Sa opisina it eskwelahan.",
