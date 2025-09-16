@@ -24,6 +24,10 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 dict_path = os.path.join(os.path.dirname(__file__), "aklanon_dict.json")
 aklanon_translator = AklanonTranslator(dict_path)
 
+def capitalize_sentences(text):
+    """Capitalize the first letter of each sentence in the text."""
+    return re.sub(r'([.!?]\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), text.capitalize())
+
 class ChatBot:
     def __init__(self, groq_key: str):
         self.aklanon_translator = aklanon_translator
@@ -508,6 +512,7 @@ class ChatBot:
 
         if lang == "akl":
             ai_reply = self.aklanon_translator.to_aklanon(ai_reply, "en")
+            ai_reply = capitalize_sentences(ai_reply)
 
         # --- Always append follow-up consistently ---
         return f"{ai_reply.strip()}\n\n{self.get_followup(lang)}"
