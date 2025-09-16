@@ -20,6 +20,22 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# Load Aklanon dictionary for query translation
+dict_path = os.path.join(os.path.dirname(__file__), "aklanon_dictionary.json")
+aklanon_dict = {}
+try:
+    with open(dict_path, "r", encoding="utf-8") as f:
+        aklanon_data = json.load(f)
+        # Convert the nested dict structure to aklanon->english mapping
+        for english_word, translations in aklanon_data.items():
+            if isinstance(translations, dict) and "akl" in translations:
+                aklanon_word = translations["akl"].lower()
+                aklanon_dict[aklanon_word] = english_word
+        logger.info(f"📚 Loaded {len(aklanon_dict)} Aklanon dictionary entries")
+except Exception as e:
+    logger.warning(f"Could not load Aklanon dictionary: {e}")
+    aklanon_dict = {}
+
 class ChatBot:
     def __init__(self, groq_key: str):
         self.fallback_handler = FallbackHandler()
@@ -111,8 +127,24 @@ class ChatBot:
         return value  # fixed follow-up
 
     async def detect_language(self, text: str) -> str:
-        """Detect language with langid, with Aklanon override heuristics."""
+        """Detect language with Aklanon markers triggering special handling."""
         try:
+            # Aklanon markers that trigger Aklanon detection
+            aklanon_markers = [
+                "di", "du", "eun", "tanan", "dun", "don", "it", "nga", "ro", 
+                "eon", "baga", "man", "hay", "sang", "sa", "kag", "kay", 
+                "amo", "ini", "ina", "siin", "diin", "pila", "ano", "sin-o", 
+                "kan-o", "ham-an", "gani", "guid", "gid", "lang", "man", 
+                "bisan", "hasta", "para", "kon", "kung", "pero", "kundi"
+            ]
+            
+            # Check for Aklanon markers first
+            text_lower = text.lower()
+            if any(marker in text_lower for marker in aklanon_markers):
+                logger.info("🔎 Aklanon markers detected → akl")
+                return "akl"
+            
+            # Use langid for other languages
             lang, prob = langid.classify(text)
             if lang.startswith("tl"):
                 return "tl"
@@ -122,6 +154,30 @@ class ChatBot:
         except Exception as e:
             logger.warning(f"Language detection failed: {e}")
             return "en"  # safe fallback
+    
+    def translate_aklanon_query_keywords(self, query: str) -> str:
+        """Translate Aklanon words in query to English for better search matching."""
+        if not aklanon_dict:
+            return query
+        
+        words = query.split()
+        translated_words = []
+        
+        for word in words:
+            clean_word = word.lower().strip('.,!?')
+            if clean_word in aklanon_dict:
+                english_meaning = aklanon_dict[clean_word]
+                translated_words.append(english_meaning)
+                logger.info(f"🔄 Translated '{clean_word}' → '{english_meaning}'")
+            else:
+                translated_words.append(word)
+        
+        translated_query = " ".join(translated_words)
+        if translated_query != query:
+            logger.info(f"📝 Query translation: '{query}' → '{translated_query}'")
+        
+        return translated_query
+    
     async def fetch_summarized_file(self) -> str:
         now = time.time()
 
@@ -423,6 +479,41 @@ class ChatBot:
             logger.info("👋 User sent a greeting only.")
             return self.get_greeting(lang)
 
+        # --- Special handling for Aklanon queries ---
+        if lang == "akl":
+            logger.info("🇵🇭 Aklanon query detected, responding in Tagalog with apology")
+            
+            # Translate Aklanon keywords to English for better search
+            translated_query = self.translate_aklanon_query_keywords(query)
+            logger.info(f"🔄 Original query: {query}")
+            logger.info(f"🔄 Translated query: {translated_query}")
+            
+            # Get context using translated query for better search accuracy
+            summarized_text = await self.fetch_summarized_file()
+            supabase_prompts = await self.fetch_prompts_from_supabase(translated_query)
+
+            full_context = ""
+            if context:
+                full_context += f"External Context:\n{context}\n\n"
+            if supabase_prompts:
+                logger.info("✅ Found context in Supabase using translated query")
+                full_context += f"Database Context:\n{supabase_prompts}\n\n"
+            if summarized_text:
+                snippet = await self.extract_snippet(summarized_text, translated_query)
+                if snippet:
+                    logger.info("✅ Added snippet from summarized_text.md using translated query")
+                    full_context += f"Summary Context:\n{snippet}"
+
+            if not full_context.strip():
+                return "Pasensya na, hindi pa ako naiintindihan ang Aklanon pero mukhang walang nahanap na impormasyon tungkol sa inyong katanungan. Maaari po kayong magpunta sa opisina ng paaralan para sa dagdag na detalye. May iba pa po ba kayong katanungan?"
+            
+            # Get answer using translated query for better context understanding
+            english_reply = await self.ask_groq(translated_query, full_context, "en")
+            
+            # Create Tagalog response with apology
+            tagalog_response = f"Pasensya na, hindi pa ako marunong mag-Aklanon pero base sa aking pag-unawa sa inyong tanong, {english_reply.lower()}"
+            return f"{tagalog_response}\n\nMay iba pa po ba kayong katanungan?"
+
         # --- Get context from both sources ---
         summarized_text = await self.fetch_summarized_file()
         supabase_prompts = await self.fetch_prompts_from_supabase(query)
@@ -442,12 +533,16 @@ class ChatBot:
 
         # --- No context at all → custom no record message ---
         if not full_context.strip():
-            response = (
-                "I checked our records, but I wasn't able to find any information about "
-                f"{query}. You may visit the school office for further details."
-            )
-            if lang == "akl":
-                response = self.aklanon_translator.to_aklanon(response, "en")
+            if lang == "tl":
+                response = (
+                    f"Tinignan ko ang aming mga record, pero hindi ko nahanap ang impormasyon tungkol sa "
+                    f"{query}. Maaari kayong pumunta sa opisina ng paaralan para sa karagdagang detalye."
+                )
+            else:
+                response = (
+                    "I checked our records, but I wasn't able to find any information about "
+                    f"{query}. You may visit the school office for further details."
+                )
             return response + " " + self.get_followup(lang)
 
         # Truncate before sending to Groq

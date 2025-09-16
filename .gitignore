@@ -6,3 +6,5 @@ __pycache__
 composer.lock
 composer.json
 chatbot_widget.php
+test_translation.py
+test_aklanon.py
