@@ -48,7 +48,7 @@ class ChatBot:
                     "Kamusta! Ano po ang maitutulong ko sa inyo?"
                 ],
                 "akl": [
-                    "Hay! Unhon ko ikaw matabangan?",
+                    "Hi! Unhon ko ikaw matabangan?",
                     "Kumusta! Ano ro mahimu ko para kimo?"
                 ]
             },
@@ -126,7 +126,10 @@ class ChatBot:
         try:
             lang, prob = langid.classify(text)
             # --- Force Aklanon if text contains Aklanon markers ---
-            akl_markers = ["it", "du", "nga", "ro", "eon", "baga", "man"]
+            akl_markers = ["it", "du", "nga", "ro", "eon", "baga", "man", "dun", "hay", 
+                          "sang", "gintan-aw", "wara", "pwede", "bisitahan", "eskwelahan",
+                          "buot", "sabaton", "pulong", "nagakahulugan", "unhon", "matabangan",
+                          "mahimu", "kimo", "ara", "pamangkot", "salamat", "gid", "pagpakig-angut"]
             if any(m in text.lower() for m in akl_markers):
                 logger.info("🔎 Heuristic override → detected as akl")
                 return "akl"
@@ -166,20 +169,20 @@ class ChatBot:
         system_prompts = {
             "en": (
                 "You are TOMAS, the school assistant for Tomas SM. Bautista Elementary School. "
-                "You answer only using the provided context. "
-                "and suggest visiting the school office. "
+                "You answer only using the provided context in English. "
+                "If you cannot find the answer in the context, suggest visiting the school office. "
                 "Do NOT ask the user for more details or clarification."
             ),
             "tl": (
                 "Ikaw si TOMAS, ang school assistant ng Tomas SM. Bautista Elementary School. "
-                "Sumasagot ka lang base sa context na ibinigay. "
-                "lumapit sa opisina ng paaralan. "
+                "Sumasagot ka lang sa Tagalog base sa context na ibinigay. "
+                "Kung hindi mo makita ang sagot sa context, mag-suggest na lumapit sa opisina ng paaralan. "
                 "Huwag humingi ng dagdag na detalye sa user."
             ),
             "akl": (
                 "Ikaw si TOMAS, bulig nga assistant sang Tomas SM. Bautista Elementary School. "
-                "Mag sabat ka lang base sa ginhatag nga context. "
-                "magadto sa opisina it eskwelahan. "
+                "Mag sabat ka lang sa Aklanon base sa ginhatag nga context. "
+                "Kung indi mo makita ang sabat sa context, mag-suggest nga mag-adto sa opisina it eskwelahan. "
                 "Indi magpangayo it dugang nga detalye sa user."
             )
         }
@@ -393,6 +396,36 @@ class ChatBot:
         
         return ""
 
+    async def check_aklanon_dictionary(self, query: str, lang: str) -> str:
+        """Check if query matches any Aklanon dictionary entries."""
+        query_words = [word.lower().strip('.,!?') for word in query.split()]
+        
+        # Direct word lookup
+        for word in query_words:
+            if word in aklanon_dict:
+                translation = aklanon_dict[word]
+                if lang == "akl":
+                    return f"Ang '{word}' nagakahulugan '{translation}' sa Ingles."
+                elif lang == "tl":
+                    return f"Ang '{word}' ay nangangahulugang '{translation}' sa Ingles."
+                else:
+                    return f"The Aklanon word '{word}' means '{translation}' in English."
+        
+        # Fuzzy matching for partial matches
+        best_matches = process.extract(query.lower(), list(aklanon_dict.keys()), limit=3, scorer=fuzz.partial_ratio)
+        
+        for match, score, _ in best_matches:
+            if score >= 80:  # High confidence match
+                translation = aklanon_dict[match]
+                if lang == "akl":
+                    return f"Basi '{match}' ang buot mo sabaton? Ini nga pulong nagakahulugan '{translation}' sa Ingles."
+                elif lang == "tl":
+                    return f"Baka '{match}' ang ibig mong sabihin? Ang salitang ito ay '{translation}' sa Ingles."
+                else:
+                    return f"Did you mean '{match}'? This Aklanon word means '{translation}' in English."
+        
+        return ""  # No dictionary match found
+
     async def extract_snippet(self, text: str, query: str, window: int = 200, threshold: int = 80) -> str:
         """
         Extracts a relevant snippet from the summarized_text.md using fuzzy matching.
@@ -414,6 +447,12 @@ class ChatBot:
 
     async def answer(self, query: str, context: str = None) -> str:
         lang = await self.detect_language(query)
+
+        # --- Check Aklanon dictionary first for word translations ---
+        aklanon_response = await self.check_aklanon_dictionary(query, lang)
+        if aklanon_response:
+            logger.info("📚 Found match in Aklanon dictionary")
+            return f"{aklanon_response}\n\n{self.get_followup(lang)}"
 
         # --- Detect if user explicitly wants human support ---
         human_keywords = [
@@ -445,7 +484,8 @@ class ChatBot:
 
         # --- Detect if input is just a greeting ---
         greetings = ["hi", "hello", "hey", "kamusta", "kumusta",
-                     "yo", "good morning", "good afternoon", "good evening"]
+                     "yo", "good morning", "good afternoon", "good evening",
+                     "maayong adlaw", "maayong hapon", "maayong gab-i"]
         if any(lowered.startswith(g) for g in greetings):
             logger.info("👋 User sent a greeting only.")
             return self.get_greeting(lang)
@@ -471,10 +511,21 @@ class ChatBot:
         if not full_context.strip():
             record_found = False
             if not record_found:
-                response = (
-                    "I checked our records, but I wasn't able to find any information about "
-                    f"{query}. You may visit the school office for further details."
-                )
+                if lang == "akl":
+                    response = (
+                        f"Gintan-aw ko ang amon mga record, pero wara ko nakita nga impormasyon tungkol sa "
+                        f"{query}. Pwede mo bisitahan ang opisina sang eskwelahan para sa dugang nga detalye."
+                    )
+                elif lang == "tl":
+                    response = (
+                        f"Tiningnan ko ang aming mga record, pero hindi ko nahanap ang impormasyon tungkol sa "
+                        f"{query}. Maaari kayong pumunta sa opisina ng paaralan para sa karagdagang detalye."
+                    )
+                else:
+                    response = (
+                        "I checked our records, but I wasn't able to find any information about "
+                        f"{query}. You may visit the school office for further details."
+                    )
                 # Append a conversational follow-up based on detected language
                 return response + " " + self.get_followup(lang)
 
