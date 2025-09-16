@@ -178,8 +178,9 @@ class ChatBot:
             ),
             "akl": (
                 "Ikaw si TOMAS, bulig nga assistant sang Tomas SM. Bautista Elementary School. "
-                "Mag sabat ka lang base sa ginhatag nga context. "
-                "mag-adto sa opisina it eskwelahan. "
+                "Mag sabat ka lang base sa ginhatag nga context sa Aklanon language. "
+                "Gamiton ang mga Aklanon nga pulong gikan sa dictionary reference. "
+                "Kung wara ka makita sa context, mag-suggest nga mag-adto sa opisina it eskwelahan. "
                 "Indi magpangayo it dugang nga detalye sa user."
             )
         }
@@ -187,6 +188,13 @@ class ChatBot:
             logger.warning(f"⚠️ Unsupported language {lang}, defaulting to English")
             lang = "en"
         system_prompt = system_prompts[lang]
+
+        # Add Aklanon dictionary reference for Aklanon responses
+        if lang == "akl":
+            # Get a sample of Aklanon words to help the AI
+            aklanon_words = list(aklanon_dict.keys())[:50]  # First 50 words as reference
+            aklanon_reference = ", ".join(aklanon_words)
+            system_prompt += f"\n\nAklanon word reference (use these words when possible): {aklanon_reference}"
 
         payload = {
             "model": "llama-3.1-8b-instant",
