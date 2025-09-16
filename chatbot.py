@@ -14,6 +14,7 @@ from deep_translator import GoogleTranslator
 import openai
 import asyncio
 import urllib.parse
+from translator import AklanonTranslator
 
 logger = logging.getLogger("chatbot")
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -21,10 +22,8 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 dict_path = os.path.join(os.path.dirname(__file__), "aklanon_dict.json")
-with open(dict_path, "r", encoding="utf-8") as f:
-    aklanon_data = json.load(f)
+aklanon_translator = AklanonTranslator(dict_path)
 
-aklanon_dict = {entry["word"].lower(): entry["def"] for entry in aklanon_data}
 class ChatBot:
     def __init__(self, groq_key: str):
         self.fallback_handler = FallbackHandler()
@@ -192,7 +191,7 @@ class ChatBot:
         # Add Aklanon dictionary reference for Aklanon responses
         if lang == "akl":
             # Get a sample of Aklanon words to help the AI
-            aklanon_words = list(aklanon_dict.keys())[:50]  # First 50 words as reference
+            aklanon_words = list(self.aklanon_translator.dictionary.keys())[:50]  # First 50 words as reference
             aklanon_reference = ", ".join(aklanon_words)
             system_prompt += f"\n\nAklanon word reference (use these words when possible): {aklanon_reference}"
 
@@ -477,14 +476,13 @@ class ChatBot:
 
         # --- No context at all → custom no record message ---
         if not full_context.strip():
-            record_found = False
-            if not record_found:
-                response = (
-                    "I checked our records, but I wasn't able to find any information about "
-                    f"{query}. You may visit the school office for further details."
-                )
-                # Append a conversational follow-up based on detected language
-                return response + " " + self.get_followup(lang)
+            response = (
+                "I checked our records, but I wasn't able to find any information about "
+                f"{query}. You may visit the school office for further details."
+            )
+            if lang == "akl":
+                response = self.aklanon_translator.to_aklanon(response, "en")
+            return response + " " + self.get_followup(lang)
 
         # Truncate before sending to Groq
         max_len = 4000  # chars
@@ -494,6 +492,9 @@ class ChatBot:
 
         logger.info("🤖 Sending query to Groq with trimmed context.")
         ai_reply = await self.ask_groq(query, full_context, lang)
+
+        if lang == "akl":
+            ai_reply = self.aklanon_translator.to_aklanon(ai_reply, "en")
 
         # --- Always append follow-up consistently ---
         return f"{ai_reply.strip()}\n\n{self.get_followup(lang)}"
