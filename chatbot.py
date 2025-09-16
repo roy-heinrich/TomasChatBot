@@ -130,12 +130,14 @@ class ChatBot:
         try:
             lang, prob = langid.classify(text)
             # --- Force Aklanon if text contains Aklanon markers ---
-            akl_markers = ["it", "du", "nga", "ro", "eon", "baga", "man", "dun", "hay"]
+            akl_markers = ["it", "du", "nga", "ro", "eon", "baga", "man", "dun", "hay", "eun", "ngaron", "haron,", "pagid"]
             if any(m in text.lower() for m in akl_markers):
                 logger.info("🔎 Heuristic override → detected as akl")
                 return "akl"
             if lang.startswith("tl"):
                 return "tl"
+            if lang == "es" or lang.startswith("akl"):
+                return "akl"
             if lang.startswith("en"):
                 return "en"
             return lang
@@ -206,7 +208,7 @@ class ChatBot:
                 "May uniform guid ro mga estudyante? Oo, may uniform guid.",
                 "San-o ro graduation? Sa Marso ro graduation.",
                 "Diin pwede magkuha it school ID? Sa opisina it eskwelahan.",
-                "Salamat guid sa bulig!", 
+                "Salamat gid sa bulig!", 
                 "May ara pa baga ikaw it iba nga pamangkot?"
             ]
             example_block = "\n\nAklanon Example Sentences (mimic these for natural phrasing):\n" + "\n".join(example_sentences)
