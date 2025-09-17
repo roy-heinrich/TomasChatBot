@@ -42,3 +42,7 @@ test_keyword_matching.py
 test_keyword_system.py
 test_meliza_search.py
 test_token_efficiency.py
+check_database_staff.py
+test_aklanon_fix.py
+test_enhanced_search.py
+test_greeting_fix.py

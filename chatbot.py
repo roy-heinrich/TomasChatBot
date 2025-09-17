@@ -213,16 +213,54 @@ class ChatBot:
     
     def translate_aklanon_query_keywords(self, query: str) -> str:
         """Translate Aklanon words in query to English for better search matching."""
+        import re
+        
         if not aklanon_dict:
             return query
         
+        # First, handle specific patterns that are common in questions
+        query_lower = query.lower()
+        
+        # Handle "sin-o si [name]" pattern specifically
+        if "sin-o si" in query_lower:
+            # Extract the name part after "sin-o si"
+            name_match = re.search(r'sin-o\s+si\s+([^?]+)', query_lower)
+            if name_match:
+                name_part = name_match.group(1).strip()
+                # Return "who is [name]" format for better search
+                translated = f"who is {name_part}"
+                logger.info(f"🔄 Aklanon pattern translation: '{query}' → '{translated}'")
+                return translated
+        
+        # Handle other Aklanon patterns
+        if "sin-o ang" in query_lower:
+            name_match = re.search(r'sin-o\s+ang\s+([^?]+)', query_lower)
+            if name_match:
+                name_part = name_match.group(1).strip()
+                translated = f"who is the {name_part}"
+                logger.info(f"🔄 Aklanon pattern translation: '{query}' → '{translated}'")
+                return translated
+        
+        # Fallback: word-by-word translation
         words = query.split()
         translated_words = []
         
         for word in words:
-            clean_word = word.lower().strip('.,!?')
+            clean_word = word.lower().strip('.,!?-')
+            
+            # Check for exact match first
             if clean_word in aklanon_dict:
                 english_meaning = aklanon_dict[clean_word]
+                translated_words.append(english_meaning)
+                logger.info(f"🔄 Translated '{clean_word}' → '{english_meaning}'")
+            # Check for word with hyphen (like "sin-o")
+            elif f"{clean_word}-" in aklanon_dict:
+                english_meaning = aklanon_dict[f"{clean_word}-"]
+                translated_words.append(english_meaning)
+                logger.info(f"🔄 Translated '{clean_word}' → '{english_meaning}'")
+            # Check without hyphen if word has hyphen
+            elif "-" in word and clean_word.replace("-", "") in aklanon_dict:
+                english_meaning = aklanon_dict[clean_word.replace("-", "")]
                 translated_words.append(english_meaning)
                 logger.info(f"🔄 Translated '{clean_word}' → '{english_meaning}'")
             else:
@@ -232,7 +270,75 @@ class ChatBot:
         if translated_query != query:
             logger.info(f"📝 Query translation: '{query}' → '{translated_query}'")
         
-        return translated_query
+    async def enhanced_search_supabase(self, query: str) -> str:
+        """Enhanced search strategy that tries multiple approaches to find relevant information."""
+        import re
+        
+        # 1. First try exact search with original query
+        logger.info(f"🔍 Trying exact search: '{query}'")
+        result = await self.fetch_prompts_from_supabase(query)
+        if result:
+            logger.info("✅ Found result with exact search")
+            return result
+        
+        # 2. Try extracting and searching for names (capitalized words)
+        names = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', query)
+        if names:
+            for name in names:
+                logger.info(f"🔍 Searching for name: {name}")
+                name_result = await self.fetch_prompts_from_supabase(name)
+                if name_result:
+                    logger.info(f"✅ Found context for name: {name}")
+                    return name_result
+        
+        # 3. For "who is" or "sino si" questions, try searching for job titles
+        query_lower = query.lower()
+        if any(pattern in query_lower for pattern in ["who is", "sino si", "sin-o si", "sino ang", "sin-o ang"]):
+            job_title_searches = [
+                "head teacher",
+                "principal", 
+                "teacher",
+                "staff",
+                "guidance counselor",
+                "nurse",
+                "librarian"
+            ]
+            for job_title in job_title_searches:
+                logger.info(f"🔍 Searching for job title: {job_title}")
+                job_result = await self.fetch_prompts_from_supabase(job_title)
+                if job_result:
+                    logger.info(f"✅ Found context for job title: {job_title}")
+                    return job_result
+        
+        # 4. Try keyword-based search (remove function words)
+        key_terms = []
+        words = query_lower.split()
+        stop_words = {"who", "is", "the", "what", "where", "when", "how", "a", "an", "and", "or", "but", 
+                     "sino", "si", "ang", "sa", "ng", "sin-o", "may"}
+        for word in words:
+            clean_word = word.strip('.,!?')
+            if clean_word not in stop_words and len(clean_word) > 2:
+                key_terms.append(clean_word)
+        
+        if key_terms:
+            key_search = " ".join(key_terms)
+            logger.info(f"🔍 Searching with key terms: {key_search}")
+            key_result = await self.fetch_prompts_from_supabase(key_search)
+            if key_result:
+                logger.info("✅ Found context with key terms search")
+                return key_result
+        
+        # 5. Try individual words from the query
+        for word in key_terms:
+            if len(word) > 3:  # Only try longer words
+                logger.info(f"🔍 Searching for individual word: {word}")
+                word_result = await self.fetch_prompts_from_supabase(word)
+                if word_result:
+                    logger.info(f"✅ Found context for word: {word}")
+                    return word_result
+        
+        logger.info("❌ No results found with enhanced search")
+        return ""
     
     async def fetch_summarized_file(self) -> str:
         now = time.time()
@@ -780,10 +886,27 @@ class ChatBot:
 
             return self.get_goodbye(lang)
 
-        # --- Detect if input is just a greeting ---
+        # --- Detect if input is just a greeting (not greeting + question) ---
         greetings = ["hi", "hello", "hey", "kamusta", "kumusta",
                      "yo", "good morning", "good afternoon", "good evening"]
-        if any(lowered.startswith(g) for g in greetings):
+        
+        # Only treat as greeting if it's ONLY a greeting (no additional content)
+        is_greeting_only = False
+        for greeting in greetings:
+            if lowered.startswith(greeting):
+                # Check if there's meaningful content after the greeting
+                remaining = lowered[len(greeting):].strip()
+                
+                # If nothing after greeting, or just punctuation, it's a greeting only
+                if not remaining or remaining in ["!", "?", ".", ","]:
+                    is_greeting_only = True
+                    break
+                # If there's substantial content after greeting, it's a question with greeting
+                elif len(remaining.split()) >= 2:  # At least 2 words after greeting
+                    logger.info(f"🔍 Greeting detected but has question: '{remaining}' - processing full query")
+                    break
+        
+        if is_greeting_only:
             logger.info("👋 User sent a greeting only.")
             return self.get_greeting(lang)
 
@@ -796,15 +919,17 @@ class ChatBot:
             logger.info(f"🔄 Original query: {query}")
             logger.info(f"🔄 Translated query: {translated_query}")
             
-            # Get context using translated query for better search accuracy
+            # Enhanced search strategy for Aklanon queries using the new method
+            supabase_prompts = await self.enhanced_search_supabase(translated_query)
+
+            # Get other context sources
             summarized_text = await self.fetch_summarized_file()
-            supabase_prompts = await self.fetch_prompts_from_supabase(translated_query)
 
             full_context = ""
             if context:
                 full_context += f"External Context:\n{context}\n\n"
             if supabase_prompts:
-                logger.info("✅ Found context in Supabase using translated query")
+                logger.info("✅ Found context in Supabase using enhanced Aklanon search")
                 full_context += f"Database Context:\n{supabase_prompts}\n\n"
             if summarized_text:
                 snippet = await self.extract_snippet(summarized_text, translated_query)
@@ -812,15 +937,17 @@ class ChatBot:
                     logger.info("✅ Added snippet from summarized_text.md using translated query")
                     full_context += f"Summary Context:\n{snippet}"
 
-            if not full_context.strip():
+            # If we found context, process with API
+            if full_context.strip():
+                # Get English answer first, then translate
+                english_reply = await self.ask_groq(translated_query, full_context, "en")
+                
+                # Create Tagalog response with apology
+                tagalog_response = f"Pasensya na, hindi pa ako marunong mag-Aklanon pero base sa aming records: {english_reply}"
+                return f"{tagalog_response}\n\n{self.get_followup('tl')}"
+            else:
+                # No context found - return helpful message
                 return "Pasensya na, hindi pa ako naiintindihan ang Aklanon pero mukhang walang nahanap na impormasyon tungkol sa inyong katanungan. Maaari po kayong magpunta sa opisina ng paaralan para sa dagdag na detalye. May iba pa po ba kayong katanungan?"
-            
-            # Get English answer first, then translate
-            english_reply = await self.ask_groq(translated_query, full_context, "en")
-            
-            # Create Tagalog response with apology
-            tagalog_response = f"Pasensya na, hindi pa ako marunong mag-Aklanon pero base sa aming records: {english_reply}"
-            return f"{tagalog_response}\n\n{self.get_followup('tl')}"
 
         # --- Early keyword matching for aggressive token saving ---
         if self.aggressive_token_saving and self.enable_keyword_fallback:
@@ -832,7 +959,8 @@ class ChatBot:
                 logger.info("✅ Using keyword matching in aggressive mode")
                 return f"{keyword_response.strip()}\n\n{self.get_followup(lang)}"
         summarized_text = await self.fetch_summarized_file()
-        supabase_prompts = await self.fetch_prompts_from_supabase(query)
+        # Use enhanced search for better results
+        supabase_prompts = await self.enhanced_search_supabase(query)
 
         full_context = ""
         context_sources = 0
