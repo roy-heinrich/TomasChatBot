@@ -456,9 +456,51 @@ class ChatBot:
         name_role_mappings = {
             # Staff name to their role/position
             ("meliza", "delgado"): ["head teacher", "teacher"],
-            ("maria", "santos"): ["principal"],
             ("meliza a delgado", "meliza a. delgado"): ["head teacher"],
-            # Add more staff mappings as needed
+            
+            # Mrs. Nelda B. Delos Santos - Teacher 3 - Kindergarten Jude
+            ("nelda", "delos santos"): ["teacher", "kindergarten teacher"],
+            ("nelda b delos santos", "nelda delos santos"): ["teacher", "kindergarten teacher"],
+            
+            # Mrs. Annalyn B. Andrade - Teacher 1 - Grade 1 - Andrew
+            ("annalyn", "andrade"): ["teacher", "grade 1 teacher"],
+            ("annalyn b andrade", "annalyn andrade"): ["teacher", "grade 1 teacher"],
+            
+            # Mrs. Lezil V. Villanueva - Teacher 1 - Grade 2 James
+            ("lezil", "villanueva"): ["teacher", "grade 2 teacher"],
+            ("lezil v villanueva", "lezil villanueva"): ["teacher", "grade 2 teacher"],
+            
+            # Mrs. Michelle V. Pastrana - Teacher 3 - Grade 3 - John
+            ("michelle", "pastrana"): ["teacher", "grade 3 teacher"],
+            ("michelle v pastrana", "michelle pastrana"): ["teacher", "grade 3 teacher"],
+            
+            # Ms. Thedy Mae P. Ruiz - Teacher 1 - Grade 4 - Peter
+            ("thedy mae", "ruiz"): ["teacher", "grade 4 teacher"],
+            ("thedy mae p ruiz", "thedy mae ruiz"): ["teacher", "grade 4 teacher"],
+            
+            # Ms. Jessica Z. Go - LSA Teacher
+            ("jessica", "go"): ["teacher", "lsa teacher"],
+            ("jessica z go", "jessica go"): ["teacher", "lsa teacher"],
+            
+            # Mrs. Leny Mae D. Patani - Teacher 1 - Grade 6 - Timothy
+            ("leny mae", "patani"): ["teacher", "grade 6 teacher"],
+            ("leny mae d patani", "leny mae patani"): ["teacher", "grade 6 teacher"],
+            
+            # District and Division Officials
+            # Feliciano C. Bustamante Jr., Ceso VI - School Division Superintendent
+            ("feliciano", "bustamante"): ["superintendent", "school division superintendent"],
+            ("feliciano c bustamante", "feliciano bustamante jr"): ["superintendent", "school division superintendent"],
+            ("bustamante", "feliciano bustamante"): ["superintendent", "school division superintendent"],
+            
+            # Ramon D. Paras Jr., EdP - OIC, Asst. Schools division superintendent
+            ("ramon", "paras"): ["assistant superintendent", "oic assistant superintendent"],
+            ("ramon d paras", "ramon paras jr"): ["assistant superintendent", "oic assistant superintendent"],
+            ("paras", "ramon paras"): ["assistant superintendent", "oic assistant superintendent"],
+            
+            # Ariel Z. Zubiaga - Public Schools district Supervisor
+            ("ariel", "zubiaga"): ["district supervisor", "public schools district supervisor"],
+            ("ariel z zubiaga", "ariel zubiaga"): ["district supervisor", "public schools district supervisor"],
+            ("zubiaga", "ariel zubiaga"): ["district supervisor", "public schools district supervisor"],
         }
         
         # Check if query contains any known names and search by their roles
@@ -721,13 +763,13 @@ class ChatBot:
         keyword_responses = {
             # Staff Information - Playful responses
             ("meliza", "delgado"): {
-                "en": "Oh, you're asking about Ms. Meliza! 😊 She's our amazing Head Teacher - Meliza A. Delgado. She's the one who keeps everything running smoothly here at school!",
+                "en": "Oh, you're asking about Mrs. Meliza! 😊 She's our amazing Head Teacher - Meliza A. Delgado. She's the one who keeps everything running smoothly here at school!",
                 "tl": "Ay, si Ms. Meliza! 😊 Siya ang aming napakagaling na Head Teacher - si Meliza A. Delgado. Siya ang nag-aasikaso para maayos ang lahat dito sa paaralan!",
                 "default": "Si Meliza A. Delgado ang Head Teacher ng Tomas SM. Bautista Elementary School."
             },
             ("head teacher", "head_teacher"): {
-                "en": "That would be Ms. Meliza A. Delgado! 📚 She's fantastic at what she does - our Head Teacher extraordinaire!",
-                "tl": "Si Ms. Meliza A. Delgado yan! 📚 Napakagaling naming Head Teacher - talagang expert!",
+                "en": "That would be Mrs. Meliza A. Delgado! 📚 She's fantastic at what she does - our Head Teacher extraordinaire!",
+                "tl": "Si Mrs. Meliza A. Delgado yan! 📚 Napakagaling naming Head Teacher - talagang expert!",
                 "default": "Si Meliza A. Delgado ang Head Teacher."
             },
             # School Information - Friendly location response
@@ -740,11 +782,6 @@ class ChatBot:
                 "en": "For our contact details, just drop by the school office! 📞 The staff there will be happy to help you out!",
                 "tl": "Para sa contact namin, pumunta lang sa office ng paaralan! 📞 Matutuwa ang staff na tumulong sa inyo!",
                 "default": "For contact information, please visit the school office."
-            },
-            ("email",): {
-                "en": "Want our email? The school office has all the contact info you need! 💌 They'll sort you right out!",
-                "tl": "Gusto ninyo ang email namin? Nasa office ng paaralan lahat ng contact info! 💌 Matutulungan nila kayo agad!",
-                "default": "For email contact, please visit the school office."
             },
 
             
