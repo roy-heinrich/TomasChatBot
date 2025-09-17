@@ -721,13 +721,13 @@ class ChatBot:
         keyword_responses = {
             # Staff Information - Playful responses
             ("meliza", "delgado"): {
-                "en": "Oh, you're asking about Ms. Meliza! 😊 She's our amazing Head Teacher - Meliza A. Delgado. She's the one who keeps everything running smoothly here at school!",
+                "en": "Oh, you're asking about Mrs. Meliza! 😊 She's our amazing Head Teacher - Meliza A. Delgado. She's the one who keeps everything running smoothly here at school!",
                 "tl": "Ay, si Ms. Meliza! 😊 Siya ang aming napakagaling na Head Teacher - si Meliza A. Delgado. Siya ang nag-aasikaso para maayos ang lahat dito sa paaralan!",
                 "default": "Si Meliza A. Delgado ang Head Teacher ng Tomas SM. Bautista Elementary School."
             },
             ("head teacher", "head_teacher"): {
-                "en": "That would be Ms. Meliza A. Delgado! 📚 She's fantastic at what she does - our Head Teacher extraordinaire!",
-                "tl": "Si Ms. Meliza A. Delgado yan! 📚 Napakagaling naming Head Teacher - talagang expert!",
+                "en": "That would be Mrs. Meliza A. Delgado! 📚 She's fantastic at what she does - our Head Teacher extraordinaire!",
+                "tl": "Si Mrs. Meliza A. Delgado yan! 📚 Napakagaling naming Head Teacher - talagang expert!",
                 "default": "Si Meliza A. Delgado ang Head Teacher."
             },
             # School Information - Friendly location response
@@ -740,11 +740,6 @@ class ChatBot:
                 "en": "For our contact details, just drop by the school office! 📞 The staff there will be happy to help you out!",
                 "tl": "Para sa contact namin, pumunta lang sa office ng paaralan! 📞 Matutuwa ang staff na tumulong sa inyo!",
                 "default": "For contact information, please visit the school office."
-            },
-            ("email",): {
-                "en": "Want our email? The school office has all the contact info you need! 💌 They'll sort you right out!",
-                "tl": "Gusto ninyo ang email namin? Nasa office ng paaralan lahat ng contact info! 💌 Matutulungan nila kayo agad!",
-                "default": "For email contact, please visit the school office."
             },
 
             
