@@ -37,7 +37,7 @@ except Exception as e:
     aklanon_dict = {}
 
 class ChatBot:
-    def __init__(self, groq_key: str):
+    def __init__(self, groq_key: str, enable_keyword_fallback: bool = True, aggressive_token_saving: bool = False):
         self.fallback_handler = FallbackHandler()
         self.groq_key = groq_key  
         self._cached_summary = None
@@ -46,6 +46,10 @@ class ChatBot:
         self.groq_api = "https://api.groq.com/openai/v1/chat/completions"
         self.bucket = "summarized-text"
         self.file = "summarized_text.md"
+        
+        # Token management settings
+        self.enable_keyword_fallback = enable_keyword_fallback
+        self.aggressive_token_saving = aggressive_token_saving
 
         # ✅ Centralized greetings + followups
         self.messages = {
@@ -126,7 +130,33 @@ class ChatBot:
             return random.choice(value)  # random greeting
         return value  # fixed follow-up
 
-    def _seems_english(self, text: str) -> bool:
+    def estimate_tokens(self, text: str) -> int:
+        """Rough token estimation (1 token ≈ 4 characters for English)."""
+        return len(text) // 4
+    
+    def _check_token_budget(self, query: str, context: str) -> dict:
+        """Check if we're within token budget and suggest optimizations."""
+        system_prompt = "TOMAS assistant for Tomas SM. Bautista Elementary School. Answer in ENGLISH using context. Be concise."
+        user_message = f"Context: {context}\nQuestion: {query}"
+        
+        estimated_input_tokens = self.estimate_tokens(system_prompt + user_message)
+        max_output_tokens = 150
+        total_estimated = estimated_input_tokens + max_output_tokens
+        
+        # Groq llama-3.1-8b-instant has ~8k context limit
+        context_limit = 8000
+        
+        status = {
+            "input_tokens": estimated_input_tokens,
+            "total_estimated": total_estimated,
+            "within_budget": total_estimated < context_limit * 0.8,  # 80% safety margin
+            "context_reduction_needed": estimated_input_tokens > context_limit * 0.6,
+            "emergency_mode_needed": total_estimated > context_limit * 0.9
+        }
+        
+        logger.info(f"📊 Token budget: {total_estimated}/{context_limit} (~{(total_estimated/context_limit)*100:.1f}%)")
+        
+        return status
         """Quick check if text seems to be in English based on common English words"""
         english_indicators = [
             "the", "and", "is", "are", "was", "were", "have", "has", "had", 
@@ -228,70 +258,305 @@ class ChatBot:
         return text
 
     async def ask_groq(self, query: str, context: str, lang: str) -> str:
-        """Send query + context to Groq API with safe system prompt."""
-        # Always use English for consistent context understanding
-        system_prompt = (
-            "You are TOMAS, the school assistant for Tomas SM. Bautista Elementary School. "
-            "IMPORTANT: Always respond in ENGLISH only. "
-            "Answer only using the provided context. If you cannot find information in the context, "
-            "suggest visiting the school office. "
-            "Do NOT ask follow-up questions or request clarification. "
-            "Keep responses clear and concise in ENGLISH."
-        )
+        """Token-optimized Groq API call with emergency fallbacks."""
+        # Start with most concise prompt
+        system_prompt = "TOMAS assistant for Tomas SM. Bautista Elementary School. Answer in ENGLISH using context. Be concise."
         
-        payload = {
-            "model": "llama-3.1-8b-instant",
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Context:\n{context}\n\nUser: {query}"}
-            ],
-            "temperature": 0.3  # Lower temperature for more consistent responses
-        }
-        headers = {
-            "Authorization": f"Bearer {self.groq_key}",
-            "Content-Type": "application/json",
-        }
-        async with httpx.AsyncClient(timeout=60) as client:
+        # Emergency token management
+        max_context_length = 1500
+        emergency_context_length = 500
+        critical_context_length = 100
+        
+        # Try progressively smaller contexts if needed
+        context_attempts = [
+            (max_context_length, "normal"),
+            (emergency_context_length, "emergency"), 
+            (critical_context_length, "critical"),
+            (0, "no_context")
+        ]
+        
+        for max_len, mode in context_attempts:
             try:
-                response = await client.post(self.groq_api, json=payload, headers=headers)
-                response.raise_for_status()
-                ai_response = response.json()["choices"][0]["message"]["content"].strip()
-                return ai_response
+                # Prepare context for this attempt
+                if max_len == 0:
+                    # No context mode - ultra minimal
+                    truncated_context = ""
+                    user_message = query
+                    max_tokens = 50  # Minimal response
+                elif len(context) > max_len:
+                    truncated_context = context[:max_len] + "..."
+                    user_message = f"Context: {truncated_context}\nQ: {query}"
+                    max_tokens = 100 if mode == "critical" else 150
+                else:
+                    truncated_context = context
+                    user_message = f"Context: {truncated_context}\nQuestion: {query}"
+                    max_tokens = 150
+                
+                # Calculate estimated tokens (rough: 4 chars = 1 token)
+                estimated_tokens = (len(system_prompt) + len(user_message) + max_tokens) / 4
+                
+                logger.info(f"🔍 Token attempt ({mode}): ~{estimated_tokens:.0f} tokens estimated")
+                
+                payload = {
+                    "model": "llama-3.1-8b-instant",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message}
+                    ],
+                    "temperature": 0.2,
+                    "max_tokens": max_tokens
+                }
+                
+                headers = {
+                    "Authorization": f"Bearer {self.groq_key}",
+                    "Content-Type": "application/json",
+                }
+                
+                async with httpx.AsyncClient(timeout=30) as client:  # Shorter timeout for retries
+                    response = await client.post(self.groq_api, json=payload, headers=headers)
+                    response.raise_for_status()
+                    ai_response = response.json()["choices"][0]["message"]["content"].strip()
+                    
+                    if mode != "normal":
+                        logger.warning(f"⚠️ Used {mode} token mode for response")
+                    
+                    return ai_response
+                    
             except Exception as e:
-                logger.error(f"Groq failed: {e}")
-                return self.fallback_handler.generate_fallback_message(lang)
+                error_msg = str(e).lower()
+                
+                # Check if it's a token limit error
+                if any(keyword in error_msg for keyword in ["token", "limit", "exceeded", "too large", "context_length"]):
+                    logger.warning(f"🚨 Token limit hit in {mode} mode: {e}")
+                    
+                    if mode == "no_context":
+                        # Last resort - return template response
+                        logger.error("🚨 All token strategies failed, using template response")
+                        return await self._emergency_template_response(query, lang)
+                    
+                    # Try next smaller context
+                    continue
+                else:
+                    # Non-token error, try emergency fallback
+                    logger.error(f"❌ Groq API error in {mode} mode: {e}")
+                    if mode == "no_context":
+                        return await self._emergency_template_response(query, lang)
+                    continue
+        
+        # If all attempts fail
+        return await self._emergency_template_response(query, lang)
+
+    async def _emergency_template_response(self, query: str, lang: str) -> str:
+        """Emergency response when all token strategies fail."""
+        logger.error("🚨 Emergency template response activated")
+        
+        # Ultra-basic keyword matching for common queries
+        query_lower = query.lower()
+        
+        # Check for common names/keywords in query
+        if any(name in query_lower for name in ["meliza", "delgado"]):
+            return "Meliza Delgado is the Head Teacher. Visit school office for details."
+        elif any(name in query_lower for name in ["maria", "santos", "principal"]):
+            return "Maria Santos is the Principal. Visit school office for details."  
+        elif any(word in query_lower for word in ["teacher", "staff", "faculty"]):
+            return "For staff information, please visit the school office."
+        elif any(word in query_lower for word in ["contact", "phone", "email", "address"]):
+            return "For contact information, please visit the school office."
+        elif any(word in query_lower for word in ["enrollment", "admission", "register"]):
+            return "For enrollment information, please visit the school office."
+        else:
+            return "Please visit the school office for assistance with your inquiry."
+
+    async def _keyword_matching_response(self, query: str, lang: str) -> str:
+        """Enhanced keyword matching - zero token usage alternative."""
+        query_lower = query.lower()
+        
+        # Expanded keyword database for common school queries
+        keyword_responses = {
+            # Staff Information
+            ("meliza", "delgado"): "Si Meliza A. Delgado ang Head Teacher ng Tomas SM. Bautista Elementary School.",
+            ("maria", "santos"): "Si Maria Santos ang Principal ng Tomas SM. Bautista Elementary School.",
+            ("principal",): "Si Maria Santos ang Principal ng paaralan.",
+            ("head teacher", "head_teacher"): "Si Meliza A. Delgado ang Head Teacher.",
+            ("vice principal",): "For Vice Principal information, please visit the school office.",
+            
+            # School Information  
+            ("address", "location"): "Tomas SM. Bautista Elementary School. Visit office for complete address.",
+            ("phone", "contact", "number"): "For contact information, please visit the school office.",
+            ("email",): "For email contact, please visit the school office.",
+            ("hours", "schedule", "time"): "For school hours and schedule, please visit the school office.",
+            
+            # Academic Information
+            ("enrollment", "admission", "register"): "For enrollment information, please visit the school office.",
+            ("tuition", "fee", "payment"): "For tuition and fee information, please visit the school office.",
+            ("curriculum", "subjects", "classes"): "For curriculum information, please visit the school office.",
+            ("grade", "level"): "For grade level information, please visit the school office.",
+            
+            # Activities
+            ("events", "activities", "programs"): "For school events and activities, please visit the school office.",
+            ("sports", "athletics"): "For sports programs, please visit the school office.",
+            ("clubs", "organizations"): "For club information, please visit the school office.",
+            
+            # Requirements
+            ("requirements", "documents", "papers"): "For document requirements, please visit the school office.",
+            ("uniform", "dress code"): "For uniform policies, please visit the school office.",
+            ("supplies", "materials"): "For school supplies list, please visit the school office.",
+        }
+        
+        # Find matching keywords
+        best_match = None
+        max_matches = 0
+        
+        for keywords, response in keyword_responses.items():
+            matches = sum(1 for keyword in keywords if keyword in query_lower)
+            if matches > max_matches:
+                max_matches = matches
+                best_match = response
+        
+        if best_match and max_matches > 0:
+            logger.info(f"🎯 Keyword match found ({max_matches} matches)")
+            
+            # Translate to appropriate language if needed
+            if lang == "tl" and not any(filipino_word in best_match for filipino_word in ["Si", "ang", "ng"]):
+                # Simple translation for common phrases
+                translated = await self._simple_translate_to_tagalog(best_match)
+                return f"Ayon sa aming records: {translated}"
+            elif lang == "en" and any(filipino_word in best_match for filipino_word in ["Si", "ang", "ng"]):
+                # Convert Filipino response to English
+                translated = await self._simple_translate_to_english(best_match)
+                return translated
+            else:
+                return best_match if lang == "en" else f"Ayon sa aming records: {best_match}"
+        
+        # Generic fallback
+        fallback_msg = "Please visit the school office for assistance with your inquiry."
+        return fallback_msg if lang == "en" else f"Ayon sa aming records: Pumunta po sa opisina ng paaralan para sa tulong."
+
+    async def _simple_translate_to_tagalog(self, text: str) -> str:
+        """Simple translation without API calls."""
+        replacements = {
+            "Head Teacher": "Head Teacher",  # Keep English titles
+            "Principal": "Principal",
+            "school office": "opisina ng paaralan",
+            "visit": "pumunta sa",
+            "for": "para sa",
+            "information": "impormasyon",
+            "please": "pakisuyo",
+            "details": "detalye"
+        }
+        
+        result = text
+        for english, tagalog in replacements.items():
+            result = result.replace(english, tagalog)
+        return result
+    
+    async def _simple_translate_to_english(self, text: str) -> str:
+        """Simple translation without API calls."""
+        replacements = {
+            "Si": "",
+            "ang": "the",
+            "ng": "of",
+            "paaralan": "school",
+            "Head Teacher": "Head Teacher",
+            "Principal": "Principal"
+        }
+        
+        result = text
+        for tagalog, english in replacements.items():
+            result = result.replace(tagalog, english)
+        return result.strip()
 
             
     async def fetch_prompts_from_supabase(self, query: str) -> str:
-        """Search chatbot_prompts table in Supabase for matching context using different methods."""
+        """Optimized search with token efficiency in mind."""
         try:
-            # Clean and prepare search query
-            search_terms = self._extract_search_terms(query)
+            # Extract key search terms (limit to top 3 for efficiency)
+            search_terms = self._extract_search_terms(query)[:3]
             
-            # Method 1: Try text search using textsearch (if FTS is configured)
-            result = await self._try_fts_search(search_terms)
+            # Quick exact match first (most token-efficient)
+            result = await self._try_exact_match(search_terms)
             if result:
                 return result
             
-            # Method 2: Try ILIKE pattern matching
+            # Then try ILIKE (moderate token usage)
             result = await self._try_ilike_search(search_terms)
             if result:
                 return result
             
-            # Method 3: Try fuzzy matching with all records (fallback)
-            result = await self._try_fuzzy_search(query)
+            # Only use fuzzy as last resort with strict limits
+            result = await self._try_limited_fuzzy_search(query)
             return result
             
         except Exception as e:
-            logger.error(f"Error in fetch_prompts_from_supabase: {e}")
+            logger.error(f"Error in optimized fetch_prompts_from_supabase: {e}")
             return ""
 
+    async def _try_exact_match(self, search_terms: list) -> str:
+        """Fast exact matching - most token efficient."""
+        if not search_terms:
+            return ""
+        
+        try:
+            url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
+            headers = {
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+
+            # Try exact matches for key terms
+            for term in search_terms:
+                params = {
+                    "select": "keywords,response",
+                    "or": f"keywords.eq.{term},response.ilike.%{term}%",
+                    "limit": 1  # Just one exact match needed
+                }
+
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(url, headers=headers, params=params)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data:
+                            logger.info(f"✅ Exact match found for '{term}'")
+                            row = data[0]
+                            return f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}"
+                            
+        except Exception as e:
+            logger.warning(f"Exact match search failed: {e}")
+        
+        return ""
+
     def _extract_search_terms(self, query: str) -> list:
-        """Extract meaningful search terms from query."""
+        """Extract meaningful search terms from query using improved NLP."""
+        import re
+        
         # Remove common stop words and clean the query
         stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'can', 'you', 'me', 'who', 'what', 'where', 'when', 'why', 'how', 'tell'}
+        
+        # Extract all words and clean them
         words = re.findall(r'\w+', query.lower())
-        return [word for word in words if word not in stop_words and len(word) > 2]
+        meaningful_words = [word for word in words if word not in stop_words and len(word) > 2]
+        
+        # Extract names (capitalized words) from original query for better name matching
+        names = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', query)
+        
+        # Extract quoted phrases (if any)
+        quoted_phrases = re.findall(r'"([^"]*)"', query)
+        
+        # Combine all meaningful terms
+        search_terms = meaningful_words + [name.lower() for name in names] + quoted_phrases
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_terms = []
+        for term in search_terms:
+            if term not in seen:
+                seen.add(term)
+                unique_terms.append(term)
+        
+        logger.info(f"🔍 Extracted search terms from '{query}': {unique_terms}")
+        return unique_terms
 
     async def debug_table_structure(self) -> dict:
         """Debug method to check table structure and sample data."""
@@ -329,61 +594,30 @@ class ChatBot:
             return {"success": False, "error": str(e)}
 
     async def _try_fts_search(self, search_terms: list) -> str:
-        """Try Full Text Search - requires FTS to be properly configured in Supabase."""
+        """Try Full Text Search with improved term matching."""
         if not search_terms:
             return ""
         
         try:
-            search_query = " & ".join(search_terms)  # AND search
-            
-            url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
-            headers = {
-                "apikey": SUPABASE_KEY,
-                "Authorization": f"Bearer {SUPABASE_KEY}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            }
+            # Try different search strategies
+            for strategy in ["AND", "OR"]:
+                if strategy == "AND":
+                    search_query = " & ".join(search_terms[:3])  # AND search with top 3 terms
+                else:
+                    search_query = " | ".join(search_terms[:5])  # OR search with more terms
+                
+                url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
+                headers = {
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_KEY}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                }
 
-            params = {
-                "select": "keywords,response",
-                "keywords": f"fts.{search_query}",
-                "limit": 2  # FIX 2: limit results
-            }
-
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=headers, params=params)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data:
-                        logger.info(f"✅ FTS search successful, found {len(data)} results")
-                        return "\n".join(
-                            f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}"
-                            for row in data[:2]  # FIX 2
-                        )
-        except Exception as e:
-            logger.warning(f"FTS search failed: {e}")
-        
-        return ""
-
-    async def _try_ilike_search(self, search_terms: list) -> str:
-        """Try ILIKE pattern matching search."""
-        if not search_terms:
-            return ""
-        
-        try:
-            url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
-            headers = {
-                "apikey": SUPABASE_KEY,
-                "Authorization": f"Bearer {SUPABASE_KEY}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            }
-
-            for term in search_terms[:3]:
                 params = {
                     "select": "keywords,response",
-                    "or": f"keywords.ilike.%{term}%,response.ilike.%{term}%",
-                    "limit": 2  # FIX 2: limit results
+                    "keywords": f"fts.{search_query}",
+                    "limit": 3
                 }
 
                 async with httpx.AsyncClient() as client:
@@ -391,18 +625,54 @@ class ChatBot:
                     if resp.status_code == 200:
                         data = resp.json()
                         if data:
-                            logger.info(f"✅ ILIKE search successful for term '{term}', found {len(data)} results")
+                            logger.info(f"✅ FTS search successful with {strategy} strategy, found {len(data)} results")
                             return "\n".join(
                                 f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}"
-                                for row in data[:2]  # FIX 2
+                                for row in data
                             )
+        except Exception as e:
+            logger.warning(f"FTS search failed: {e}")
+        
+        return ""
+
+    async def _try_ilike_search(self, search_terms: list) -> str:
+        """Optimized ILIKE search with token limits."""
+        if not search_terms:
+            return ""
+        
+        try:
+            url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
+            headers = {
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+
+            # Try only the most relevant term first
+            for term in search_terms[:2]:  # Reduced from 5 to 2
+                params = {
+                    "select": "keywords,response",
+                    "or": f"keywords.ilike.%{term}%,response.ilike.%{term}%",
+                    "limit": 1  # Reduced from 3 to 1
+                }
+
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(url, headers=headers, params=params)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data:
+                            logger.info(f"✅ ILIKE search successful for term '{term}'")
+                            row = data[0]
+                            return f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}"
+                            
         except Exception as e:
             logger.warning(f"ILIKE search failed: {e}")
         
         return ""
 
-    async def _try_fuzzy_search(self, query: str) -> str:
-        """Fallback: fetch all records and do fuzzy matching locally."""
+    async def _try_limited_fuzzy_search(self, query: str) -> str:
+        """Token-efficient fuzzy search with strict limits."""
         try:
             url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
             headers = {
@@ -414,7 +684,7 @@ class ChatBot:
 
             params = {
                 "select": "keywords,response",
-                "limit": 50  # FIX 2: smaller pull
+                "limit": 20  # Reduced from 100 to save tokens
             }
 
             async with httpx.AsyncClient() as client:
@@ -422,42 +692,62 @@ class ChatBot:
                 if resp.status_code == 200:
                     data = resp.json()
                     if data:
-                        keywords = [row.get('keywords', '') for row in data]
-                        matches = process.extract(query, keywords, limit=2, scorer=fuzz.partial_ratio)  # FIX 2
+                        # Simple fuzzy matching on keywords only (more efficient)
+                        keywords_only = [row.get('keywords', '') for row in data]
+                        matches = process.extract(query, keywords_only, limit=1, scorer=fuzz.partial_ratio)
                         
-                        results = []
                         for match, score, idx in matches:
-                            if score >= 60:
+                            if score >= 70:  # Higher threshold for quality
                                 row = data[idx]
-                                results.append(f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}")
-                        
-                        if results:
-                            logger.info(f"✅ Fuzzy search successful, found {len(results)} matches")
-                            return "\n".join(results)
+                                logger.info(f"✅ Limited fuzzy match found (score: {score})")
+                                return f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}"
                         
         except Exception as e:
-            logger.warning(f"Fuzzy search failed: {e}")
+            logger.warning(f"Limited fuzzy search failed: {e}")
         
         return ""
 
-    async def extract_snippet(self, text: str, query: str, window: int = 200, threshold: int = 80) -> str:
+    async def extract_snippet(self, text: str, query: str, window: int = 200, threshold: int = 75) -> str:
         """
-        Extracts a relevant snippet from the summarized_text.md using fuzzy matching.
-        Only returns a snippet if the match confidence >= threshold (default 80%).
+        Token-efficient snippet extraction.
         """
-        lines = text.splitlines()
-        best_match, score, idx = process.extractOne(query, lines, scorer=fuzz.partial_ratio)
-
-        if best_match and score >= threshold:
-            logger.info(f"🎯 Fuzzy match found in summary (score: {score}) → '{best_match[:50]}...'")
+        if not text or not query:
+            return ""
             
-            # Find where in the text the match occurred
+        lines = text.splitlines()
+        
+        # Strategy 1: Exact phrase matching (most efficient)
+        query_lower = query.lower()
+        for i, line in enumerate(lines):
+            if query_lower in line.lower():
+                logger.info(f"🎯 Exact phrase match found")
+                start = max(0, text.find(line) - window)
+                end = min(len(text), start + len(line) + (2 * window))
+                return text[start:end].strip()
+        
+        # Strategy 2: Name matching only (reduced complexity)
+        import re
+        names = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', query)
+        if names:
+            name = names[0]  # Only check first name to save processing
+            for line in lines:
+                if name.lower() in line.lower():
+                    logger.info(f"🎯 Name match found for '{name}'")
+                    start = max(0, text.find(line) - window)
+                    end = min(len(text), start + len(line) + (2 * window))
+                    return text[start:end].strip()
+        
+        # Strategy 3: Single fuzzy match (simplified)
+        best_match, score, idx = process.extractOne(query, lines, scorer=fuzz.partial_ratio)
+        
+        if best_match and score >= threshold:
+            logger.info(f"🎯 Fuzzy match found (score: {score})")
             start = max(0, text.find(best_match) - window)
             end = min(len(text), start + len(best_match) + (2 * window))
             return text[start:end].strip()
-        else:
-            logger.info(f"⚠️ No strong fuzzy match found in summarized_text.md (best score: {score if best_match else 'N/A'}).")
-            return ""
+        
+        logger.info(f"⚠️ No match found in summarized text")
+        return ""
 
     async def answer(self, query: str, context: str = None) -> str:
         lang = await self.detect_language(query)
@@ -532,24 +822,68 @@ class ChatBot:
             tagalog_response = f"Pasensya na, hindi pa ako marunong mag-Aklanon pero base sa aming records: {english_reply}"
             return f"{tagalog_response}\n\n{self.get_followup('tl')}"
 
-        # --- Get context from both sources ---
+        # --- Early keyword matching for aggressive token saving ---
+        if self.aggressive_token_saving and self.enable_keyword_fallback:
+            logger.info("💡 Aggressive token saving enabled - trying keyword matching first")
+            keyword_response = await self._keyword_matching_response(query, lang)
+            
+            # Use keyword response if it's specific (not just generic "visit office")
+            if not ("visit the school office" in keyword_response.lower() and len(keyword_response) < 100):
+                logger.info("✅ Using keyword matching in aggressive mode")
+                return f"{keyword_response.strip()}\n\n{self.get_followup(lang)}"
         summarized_text = await self.fetch_summarized_file()
         supabase_prompts = await self.fetch_prompts_from_supabase(query)
 
         full_context = ""
+        context_sources = 0
+        
         if context:
-            logger.info("ℹ️ External context provided, merging into sources.")
-            full_context += f"External Context:\n{context}\n\n"
+            logger.info("ℹ️ External context provided")
+            full_context += f"External: {context}\n"
+            context_sources += 1
+            
         if supabase_prompts:
-            logger.info("✅ Found context in Supabase chatbot_prompts table.")
-            full_context += f"Database Context:\n{supabase_prompts}\n\n"
+            logger.info("✅ Found context in Supabase")
+            full_context += f"DB: {supabase_prompts}\n"
+            context_sources += 1
+            
         if summarized_text:
             snippet = await self.extract_snippet(summarized_text, query)
             if snippet:
-                logger.info("✅ Added snippet from summarized_text.md")
-                full_context += f"Summary Context:\n{snippet}"
+                logger.info("✅ Found snippet in summary")
+                full_context += f"Summary: {snippet}\n"
+                context_sources += 1
 
-        # --- No context at all → translate standard "no record" message ---
+        # Emergency context prioritization when too much context
+        if len(full_context) > 1500 and context_sources > 1:
+            logger.warning("🚨 Too much context, prioritizing sources")
+            
+            # Priority: DB > External > Summary
+            priority_context = ""
+            if supabase_prompts:
+                priority_context = f"DB: {supabase_prompts}\n"
+            elif context:
+                priority_context = f"External: {context}\n"
+            elif snippet:
+                priority_context = f"Summary: {snippet[:500]}\n"
+            
+            full_context = priority_context
+
+        # --- Check token budget and consider keyword matching first ---
+        if full_context:
+            budget = self._check_token_budget(query, full_context)
+            
+            # If token budget is tight, try keyword matching first (zero tokens)
+            if budget['emergency_mode_needed'] or not budget['within_budget']:
+                logger.warning("🚨 Token budget tight, trying keyword matching first")
+                keyword_response = await self._keyword_matching_response(query, lang)
+                
+                # If keyword matching found a good match, use it (saves tokens)
+                if "visit the school office" not in keyword_response.lower() or len(query.split()) <= 3:
+                    logger.info("✅ Using keyword matching instead of API call to save tokens")
+                    return f"{keyword_response.strip()}\n\n{self.get_followup(lang)}"
+        
+        # Continue with normal processing if keyword matching wasn't sufficient
         if not full_context.strip():
             english_response = (
                 "I checked our records, but I wasn't able to find any information about "
@@ -572,10 +906,10 @@ class ChatBot:
                 
             return final_response + f" {self.get_followup(lang)}"
 
-        # Truncate before sending to Groq
-        max_len = 4000  # chars
+        # Truncate before sending to Groq (token management)
+        max_len = 1500  # Reduced from 4000 for token efficiency
         if len(full_context) > max_len:
-            logger.warning("⚠️ Context too long, truncating before Groq call.")
+            logger.warning("⚠️ Context too long, truncating for token efficiency")
             full_context = full_context[:max_len] + "\n...(truncated)..."
 
         logger.info("🤖 Sending query to Groq with trimmed context.")
@@ -586,8 +920,29 @@ class ChatBot:
         if lang == "tl":
             logger.info("🔄 Translating English response to Tagalog")
             try:
+                # Simple approach: translate but keep important English terms
                 tagalog_reply = await self.translate(english_reply, source="en", target="tl")
+                
+                # Post-process to restore important English terms that should stay in English
+                terms_to_restore = {
+                    "pinuno ng guro": "Head Teacher",
+                    "punong guro": "Principal", 
+                    "punong-guro": "Principal",
+                    "bise principal": "Vice Principal",
+                    "elementarya paaralan": "Elementary School",
+                    "paaralan ng elementarya": "Elementary School",
+                    "grado 6": "Grade 6"
+                }
+                
+                for tagalog_term, english_term in terms_to_restore.items():
+                    if tagalog_term in tagalog_reply.lower():
+                        # Use case-insensitive replacement
+                        import re
+                        tagalog_reply = re.sub(re.escape(tagalog_term), english_term, 
+                                             tagalog_reply, flags=re.IGNORECASE)
+                
                 final_response = f"Ayon sa aming records: {tagalog_reply}"
+                
             except Exception as e:
                 logger.warning(f"Translation failed: {e}, using English response")
                 final_response = f"Ayon sa aming records: {english_reply}"

@@ -33,3 +33,12 @@ test_chatbot.py
 test_groq.py
 test_lang_detection.py
 test_mock_translation.py
+cost_comparison.py
+demo_keyword_system.py
+IMPLEMENTATION_SUMMARY.md
+tEST_EMERGENCY_TOKENS.py
+test_enhanced_nlp.py
+test_keyword_matching.py
+test_keyword_system.py
+test_meliza_search.py
+test_token_efficiency.py
