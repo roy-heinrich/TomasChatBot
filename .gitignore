@@ -29,3 +29,7 @@ verify_buckets.py
 verify_credentials.py
 portability_guide.md
 Manage_Chatbot-old.php
+test_chatbot.py
+test_groq.py
+test_lang_detection.py
+test_mock_translation.py

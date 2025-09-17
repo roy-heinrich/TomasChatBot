@@ -149,11 +149,26 @@ class ChatBot:
                 "bisan", "hasta", "para", "kon", "kung", "pero", "kundi"
             ]
             
+            # Filipino/Tagalog markers for better detection  
+            tagalog_markers = [
+                "sino", "saan", "ano", "kailan", "bakit", "paano", "ilan", 
+                "ang", "ng", "sa", "si", "ni", "kay", "para", "para sa",
+                "mga", "na", "ay", "po", "opo", "hindi", "oo", "wala",
+                "meron", "may", "yung", "yun", "ito", "iyan", "iyon",
+                "ako", "ikaw", "siya", "kami", "kayo", "sila", "tayo",
+                "kumusta", "kamusta", "magandang", "salamat", "pasensya"
+            ]
+            
             # Check for Aklanon markers first
             text_lower = text.lower()
             if any(marker in text_lower for marker in aklanon_markers):
                 logger.info("🔎 Aklanon markers detected → akl")
                 return "akl"
+            
+            # Check for Tagalog markers
+            if any(marker in text_lower for marker in tagalog_markers):
+                logger.info("🔎 Tagalog markers detected → tl")
+                return "tl"
             
             # Use langid for other languages
             lang, prob = langid.classify(text)
@@ -534,20 +549,28 @@ class ChatBot:
                 logger.info("✅ Added snippet from summarized_text.md")
                 full_context += f"Summary Context:\n{snippet}"
 
-        # --- No context at all → custom no record message ---
+        # --- No context at all → translate standard "no record" message ---
         if not full_context.strip():
+            english_response = (
+                "I checked our records, but I wasn't able to find any information about "
+                f"{query}. You may visit the school office for further details."
+            )
+            
             if lang == "tl":
-                response = (
-                    f"Tinignan ko ang aming mga record, pero hindi ko nahanap ang impormasyon tungkol sa "
-                    f"{query}. Maaari kayong pumunta sa opisina ng paaralan para sa karagdagang detalye."
-                )
-                return response + f" {self.get_followup(lang)}"
+                logger.info("🔄 Translating 'no context' message to Tagalog")
+                try:
+                    tagalog_response = await self.translate(english_response, source="en", target="tl")
+                    final_response = f"Ayon sa aming records: {tagalog_response}"
+                except Exception as e:
+                    logger.warning(f"Translation failed: {e}, using fallback")
+                    final_response = (
+                        f"Tinignan ko ang aming mga record, pero hindi ko nahanap ang impormasyon tungkol sa "
+                        f"{query}. Maaari kayong pumunta sa opisina ng paaralan para sa karagdagang detalye."
+                    )
             else:
-                response = (
-                    "I checked our records, but I wasn't able to find any information about "
-                    f"{query}. You may visit the school office for further details."
-                )
-                return response + f" {self.get_followup(lang)}"
+                final_response = english_response
+                
+            return final_response + f" {self.get_followup(lang)}"
 
         # Truncate before sending to Groq
         max_len = 4000  # chars
