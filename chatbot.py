@@ -278,9 +278,21 @@ class ChatBot:
         if translated_query != query:
             logger.info(f"📝 Query translation: '{query}' → '{translated_query}'")
         
+        return translated_query
     async def enhanced_search_supabase(self, query: str) -> str:
         """Enhanced search strategy prioritizing full-text search via search_tsv."""
         import re
+        
+        # 🛡️ SAFETY CHECK: Handle None or empty query
+        if not query or query is None:
+            logger.warning("⚠️ Enhanced search received None or empty query")
+            return ""
+        
+        # Ensure query is a string
+        query = str(query).strip()
+        if not query:
+            logger.warning("⚠️ Enhanced search received empty string after cleanup")
+            return ""
         
         # 1. PRIORITY: Try full-text search first (most comprehensive)
         logger.info(f"🔍 Trying full-text search: '{query}'")
@@ -663,6 +675,17 @@ class ChatBot:
     async def fetch_prompts_from_supabase(self, query: str) -> str:
         """Enhanced search using search_tsv full-text search first, then fallback methods."""
         try:
+            # 🛡️ SAFETY CHECK: Handle None or empty query
+            if not query or query is None:
+                logger.warning("⚠️ Fetch prompts received None or empty query")
+                return ""
+            
+            # Ensure query is a string
+            query = str(query).strip()
+            if not query:
+                logger.warning("⚠️ Fetch prompts received empty string after cleanup")
+                return ""
+            
             # PRIORITY 1: Try full-text search using search_tsv (most powerful)
             result = await self._try_full_text_search(query)
             if result:
@@ -693,6 +716,17 @@ class ChatBot:
     async def _try_full_text_search(self, query: str) -> str:
         """Use PostgreSQL full-text search via search_tsv column for names and content."""
         try:
+            # 🛡️ SAFETY CHECK: Handle None or empty query
+            if not query or query is None:
+                logger.warning("⚠️ Full-text search received None or empty query")
+                return ""
+            
+            # Ensure query is a string
+            query = str(query).strip()
+            if not query:
+                logger.warning("⚠️ Full-text search received empty string after cleanup")
+                return ""
+            
             # Clean the query for full-text search
             import re
             
@@ -1057,6 +1091,11 @@ class ChatBot:
             translated_query = self.translate_aklanon_query_keywords(query)
             logger.info(f"🔄 Original query: {query}")
             logger.info(f"🔄 Translated query: {translated_query}")
+            
+            # 🛡️ SAFETY CHECK: Ensure translation worked
+            if not translated_query or translated_query is None:
+                logger.warning("⚠️ Translation failed, using original query")
+                translated_query = query
             
             # Enhanced search strategy for Aklanon queries using the new method
             supabase_prompts = await self.enhanced_search_supabase(translated_query)
