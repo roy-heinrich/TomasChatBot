@@ -47,6 +47,14 @@ class ChatBot:
         self.bucket = "summarized-text"
         self.file = "summarized_text.md"
         
+        # Initialize Supabase client for full-text search
+        from supabase import create_client, Client
+        import os
+        self.supabase: Client = create_client(
+            os.environ.get("SUPABASE_URL"), 
+            os.environ.get("SUPABASE_KEY")
+        )
+        
         # Token management settings
         self.enable_keyword_fallback = enable_keyword_fallback
         self.aggressive_token_saving = aggressive_token_saving
@@ -271,17 +279,24 @@ class ChatBot:
             logger.info(f"📝 Query translation: '{query}' → '{translated_query}'")
         
     async def enhanced_search_supabase(self, query: str) -> str:
-        """Enhanced search strategy that tries multiple approaches to find relevant information."""
+        """Enhanced search strategy prioritizing full-text search via search_tsv."""
         import re
         
-        # 1. First try exact search with original query
+        # 1. PRIORITY: Try full-text search first (most comprehensive)
+        logger.info(f"🔍 Trying full-text search: '{query}'")
+        result = await self._try_full_text_search(query)
+        if result:
+            logger.info("✅ Found result with full-text search")
+            return result
+        
+        # 2. Try exact keyword search (fallback)
         logger.info(f"🔍 Trying exact search: '{query}'")
         result = await self.fetch_prompts_from_supabase(query)
         if result:
             logger.info("✅ Found result with exact search")
             return result
         
-        # 2. Try extracting and searching for names (capitalized words)
+        # 3. Try extracting and searching for names (capitalized words)
         names = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', query)
         if names:
             for name in names:
@@ -291,8 +306,37 @@ class ChatBot:
                     logger.info(f"✅ Found context for name: {name}")
                     return name_result
         
-        # 3. For "who is" or "sino si" questions, try searching for job titles
+        # 4. Enhanced name-to-role mapping for common staff
         query_lower = query.lower()
+        name_role_mappings = {
+            # Staff name to their role/position
+            ("meliza", "delgado"): ["head teacher", "teacher"],
+            ("maria", "santos"): ["principal"],
+            ("meliza a delgado", "meliza a. delgado"): ["head teacher"],
+            # Add more staff mappings as needed
+        }
+        
+        # Check if query contains any known names and search by their roles
+        for name_patterns, roles in name_role_mappings.items():
+            if any(name_pattern in query_lower for name_pattern in name_patterns):
+                logger.info(f"🎯 Detected known name, searching by roles: {roles}")
+                for role in roles:
+                    role_result = await self.fetch_prompts_from_supabase(role)
+                    if role_result:
+                        logger.info(f"✅ Found context via role mapping: {role}")
+                        return role_result
+        
+        # 5. Try searching within response content (not just keywords)
+        # This searches the actual response text for names
+        if names:
+            for name in names:
+                logger.info(f"🔍 Searching in response content for: {name}")
+                content_result = await self._search_in_response_content(name)
+                if content_result:
+                    logger.info(f"✅ Found in response content: {name}")
+                    return content_result
+        
+        # 6. For "who is" or "sino si" questions, try searching for job titles
         if any(pattern in query_lower for pattern in ["who is", "sino si", "sin-o si", "sino ang", "sin-o ang"]):
             job_title_searches = [
                 "head teacher",
@@ -310,7 +354,7 @@ class ChatBot:
                     logger.info(f"✅ Found context for job title: {job_title}")
                     return job_result
         
-        # 4. Try keyword-based search (remove function words)
+        # 7. Try keyword-based search (remove function words)
         key_terms = []
         words = query_lower.split()
         stop_words = {"who", "is", "the", "what", "where", "when", "how", "a", "an", "and", "or", "but", 
@@ -328,7 +372,7 @@ class ChatBot:
                 logger.info("✅ Found context with key terms search")
                 return key_result
         
-        # 5. Try individual words from the query
+        # 8. Try individual words from the query
         for word in key_terms:
             if len(word) > 3:  # Only try longer words
                 logger.info(f"🔍 Searching for individual word: {word}")
@@ -338,6 +382,49 @@ class ChatBot:
                     return word_result
         
         logger.info("❌ No results found with enhanced search")
+        return ""
+
+    async def _search_in_response_content(self, search_term: str) -> str:
+        """Search for names/terms within the response content, not just keywords."""
+        try:
+            # Use Supabase to search in the response content using ILIKE
+            supabase_url = os.getenv("SUPABASE_URL")
+            supabase_key = os.getenv("SUPABASE_KEY")
+            
+            if not supabase_url or not supabase_key:
+                logger.warning("Supabase credentials missing")
+                return ""
+            
+            # Search in the response field using ILIKE (case-insensitive)
+            search_pattern = f"%{search_term}%"
+            
+            # Make API call to search in response content
+            async with httpx.AsyncClient() as client:
+                headers = {
+                    "apikey": supabase_key,
+                    "Authorization": f"Bearer {supabase_key}",
+                    "Content-Type": "application/json"
+                }
+                
+                # Search where response content contains the search term
+                params = {
+                    "select": "keywords,response",
+                    "response": f"ilike.{search_pattern}"
+                }
+                
+                url = f"{supabase_url}/rest/v1/chatbot_prompts"
+                response = await client.get(url, headers=headers, params=params)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data:
+                        # Return the first matching result
+                        result = data[0]
+                        return f"Q: {result['keywords']}\nA: {result['response']}"
+                        
+        except Exception as e:
+            logger.warning(f"Error searching response content: {e}")
+        
         return ""
     
     async def fetch_summarized_file(self) -> str:
@@ -574,12 +661,18 @@ class ChatBot:
 
             
     async def fetch_prompts_from_supabase(self, query: str) -> str:
-        """Optimized search with token efficiency in mind."""
+        """Enhanced search using search_tsv full-text search first, then fallback methods."""
         try:
-            # Extract key search terms (limit to top 3 for efficiency)
+            # PRIORITY 1: Try full-text search using search_tsv (most powerful)
+            result = await self._try_full_text_search(query)
+            if result:
+                logger.info("✅ Found result using full-text search (search_tsv)")
+                return result
+            
+            # PRIORITY 2: Extract key search terms and try traditional methods
             search_terms = self._extract_search_terms(query)[:3]
             
-            # Quick exact match first (most token-efficient)
+            # Quick exact match (most token-efficient)
             result = await self._try_exact_match(search_terms)
             if result:
                 return result
@@ -595,6 +688,52 @@ class ChatBot:
             
         except Exception as e:
             logger.error(f"Error in optimized fetch_prompts_from_supabase: {e}")
+            return ""
+
+    async def _try_full_text_search(self, query: str) -> str:
+        """Use PostgreSQL full-text search via search_tsv column for names and content."""
+        try:
+            # Clean the query for full-text search
+            import re
+            
+            # Remove punctuation and split into words
+            clean_query = re.sub(r'[^\w\s]', ' ', query.lower())
+            words = [word.strip() for word in clean_query.split() if len(word.strip()) > 2]
+            
+            # Remove common stop words
+            stop_words = {"who", "is", "the", "what", "where", "when", "how", "and", "or", "but", 
+                         "sino", "si", "ang", "sa", "ng", "may", "are", "was", "were", "have", "has"}
+            search_words = [word for word in words if word not in stop_words]
+            
+            if not search_words:
+                return ""
+            
+            # Try searching individual meaningful words first (simpler approach)
+            for word in search_words:
+                logger.info(f"🔍 Full-text search for: '{word}'")
+                
+                try:
+                    # Use ilike for case-insensitive search in both keywords and response
+                    result = self.supabase.table("chatbot_prompts") \
+                        .select("keywords, response") \
+                        .or_(f"keywords.ilike.%{word}%,response.ilike.%{word}%") \
+                        .execute()
+                    
+                    if result.data:
+                        logger.info(f"✅ Full-text search succeeded for '{word}' with {len(result.data)} results")
+                        # Return the best match
+                        best_match = result.data[0]
+                        formatted_result = f"Q: {best_match['keywords']}\nA: {best_match['response']}"
+                        return formatted_result
+                        
+                except Exception as e:
+                    logger.warning(f"Full-text search failed for '{word}': {e}")
+            
+            logger.info("❌ No results found with full-text search")
+            return ""
+            
+        except Exception as e:
+            logger.warning(f"Error in full-text search: {e}")
             return ""
 
     async def _try_exact_match(self, search_terms: list) -> str:
@@ -1081,3 +1220,36 @@ class ChatBot:
         # --- Always append follow-up consistently ---
         return f"{final_response.strip()}\n\n{self.get_followup(lang)}"
 
+
+if __name__ == "__main__":
+    import asyncio
+    
+    async def test_chatbot():
+        chatbot = ChatBot()
+        
+        print("🤖 Tomas Leo AI Chatbot Test")
+        print("=" * 50)
+        
+        # Test queries
+        test_queries = [
+            "Who is Meliza Delgado?",
+            "sino si meliza delgado?",
+            "Who is the head teacher?",
+            "What is the school's mission?",
+            "hello"
+        ]
+        
+        for query in test_queries:
+            print(f"\n📝 Query: {query}")
+            print("-" * 30)
+            
+            try:
+                response = await chatbot.process_query(query)
+                print(f"🤖 Response: {response}")
+            except Exception as e:
+                print(f"❌ Error: {e}")
+                
+            print("=" * 50)
+    
+    # Run the test
+    asyncio.run(test_chatbot())

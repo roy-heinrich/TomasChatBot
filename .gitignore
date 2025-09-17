@@ -46,3 +46,18 @@ check_database_staff.py
 test_aklanon_fix.py
 test_enhanced_search.py
 test_greeting_fix.py
+
+# Additional test and analysis files created during development
+analyze_chatbot.py
+analyze_name_search.py
+priority_improvements.py
+simple_test.py
+test_search.py
+test_meliza.py
+test_api_now.py
+test_emergency_tokens.py
+
+# Documentation files that are temporary/drafts
+CHANGES_SUMMARY.md
+IMMEDIATE_ACTION_PLAN.md
+PORTABILITY_GUIDE.md
