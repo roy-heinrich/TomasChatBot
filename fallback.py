@@ -36,7 +36,7 @@ class FallbackHandler:
 
         if language.startswith("akl"):  # Aklanon
             return (
-                "Paumanhin kon indi nako masabat inyo nga pamangkot. "
+                "Paumanhin kon indi ko masabat inyo nga pamangkot. "
                 "Maabot nyo it admin office para sa dugang nga bulig. "
                 f"Kon gusto nyo magstorya sa tawo, pwede nyo sila kontakon sa {messenger_button}"
             )
