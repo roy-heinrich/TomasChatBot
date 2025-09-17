@@ -71,17 +71,31 @@ class ChatBot:
         self.messages = {
             "greeting": {
                 "en": [
-                    "Hello! How can I help you today?",
-                    "Hi there! What can I do for you?"
+                    "Hello there! 👋 I'm Tomas, your friendly school assistant! What can I help you with today?",
+                    "Hi! 😊 Welcome to Tomas SM. Bautista Elementary School! How can I assist you?",
+                    "Hey! Great to see you here! What would you like to know about our school?",
+                    "Hello! 🏫 I'm here to help with any questions about our lovely school. What's on your mind?"
                 ],
                 "tl": [
-                    "Magandang araw! Paano po ako makakatulong?",
-                    "Kamusta! Ano po ang maitutulong ko sa inyo?"
+                    "Magandang araw! 👋 Ako si Tomas, ang inyong kaibigan dito sa paaralan! Paano ko kayo matutulungan ngayon?",
+                    "Kamusta! 😊 Maligayang pagdating sa Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
+                    "Uy, kumusta! Masaya akong makausap kayo! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
+                    "Hello po! 🏫 Nandito ako para tumulong sa inyong mga tanong. Ano ang nasa isip ninyo?"
                 ]
             },
             "follow_up": {
-                "en": "Do you have any other questions?",
-                "tl": "May iba pa po ba kayong katanungan?"
+                "en": [
+                    "Anything else I can help you with? 😊",
+                    "Got more questions? I'm all ears! 👂",
+                    "Is there anything else you'd like to know?",
+                    "What else can I help you discover about our school? 🏫"
+                ],
+                "tl": [
+                    "May iba pa bang matutulungan ko sa inyo? 😊",
+                    "May ibang tanong pa kaya? Nakikinig ako! 👂",
+                    "Mayroon pa bang ibang gusto ninyong malaman?",
+                    "Ano pa ang pwede kong ipakita sa inyo tungkol sa aming paaralan? 🏫"
+                ]
             }
     }
     def reset_conversation(self, lang="en"):
@@ -90,9 +104,11 @@ class ChatBot:
             {
                 "role": "system",
                 "content": (
-                    "You are TOMAS, a polite and helpful assistant for "
-                    "Tomas SM. Bautista Elementary School. Always answer "
-                    "clearly in the user's language (English, Tagalog, or Aklanon)."
+                    "You are TOMAS, a friendly and enthusiastic assistant for "
+                    "Tomas SM. Bautista Elementary School! 🏫 You're like a warm, helpful "
+                    "school staff member who genuinely loves helping people. Use emojis, "
+                    "be conversational, and answer in the user's language (English, Tagalog, or Aklanon). "
+                    "Make every interaction feel personal and welcoming! 😊"
                 ),
             },
             {
@@ -109,7 +125,8 @@ class ChatBot:
         # For Aklanon, use Tagalog follow-up
         if lang == "akl":
             lang = "tl"
-        return self.messages["follow_up"].get(lang, self.messages["follow_up"]["en"])
+        followups = self.messages["follow_up"].get(lang, self.messages["follow_up"]["en"])
+        return random.choice(followups) if isinstance(followups, list) else followups
 
     def get_goodbye(self, lang: str) -> str:
         messages = {
@@ -192,7 +209,7 @@ class ChatBot:
     
     def _check_token_budget(self, query: str, context: str) -> dict:
         """Check if we're within token budget and suggest optimizations."""
-        system_prompt = "TOMAS assistant for Tomas SM. Bautista Elementary School. Answer in ENGLISH using context. Be concise."
+        system_prompt = "You are TOMAS! 😊 A friendly, enthusiastic assistant for Tomas SM. Bautista Elementary School. You're like talking to a warm school staff member who loves helping! Use the context provided to give helpful, conversational answers in ENGLISH. Add emojis and personality - make it feel natural! 🏫✨"
         user_message = f"Context: {context}\nQuestion: {query}"
         
         estimated_input_tokens = self.estimate_tokens(system_prompt + user_message)
@@ -580,8 +597,8 @@ class ChatBot:
 
     async def ask_groq(self, query: str, context: str, lang: str) -> str:
         """Token-optimized Groq API call with emergency fallbacks."""
-        # Start with most concise prompt
-        system_prompt = "TOMAS assistant for Tomas SM. Bautista Elementary School. Answer in ENGLISH using context. Be concise."
+        # Start with friendly, conversational prompt
+        system_prompt = "You are TOMAS! 😊 A friendly, enthusiastic assistant for Tomas SM. Bautista Elementary School. You're like talking to a warm school staff member who loves helping! Use the context provided to give helpful, conversational answers in ENGLISH. Add emojis and personality - make it feel natural! 🏫✨"
         
         # Emergency token management
         max_context_length = 1500
@@ -692,23 +709,58 @@ class ChatBot:
         """Enhanced keyword matching - zero token usage alternative."""
         query_lower = query.lower()
         
-        # Expanded keyword database for common school queries
+        # Expanded keyword database with conversational, playful responses
         keyword_responses = {
-            # Staff Information
-            ("meliza", "delgado"): "Si Meliza A. Delgado ang Head Teacher ng Tomas SM. Bautista Elementary School.",
-            ("maria", "santos"): "Si Maria Santos ang Principal ng Tomas SM. Bautista Elementary School.",
-            ("principal",): "Si Maria Santos ang Principal ng paaralan.",
-            ("head teacher", "head_teacher"): "Si Meliza A. Delgado ang Head Teacher.",
-            ("vice principal",): "For Vice Principal information, please visit the school office.",
+            # Staff Information - Playful responses
+            ("meliza", "delgado"): {
+                "en": "Oh, you're asking about Ms. Meliza! 😊 She's our amazing Head Teacher - Meliza A. Delgado. She's the one who keeps everything running smoothly here at school!",
+                "tl": "Ay, si Ms. Meliza! 😊 Siya ang aming napakagaling na Head Teacher - si Meliza A. Delgado. Siya ang nag-aasikaso para maayos ang lahat dito sa paaralan!",
+                "default": "Si Meliza A. Delgado ang Head Teacher ng Tomas SM. Bautista Elementary School."
+            },
+            ("maria", "santos"): {
+                "en": "Ah, asking about our Principal! 👩‍💼 That's Ms. Maria Santos - she's the wonderful leader of our school family!",
+                "tl": "Ay, ang aming Principal! 👩‍💼 Si Ms. Maria Santos yan - siya ang magaling na lider ng aming pamilyang paaralan!",
+                "default": "Si Maria Santos ang Principal ng Tomas SM. Bautista Elementary School."
+            },
+            ("principal",): {
+                "en": "Our Principal is the lovely Ms. Maria Santos! 🌟 She really cares about all our students and teachers.",
+                "tl": "Ang aming Principal ay si Ms. Maria Santos! 🌟 Talaga namang mabait siya sa lahat ng estudyante at guro.",
+                "default": "Si Maria Santos ang Principal ng paaralan."
+            },
+            ("head teacher", "head_teacher"): {
+                "en": "That would be Ms. Meliza A. Delgado! 📚 She's fantastic at what she does - our Head Teacher extraordinaire!",
+                "tl": "Si Ms. Meliza A. Delgado yan! 📚 Napakagaling niyang Head Teacher - talagang expert!",
+                "default": "Si Meliza A. Delgado ang Head Teacher."
+            },
             
-            # School Information  
-            ("address", "location", "where", "siin", "diin", "asa", "saan"): "Ang lokasyon ng paaralan ay matatagpuan sa Fatima, New Washington, Aklan.",
-            ("phone", "contact", "number"): "For contact information, please visit the school office.",
-            ("email",): "For email contact, please visit the school office.",
-            ("hours", "schedule", "time"): "For school hours and schedule, please visit the school office.",
+            # School Information - Friendly location response
+            ("address", "location", "where", "siin", "diin", "asa", "saan"): {
+                "en": "We're located in the beautiful area of Fatima, New Washington, Aklan! 🏫 It's a lovely spot for learning!",
+                "tl": "Narito kami sa magandang lugar ng Fatima, New Washington, Aklan! 🏫 Napakagandang lugar para sa pag-aaral!",
+                "default": "Ang lokasyon ng paaralan ay matatagpuan sa Fatima, New Washington, Aklan."
+            },
+            ("phone", "contact", "number"): {
+                "en": "For our contact details, just drop by the school office! 📞 The staff there will be happy to help you out!",
+                "tl": "Para sa contact namin, pumunta lang sa office ng paaralan! 📞 Matutuwa ang staff na tumulong sa inyo!",
+                "default": "For contact information, please visit the school office."
+            },
+            ("email",): {
+                "en": "Want our email? The school office has all the contact info you need! 💌 They'll sort you right out!",
+                "tl": "Gusto ninyo ang email namin? Nasa office ng paaralan lahat ng contact info! 💌 Matutulungan nila kayo agad!",
+                "default": "For email contact, please visit the school office."
+            },
+            ("hours", "schedule", "time"): {
+                "en": "Curious about our school hours? ⏰ Pop by the office and they'll give you all the schedule details!",
+                "tl": "Curious kayo sa oras ng paaralan? ⏰ Punta lang sa office, ibigay nila lahat ng schedule!",
+                "default": "For school hours and schedule, please visit the school office."
+            },
             
             # Academic Information
-            ("enrollment", "admission", "register"): "For enrollment information, please visit the school office.",
+            ("enrollment", "admission", "register"): {
+                "en": "Ready to join our school family? 🎒 Head to the office for all the enrollment info - they'll guide you through everything!",
+                "tl": "Ready na ba kayong sumali sa pamilya namin? 🎒 Punta sa office para sa enrollment info - gabayan nila kayo sa lahat!",
+                "default": "For enrollment information, please visit the school office."
+            },
             ("tuition", "fee", "payment"): "For tuition and fee information, please visit the school office.",
             ("curriculum", "subjects", "classes"): "For curriculum information, please visit the school office.",
             ("grade", "level"): "For grade level information, please visit the school office.",
@@ -727,34 +779,47 @@ class ChatBot:
         # Find matching keywords
         best_match = None
         max_matches = 0
+        best_response = None
         
         for keywords, response in keyword_responses.items():
             matches = sum(1 for keyword in keywords if keyword in query_lower)
             if matches > max_matches:
                 max_matches = matches
-                best_match = response
+                best_match = keywords
+                best_response = response
         
         if best_match and max_matches > 0:
             logger.info(f"🎯 Keyword match found ({max_matches} matches)")
             
-            # Translate to appropriate language if needed
-            if lang == "tl" and not any(filipino_word in best_match for filipino_word in ["Si", "ang", "ng"]):
-                # Simple translation for common phrases
-                translated = await self._simple_translate_to_tagalog(best_match)
-                return f"Ayon sa aming records: {translated}"
-            elif lang == "en" and any(filipino_word in best_match for filipino_word in ["Si", "ang", "ng"]):
-                # Special case: for location responses, return English version
-                if "Ang lokasyon ng paaralan ay matatagpuan sa Fatima, New Washington, Aklan" in best_match:
-                    return "The school is located in Fatima, New Washington, Aklan."
-                # Convert Filipino response to English for other cases
-                translated = await self._simple_translate_to_english(best_match)
-                return translated
+            # Handle new dictionary format with language-specific responses
+            if isinstance(best_response, dict):
+                # Get language-specific response
+                if lang == "akl":
+                    # For Aklanon, use Tagalog response
+                    response_text = best_response.get("tl", best_response.get("default", ""))
+                else:
+                    response_text = best_response.get(lang, best_response.get("default", ""))
+                return response_text
             else:
-                # Special handling for location responses - return as-is without prefix
-                if "Ang lokasyon ng paaralan ay matatagpuan sa Fatima, New Washington, Aklan" in best_match:
-                    return best_match
-                # For other responses, add prefix for non-English
-                return best_match if lang == "en" else f"Ayon sa aming records: {best_match}"
+                # Handle old string format (backward compatibility)
+                # Translate to appropriate language if needed
+                if lang == "tl" and not any(filipino_word in best_response for filipino_word in ["Si", "ang", "ng"]):
+                    # Simple translation for common phrases
+                    translated = await self._simple_translate_to_tagalog(best_response)
+                    return f"Ayon sa aming records: {translated}"
+                elif lang == "en" and any(filipino_word in best_response for filipino_word in ["Si", "ang", "ng"]):
+                    # Special case: for location responses, return English version
+                    if "Ang lokasyon ng paaralan ay matatagpuan sa Fatima, New Washington, Aklan" in best_response:
+                        return "The school is located in Fatima, New Washington, Aklan."
+                    # Convert Filipino response to English for other cases
+                    translated = await self._simple_translate_to_english(best_response)
+                    return translated
+                else:
+                    # Special handling for location responses - return as-is without prefix
+                    if "Ang lokasyon ng paaralan ay matatagpuan sa Fatima, New Washington, Aklan" in best_response:
+                        return best_response
+                    # For other responses, add prefix for non-English
+                    return best_response if lang == "en" else f"Ayon sa aming records: {best_response}"
         
         # Generic fallback
         fallback_msg = "Please visit the school office for assistance with your inquiry."
