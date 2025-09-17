@@ -126,6 +126,17 @@ class ChatBot:
             return random.choice(value)  # random greeting
         return value  # fixed follow-up
 
+    def _seems_english(self, text: str) -> bool:
+        """Quick check if text seems to be in English based on common English words"""
+        english_indicators = [
+            "the", "and", "is", "are", "was", "were", "have", "has", "had", 
+            "will", "would", "can", "could", "should", "must", "may", "might",
+            "this", "that", "these", "those", "with", "for", "from", "about"
+        ]
+        text_lower = text.lower()
+        english_word_count = sum(1 for word in english_indicators if f" {word} " in f" {text_lower} ")
+        return english_word_count >= 2
+
     async def detect_language(self, text: str) -> str:
         """Detect language with Aklanon markers triggering special handling."""
         try:
@@ -206,15 +217,19 @@ class ChatBot:
         system_prompts = {
             "en": (
                 "You are TOMAS, the school assistant for Tomas SM. Bautista Elementary School. "
-                "You answer only using the provided context. "
-                "and suggest visiting the school office. "
-                "Do NOT ask the user for more details or clarification."
+                "IMPORTANT: Always respond in ENGLISH only. "
+                "Answer only using the provided context. If you cannot find information in the context, "
+                "suggest visiting the school office. "
+                "Do NOT ask follow-up questions or request clarification. "
+                "Keep responses clear and concise in ENGLISH."
             ),
             "tl": (
                 "Ikaw si TOMAS, ang school assistant ng Tomas SM. Bautista Elementary School. "
-                "Sumasagot ka lang base sa context na ibinigay. "
-                "lumapit sa opisina ng paaralan. "
-                "Huwag humingi ng dagdag na detalye sa user."
+                "MAHALAGA: Laging sumagot sa TAGALOG/FILIPINO lamang. "
+                "Sumasagot ka lang base sa context na ibinigay. Kung walang impormasyon sa context, "
+                "sabihin na lumapit sa opisina ng paaralan. "
+                "Huwag mag-tanong ng follow-up o humingi ng dagdag na detalye. "
+                "Panatilihing malinaw at maikling sagot sa TAGALOG/FILIPINO."
             )
         }
         if lang not in system_prompts:
@@ -227,7 +242,7 @@ class ChatBot:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Context:\n{context}\n\nUser: {query}"}
             ],
-            "temperature": 0.7
+            "temperature": 0.3  # Lower temperature for more consistent responses
         }
         headers = {
             "Authorization": f"Bearer {self.groq_key}",
@@ -538,12 +553,13 @@ class ChatBot:
                     f"Tinignan ko ang aming mga record, pero hindi ko nahanap ang impormasyon tungkol sa "
                     f"{query}. Maaari kayong pumunta sa opisina ng paaralan para sa karagdagang detalye."
                 )
+                return response + f" {self.get_followup(lang)}"
             else:
                 response = (
                     "I checked our records, but I wasn't able to find any information about "
                     f"{query}. You may visit the school office for further details."
                 )
-            return response + " " + self.get_followup(lang)
+                return response + f" {self.get_followup(lang)}"
 
         # Truncate before sending to Groq
         max_len = 4000  # chars
@@ -553,6 +569,12 @@ class ChatBot:
 
         logger.info("🤖 Sending query to Groq with trimmed context.")
         ai_reply = await self.ask_groq(query, full_context, lang)
+
+        # --- Ensure response language consistency ---
+        # If detected language is Filipino but AI responded in English, add note
+        if lang == "tl" and self._seems_english(ai_reply):
+            logger.warning("⚠️ AI responded in English for Filipino query, adding language note")
+            ai_reply = f"Ayon sa aming records: {ai_reply}"
 
         # --- Always append follow-up consistently ---
         return f"{ai_reply.strip()}\n\n{self.get_followup(lang)}"
