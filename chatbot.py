@@ -106,6 +106,9 @@ class ChatBot:
         return random.choice(greetings)
 
     def get_followup(self, lang: str = "en") -> str:
+        # For Aklanon, use Tagalog follow-up
+        if lang == "akl":
+            lang = "tl"
         return self.messages["follow_up"].get(lang, self.messages["follow_up"]["en"])
 
     def get_goodbye(self, lang: str) -> str:
@@ -699,7 +702,7 @@ class ChatBot:
             ("vice principal",): "For Vice Principal information, please visit the school office.",
             
             # School Information  
-            ("address", "location", "where", "siin", "diin", "asa"): "Ang lokasyon ng paaralan ay matatagpuan sa Fatima, New Washington, Aklan.",
+            ("address", "location", "where", "siin", "diin", "asa", "saan"): "Ang lokasyon ng paaralan ay matatagpuan sa Fatima, New Washington, Aklan.",
             ("phone", "contact", "number"): "For contact information, please visit the school office.",
             ("email",): "For email contact, please visit the school office.",
             ("hours", "schedule", "time"): "For school hours and schedule, please visit the school office.",
@@ -747,6 +750,10 @@ class ChatBot:
                 translated = await self._simple_translate_to_english(best_match)
                 return translated
             else:
+                # Special handling for location responses - return as-is without prefix
+                if "Ang lokasyon ng paaralan ay matatagpuan sa Fatima, New Washington, Aklan" in best_match:
+                    return best_match
+                # For other responses, add prefix for non-English
                 return best_match if lang == "en" else f"Ayon sa aming records: {best_match}"
         
         # Generic fallback
