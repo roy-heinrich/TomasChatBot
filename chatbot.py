@@ -1609,14 +1609,8 @@ class ChatBot:
                 logger.warning(f"Translation failed: {e}, using English response")
                 final_response = f"Ayon sa aming records: {english_reply}"
         else:
-            # For English queries, use response as-is
-            # Special handling for location queries in English
-            if (any(word in query.lower() for word in ['where', 'location', 'address']) and 
-                any(word in query.lower() for word in ['school', 'tomas', 'elementary']) and
-                any(word in english_reply.lower() for word in ['fatima', 'new washington', 'aklan', 'location'])):
-                final_response = "Ang lokasyon ng paaralan ay matatagpuan sa Fatima, New Washington, Aklan."
-            else:
-                final_response = english_reply
+            # For English queries, use English response as-is (keep lively tone)
+            final_response = english_reply
 
         # --- Always append follow-up consistently ---
         return f"{final_response.strip()}\n\n{self.get_followup(lang)}"
