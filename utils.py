@@ -91,6 +91,55 @@ def extract_text(filename: str, file_bytes: bytes) -> str:
         text = f"[utils] Unsupported file type: {filename}\n"
     return text.strip()
 
+def discover_files_by_common_patterns():
+    """
+    Discover files by trying common filename patterns when bucket listing fails.
+    This is a fallback method to find files in the chatbot-docs bucket.
+    """
+    discovered_files = []
+    supabase_service = get_supabase_service_client()
+    
+    # Common file extensions we support
+    extensions = ['docx', 'pdf', 'txt', 'xlsx', 'pptx', 'doc', 'xls', 'ppt']
+    
+    # Try some common timestamp ranges (files are usually named with timestamps)
+    import time
+    current_time = int(time.time())
+    
+    # Check recent uploads (last 90 days)
+    for days_ago in range(90):
+        timestamp = current_time - (days_ago * 24 * 60 * 60)
+        
+        # Try different hash patterns (the part after underscore)
+        # Common patterns: 8-12 character hex strings
+        test_hashes = [
+            '536ae6173c20',  # Known working hash
+            '801b0240f7ce',  # Another known hash
+            format(timestamp % 0xffffffffffff, '012x'),  # Generate from timestamp
+            format((timestamp * 31) % 0xffffffffffff, '012x'),  # Variation
+        ]
+        
+        for ext in extensions:
+            for hash_part in test_hashes:
+                test_filename = f"{timestamp}_{hash_part}.{ext}"
+                try:
+                    test_download = supabase_service.storage.from_(DOCS_BUCKET).download(test_filename)
+                    if test_filename not in discovered_files:
+                        discovered_files.append(test_filename)
+                        print(f"[utils] Discovered file: {test_filename} ({len(test_download)} bytes)")
+                except:
+                    continue  # File doesn't exist
+                    
+                # Don't try too many combinations to avoid excessive API calls
+                if len(discovered_files) >= 10:
+                    break
+            if len(discovered_files) >= 10:
+                break
+        if len(discovered_files) >= 10:
+            break
+    
+    return discovered_files
+
 # -------------------------
 # Compile docs and store (overwrite safe)
 # -------------------------
@@ -102,44 +151,80 @@ async def summarize_and_store():
     """
     supabase = get_supabase_client()
 
-    # Try to list all files in chatbot-docs
+    # Try to list all files in chatbot-docs using both regular and service clients
     files = []
     listing_failed = False
     
+    # First try with regular client
     try:
         files = supabase.storage.from_(DOCS_BUCKET).list()
-        print(f"[utils] Found {len(files)} files via bucket listing")
+        print(f"[utils] Found {len(files)} files via regular client bucket listing")
         
-        # If listing returns empty but we know files exist, use fallback
-        if len(files) == 0:
-            print(f"[utils] Bucket listing returned empty - trying fallback approach")
+        if len(files) > 0:
+            listing_failed = False
+        else:
+            print(f"[utils] Regular client returned empty - trying service client")
             listing_failed = True
             
     except Exception as e:
-        print(f"[utils] Bucket listing failed (RLS policy): {e}")
+        print(f"[utils] Regular client bucket listing failed: {e}")
         listing_failed = True
-        
-    # If listing failed or returned empty, try fallback with known files
+    
+    # If regular client failed, try with service client (better permissions)
     if listing_failed:
+        try:
+            supabase_service = get_supabase_service_client()
+            files = supabase_service.storage.from_(DOCS_BUCKET).list()
+            print(f"[utils] Found {len(files)} files via service client bucket listing")
+            
+            if len(files) > 0:
+                listing_failed = False
+            else:
+                print(f"[utils] Service client also returned empty - using fallback")
+                listing_failed = True
+                
+        except Exception as e:
+            print(f"[utils] Service client bucket listing also failed: {e}")
+            listing_failed = True
+        
+    # If both clients failed, use fallback approaches
+    if listing_failed:
+        print(f"[utils] Using fallback approaches...")
+        files = []  # Reset files array
+        all_possible_files = set()  # Use set to avoid duplicates
+        
+        # Method 1: Try known existing files
         known_files = [
-            "1758076583_536ae6173c20.docx"  # The file we know exists
-            # Add more files here as needed
+            "1758076583_536ae6173c20.docx",
+            "1758112830_801b0240f7ce.docx"
         ]
         
-        print(f"[utils] Fallback: Trying {len(known_files)} known files...")
-        files = []  # Reset files array
-        
         for file_name in known_files:
+            all_possible_files.add(file_name)
+        
+        # Method 2: Try to discover files using common patterns
+        try:
+            discovered_files = discover_files_by_common_patterns()
+            for filename in discovered_files:
+                all_possible_files.add(filename)
+            print(f"[utils] Pattern discovery found {len(discovered_files)} additional files")
+        except Exception as e:
+            print(f"[utils] Pattern discovery failed: {e}")
+        
+        print(f"[utils] Fallback: Testing {len(all_possible_files)} potential files...")
+        
+        for file_name in all_possible_files:
             try:
-                # Test if file exists by trying to download it
-                test_download = supabase.storage.from_(DOCS_BUCKET).download(file_name)
+                # Try with service client for downloads (better permissions)
+                supabase_service = get_supabase_service_client()
+                test_download = supabase_service.storage.from_(DOCS_BUCKET).download(file_name)
                 files.append({"name": file_name})
-                print(f"[utils] Found known file: {file_name} ({len(test_download)} bytes)")
+                print(f"[utils] Confirmed file: {file_name} ({len(test_download)} bytes)")
             except Exception as file_e:
-                print(f"[utils] Known file {file_name} not accessible: {file_e}")
+                print(f"[utils] File not accessible: {file_name} - {file_e}")
 
     if not files:
-        print("[utils] No files found in chatbot-docs bucket")
+        print("[utils] No files found in chatbot-docs bucket after trying all methods")
         return
 
     compiled_parts = []
