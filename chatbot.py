@@ -703,9 +703,7 @@ class ChatBot:
         
         # Check for common names/keywords in query
         if any(name in query_lower for name in ["meliza", "delgado"]):
-            return "Meliza Delgado is the Head Teacher. Visit school office for details."
-        elif any(name in query_lower for name in ["maria", "santos", "principal"]):
-            return "Maria Santos is the Principal. Visit school office for details."  
+            return "Meliza Delgado is the Head Teacher. Visit school office for details."  
         elif any(word in query_lower for word in ["teacher", "staff", "faculty"]):
             return "For staff information, please visit the school office."
         elif any(word in query_lower for word in ["contact", "phone", "email", "address"]):
@@ -727,22 +725,11 @@ class ChatBot:
                 "tl": "Ay, si Ms. Meliza! 😊 Siya ang aming napakagaling na Head Teacher - si Meliza A. Delgado. Siya ang nag-aasikaso para maayos ang lahat dito sa paaralan!",
                 "default": "Si Meliza A. Delgado ang Head Teacher ng Tomas SM. Bautista Elementary School."
             },
-            ("maria", "santos"): {
-                "en": "Ah, asking about our Principal! 👩‍💼 That's Ms. Maria Santos - she's the wonderful leader of our school family!",
-                "tl": "Ay, ang aming Principal! 👩‍💼 Si Ms. Maria Santos yan - siya ang magaling na lider ng aming pamilyang paaralan!",
-                "default": "Si Maria Santos ang Principal ng Tomas SM. Bautista Elementary School."
-            },
-            ("principal",): {
-                "en": "Our Principal is the lovely Ms. Maria Santos! 🌟 She really cares about all our students and teachers.",
-                "tl": "Ang aming Principal ay si Ms. Maria Santos! 🌟 Talaga namang mabait siya sa lahat ng estudyante at guro.",
-                "default": "Si Maria Santos ang Principal ng paaralan."
-            },
             ("head teacher", "head_teacher"): {
                 "en": "That would be Ms. Meliza A. Delgado! 📚 She's fantastic at what she does - our Head Teacher extraordinaire!",
-                "tl": "Si Ms. Meliza A. Delgado yan! 📚 Napakagaling niyang Head Teacher - talagang expert!",
+                "tl": "Si Ms. Meliza A. Delgado yan! 📚 Napakagaling naming Head Teacher - talagang expert!",
                 "default": "Si Meliza A. Delgado ang Head Teacher."
             },
-            
             # School Information - Friendly location response
             ("address", "location", "where", "siin", "diin", "asa", "saan"): {
                 "en": "We're located in the beautiful area of Fatima, New Washington, Aklan! 🏫 It's a lovely spot for learning!",
@@ -759,11 +746,7 @@ class ChatBot:
                 "tl": "Gusto ninyo ang email namin? Nasa office ng paaralan lahat ng contact info! 💌 Matutulungan nila kayo agad!",
                 "default": "For email contact, please visit the school office."
             },
-            ("hours", "schedule", "time"): {
-                "en": "Curious about our school hours? ⏰ Pop by the office and they'll give you all the schedule details!",
-                "tl": "Curious kayo sa oras ng paaralan? ⏰ Punta lang sa office, ibigay nila lahat ng schedule!",
-                "default": "For school hours and schedule, please visit the school office."
-            },
+
             
             # Academic Information
             ("enrollment", "admission", "register"): {
@@ -1400,15 +1383,7 @@ class ChatBot:
 
             return self.get_goodbye(lang)
 
-        # --- Early keyword matching for common queries (especially location) ---
-        if self.enable_keyword_fallback:
-            logger.info("🔍 Checking keyword matching for common queries")
-            keyword_response = await self._keyword_matching_response(query, lang)
-            
-            # Use keyword response if it's substantial and specific 
-            if keyword_response and len(keyword_response.strip()) > 20 and not keyword_response.lower().startswith("for"):
-                logger.info("✅ Using early keyword matching response")
-                return f"{keyword_response.strip()}\n\n{self.get_followup(lang)}"
+        # --- Removed early keyword matching - only use when tokens are at limit ---
 
         # --- Detect if input is just a greeting (not greeting + question) ---
         greetings = ["hi", "hello", "hey", "kamusta", "kumusta",
@@ -1511,17 +1486,12 @@ class ChatBot:
                 # No context found - return helpful message in fluent Tagalog
                 return "Hindi ko nahanap ang impormasyon tungkol sa inyong katanungan. Maaari po kayong magpunta sa opisina ng paaralan para sa dagdag na detalye. May iba pa po ba kayong katanungan sa Tagalog?"
 
-        # --- Early keyword matching for aggressive token saving ---
-        if self.aggressive_token_saving and self.enable_keyword_fallback:
-            logger.info("💡 Aggressive token saving enabled - trying keyword matching first")
-            keyword_response = await self._keyword_matching_response(query, lang)
-            
-            # Use keyword response if it's specific (not just generic "visit office")
-            if not ("visit the school office" in keyword_response.lower() and len(keyword_response) < 100):
-                logger.info("✅ Using keyword matching in aggressive mode")
-                return f"{keyword_response.strip()}\n\n{self.get_followup(lang)}"
+        # --- Removed aggressive token saving early keyword matching ---
+        # Keyword matching will only be used when tokens are at their limit
+
+        # Normal flow: Fetch context from summarized_text and Supabase, then send to Groq
+        logger.info("📚 Starting normal flow: fetching context from summarized_text and Supabase")
         summarized_text = await self.fetch_summarized_file()
-        # Use enhanced search for better results
         supabase_prompts = await self.enhanced_search_supabase(query)
 
         full_context = ""
@@ -1559,21 +1529,23 @@ class ChatBot:
             
             full_context = priority_context
 
-        # --- Check token budget and consider keyword matching first ---
+        # --- Only use keyword matching as last resort when tokens are at limit ---
         if full_context:
             budget = self._check_token_budget(query, full_context)
             
-            # If token budget is tight, try keyword matching first (zero tokens)
+            # Only use keyword matching if tokens are truly at their limit
             if budget['emergency_mode_needed'] or not budget['within_budget']:
-                logger.warning("🚨 Token budget tight, trying keyword matching first")
+                logger.warning("🚨 Token budget at limit - using keyword matching as emergency fallback")
                 keyword_response = await self._keyword_matching_response(query, lang)
                 
                 # If keyword matching found a good match, use it (saves tokens)
-                if "visit the school office" not in keyword_response.lower() or len(query.split()) <= 3:
-                    logger.info("✅ Using keyword matching instead of API call to save tokens")
+                if keyword_response and "visit the school office" not in keyword_response.lower():
+                    logger.info("✅ Using keyword matching emergency fallback due to token limit")
                     return f"{keyword_response.strip()}\n\n{self.get_followup(lang)}"
+                else:
+                    logger.warning("⚠️ Keyword matching didn't find good answer, proceeding with truncated context")
         
-        # Continue with normal processing if keyword matching wasn't sufficient
+        # Normal processing: Use summarized_text and Supabase data -> send to Groq
         if not full_context.strip():
             english_response = (
                 "I checked our records, but I wasn't able to find any information about "
@@ -1602,7 +1574,7 @@ class ChatBot:
             logger.warning("⚠️ Context too long, truncating for token efficiency")
             full_context = full_context[:max_len] + "\n...(truncated)..."
 
-        logger.info("🤖 Sending query to Groq with trimmed context.")
+        logger.info("🤖 Normal flow: Sending query to Groq with context from summarized_text and Supabase")
         # Always get English response first
         english_reply = await self.ask_groq(query, full_context, "en", conversation_history)
 

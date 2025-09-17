@@ -69,3 +69,4 @@ chatbot_temp.py
 test_nlp_intent_detection.py
 test_nlp_standalone.py
 NLP_NLU_ANALYSIS.md
+test_conversation_memory.py
