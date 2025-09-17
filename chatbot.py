@@ -214,28 +214,16 @@ class ChatBot:
 
     async def ask_groq(self, query: str, context: str, lang: str) -> str:
         """Send query + context to Groq API with safe system prompt."""
-        system_prompts = {
-            "en": (
-                "You are TOMAS, the school assistant for Tomas SM. Bautista Elementary School. "
-                "IMPORTANT: Always respond in ENGLISH only. "
-                "Answer only using the provided context. If you cannot find information in the context, "
-                "suggest visiting the school office. "
-                "Do NOT ask follow-up questions or request clarification. "
-                "Keep responses clear and concise in ENGLISH."
-            ),
-            "tl": (
-                "Ikaw si TOMAS, ang school assistant ng Tomas SM. Bautista Elementary School. "
-                "MAHALAGA: Laging sumagot sa TAGALOG/FILIPINO lamang. "
-                "Sumasagot ka lang base sa context na ibinigay. Kung walang impormasyon sa context, "
-                "sabihin na lumapit sa opisina ng paaralan. "
-                "Huwag mag-tanong ng follow-up o humingi ng dagdag na detalye. "
-                "Panatilihing malinaw at maikling sagot sa TAGALOG/FILIPINO."
-            )
-        }
-        if lang not in system_prompts:
-            logger.warning(f"⚠️ Unsupported language {lang}, defaulting to English")
-            lang = "en"
-        system_prompt = system_prompts[lang]
+        # Always use English for consistent context understanding
+        system_prompt = (
+            "You are TOMAS, the school assistant for Tomas SM. Bautista Elementary School. "
+            "IMPORTANT: Always respond in ENGLISH only. "
+            "Answer only using the provided context. If you cannot find information in the context, "
+            "suggest visiting the school office. "
+            "Do NOT ask follow-up questions or request clarification. "
+            "Keep responses clear and concise in ENGLISH."
+        )
+        
         payload = {
             "model": "llama-3.1-8b-instant",
             "messages": [
@@ -522,12 +510,12 @@ class ChatBot:
             if not full_context.strip():
                 return "Pasensya na, hindi pa ako naiintindihan ang Aklanon pero mukhang walang nahanap na impormasyon tungkol sa inyong katanungan. Maaari po kayong magpunta sa opisina ng paaralan para sa dagdag na detalye. May iba pa po ba kayong katanungan?"
             
-            # Get answer using translated query for better context understanding - use Tagalog for response
-            english_reply = await self.ask_groq(translated_query, full_context, "tl")
+            # Get English answer first, then translate
+            english_reply = await self.ask_groq(translated_query, full_context, "en")
             
-            # Create Tagalog response with apology (preserve proper capitalization for names)
-            tagalog_response = f"Pasensya na, hindi pa ako marunong mag-Aklanon pero base sa aking pag-unawa sa inyong tanong, {english_reply}"
-            return f"{tagalog_response}\n\nMay iba pa po ba kayong katanungan?"
+            # Create Tagalog response with apology
+            tagalog_response = f"Pasensya na, hindi pa ako marunong mag-Aklanon pero base sa aming records: {english_reply}"
+            return f"{tagalog_response}\n\n{self.get_followup('tl')}"
 
         # --- Get context from both sources ---
         summarized_text = await self.fetch_summarized_file()
@@ -568,14 +556,22 @@ class ChatBot:
             full_context = full_context[:max_len] + "\n...(truncated)..."
 
         logger.info("🤖 Sending query to Groq with trimmed context.")
-        ai_reply = await self.ask_groq(query, full_context, lang)
+        # Always get English response first
+        english_reply = await self.ask_groq(query, full_context, "en")
 
-        # --- Ensure response language consistency ---
-        # If detected language is Filipino but AI responded in English, add note
-        if lang == "tl" and self._seems_english(ai_reply):
-            logger.warning("⚠️ AI responded in English for Filipino query, adding language note")
-            ai_reply = f"Ayon sa aming records: {ai_reply}"
+        # --- Translate response to match user's language ---
+        if lang == "tl":
+            logger.info("🔄 Translating English response to Tagalog")
+            try:
+                tagalog_reply = await self.translate(english_reply, source="en", target="tl")
+                final_response = f"Ayon sa aming records: {tagalog_reply}"
+            except Exception as e:
+                logger.warning(f"Translation failed: {e}, using English response")
+                final_response = f"Ayon sa aming records: {english_reply}"
+        else:
+            # For English queries, use response as-is
+            final_response = english_reply
 
         # --- Always append follow-up consistently ---
-        return f"{ai_reply.strip()}\n\n{self.get_followup(lang)}"
+        return f"{final_response.strip()}\n\n{self.get_followup(lang)}"
 
