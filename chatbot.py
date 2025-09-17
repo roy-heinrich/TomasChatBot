@@ -1085,7 +1085,7 @@ class ChatBot:
         # --- Detect if user explicitly wants human support ---
         human_keywords = [
             "talk to a person", "talk to human", "live agent", "real person", "live person",
-            "makipag usap sa tao", "tao", "gusto ko ng tao"
+            "makipag usap sa tao", "tao", "gusto ko ng tao", "minatuod nga tawo"
         ]
         lowered = query.lower().strip()
         if any(k in lowered for k in human_keywords):
@@ -1172,7 +1172,7 @@ class ChatBot:
                 english_reply = await self.ask_groq(translated_query, full_context, "en")
                 
                 # Create Tagalog response with apology
-                tagalog_response = f"Pasensya na, hindi pa ako marunong mag-Aklanon pero base sa aming records: {english_reply}"
+                tagalog_response = f"Pasensya na, hindi pa ako marunong mag-Aklanon pero base sa aking pagka-intindi {english_reply}"
                 return f"{tagalog_response}\n\n{self.get_followup('tl')}"
             else:
                 # No context found - return helpful message
