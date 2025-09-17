@@ -66,6 +66,7 @@ app.add_middleware(
 # -----------------------
 class ChatRequest(BaseModel):
     query: str
+    conversation_history: list = []
 
 # -----------------------
 # Supabase fetch helper
@@ -114,8 +115,8 @@ async def chat_endpoint(data: ChatRequest):
         supabase_context = await fetch_supabase_context()
         logger.info("📊 Context fetched from Supabase")
 
-        # Ask ChatBot with the context
-        answer = await chatbot.answer(query, context=supabase_context)
+        # Ask ChatBot with the context and conversation history
+        answer = await chatbot.answer(query, context=supabase_context, conversation_history=data.conversation_history)
         logger.info(f"✅ Generated response: {answer[:50]}...")
         
         return {"response": answer}
@@ -124,6 +125,22 @@ async def chat_endpoint(data: ChatRequest):
         logger.error(f"❌ Error in chat endpoint: {str(e)}")
         return JSONResponse(
             content={"response": "I'm sorry, I encountered an error. Please try again."},
+            status_code=500
+        )
+
+# -----------------------
+# Clear context endpoint for session management
+# -----------------------
+@app.post("/clear-context")
+async def clear_context():
+    """Clear conversation context when user closes widget or navigates away"""
+    try:
+        logger.info("🧹 Conversation context cleared")
+        return {"success": True, "message": "Context cleared"}
+    except Exception as e:
+        logger.error(f"❌ Error clearing context: {str(e)}")
+        return JSONResponse(
+            content={"success": False, "message": "Failed to clear context"},
             status_code=500
         )
 

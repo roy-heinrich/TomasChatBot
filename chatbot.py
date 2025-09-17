@@ -595,7 +595,7 @@ class ChatBot:
         self._last_fetched = now
         return text
 
-    async def ask_groq(self, query: str, context: str, lang: str) -> str:
+    async def ask_groq(self, query: str, context: str, lang: str, conversation_history: list = None) -> str:
         """Token-optimized Groq API call with emergency fallbacks."""
         # Start with friendly, conversational prompt
         system_prompt = "You are TOMAS! 😊 A friendly, enthusiastic assistant for Tomas SM. Bautista Elementary School. You're like talking to a warm school staff member who loves helping! Use the context provided to give helpful, conversational answers in ENGLISH. Add emojis and personality - make it feel natural! 🏫✨"
@@ -635,12 +635,22 @@ class ChatBot:
                 
                 logger.info(f"🔍 Token attempt ({mode}): ~{estimated_tokens:.0f} tokens estimated")
                 
+                # Build messages array with conversation history
+                messages = [{"role": "system", "content": system_prompt}]
+                
+                # Add conversation history if provided (limit to last 8 messages to control token usage)
+                if conversation_history and len(conversation_history) > 0:
+                    # Take last 8 messages for context while staying within token limits
+                    recent_history = conversation_history[-8:]
+                    messages.extend(recent_history)
+                    logger.info(f"💬 Including {len(recent_history)} conversation history messages")
+                
+                # Add current user message
+                messages.append({"role": "user", "content": user_message})
+                
                 payload = {
                     "model": "llama-3.1-8b-instant",
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message}
-                    ],
+                    "messages": messages,
                     "temperature": 0.2,
                     "max_tokens": max_tokens
                 }
@@ -1346,7 +1356,7 @@ class ChatBot:
         # Default: general query
         return {"intent": "general", "confidence": 0.5}
 
-    async def answer(self, query: str, context: str = None) -> str:
+    async def answer(self, query: str, context: str = None, conversation_history: list = None) -> str:
         lang = await self.detect_language(query)
         lowered = query.lower().strip()  # For backward compatibility
 
@@ -1459,7 +1469,7 @@ class ChatBot:
             # If we found context, process with API
             if full_context.strip():
                 # Get English answer first, then translate to proper Tagalog
-                english_reply = await self.ask_groq(translated_query, full_context, "en")
+                english_reply = await self.ask_groq(translated_query, full_context, "en", conversation_history)
                 
                 # Enhanced: Translate English response to fluent Tagalog instead of just adding apology
                 try:
@@ -1594,7 +1604,7 @@ class ChatBot:
 
         logger.info("🤖 Sending query to Groq with trimmed context.")
         # Always get English response first
-        english_reply = await self.ask_groq(query, full_context, "en")
+        english_reply = await self.ask_groq(query, full_context, "en", conversation_history)
 
         # --- Translate response to match user's language ---
         if lang == "tl":
