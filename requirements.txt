@@ -1,23 +1,23 @@
+# Core Web Framework
 fastapi
 uvicorn
-gunicorn
 python-dotenv
-aiofiles
+
+# HTTP Client & Database
 httpx
-requests
-docx2txt
-openpyxl
-python-pptx
-pandas
-psycopg2
 supabase
+
+# NLP & AI
 langid
-python-multipart
-docx
-python-docx
-PyPDF2
-storage3
 rapidfuzz
-flask-cors
 deep_translator
 openai
+
+# Document Processing  
+docx2txt
+PyPDF2
+openpyxl
+python-pptx
+
+# Testing
+requests
