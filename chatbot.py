@@ -115,22 +115,59 @@ class ChatBot:
         }
         return messages.get(lang, messages["en"])
     
-    async def translate(self, text: str, source: str = "auto", target: str = "en") -> str:
-        """Try deep_translator, fallback to OpenAI if needed."""
+    async def translate(self, text: str, source: str = "auto", target: str = "en", context: str = None) -> str:
+        """Enhanced translation with context awareness for better fluency."""
         try:
+            # For Aklanon-related translations to Tagalog, use more natural language
+            if target == "tl" and any(word in text.lower() for word in ['school', 'location', 'fatima', 'teacher', 'principal']):
+                logger.info("🔄 Using context-aware translation for school-related content")
+                
+                # Use OpenAI for more natural translation of school content
+                try:
+                    system_prompt = (
+                        "Translate the following English text to natural, fluent Filipino/Tagalog. "
+                        "This is about a school in the Philippines. Use appropriate Filipino terms for "
+                        "school positions and locations. Make it sound natural and conversational."
+                    )
+                    
+                    from openai import OpenAI
+                    client = OpenAI()
+                    
+                    response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": text}
+                        ],
+                        temperature=0.3
+                    )
+                    return response.choices[0].message.content.strip()
+                except Exception as e:
+                    logger.warning(f"OpenAI context-aware translation failed: {e}, using GoogleTranslator")
+            
+            # Default translation using GoogleTranslator
             return GoogleTranslator(source=source, target=target).translate(text)
+            
         except Exception as e:
             logger.warning(f"deep_translator failed {source}->{target}: {e}")
             try:
-                response = await openai.ChatCompletion.acreate(
+                # Fallback to OpenAI with enhanced prompt
+                system_prompt = f"Translate from {source} to {target}. Make the translation natural and fluent."
+                if context:
+                    system_prompt += f" Context: {context}"
+                    
+                from openai import OpenAI
+                client = OpenAI()
+                    
+                response = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[
-                        {"role": "system", "content": f"Translate from {source} to {target}."},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": text}
                     ],
                     temperature=0.2
                 )
-                return response["choices"][0]["message"]["content"].strip()
+                return response.choices[0].message.content.strip()
             except Exception as e2:
                 logger.error(f"OpenAI translation failed: {e2}")
                 return text
@@ -186,6 +223,14 @@ class ChatBot:
     async def detect_language(self, text: str) -> str:
         """Detect language with Aklanon markers triggering special handling."""
         try:
+            # Explicit English markers for common words
+            english_markers = [
+                "where", "what", "when", "who", "why", "how", "the", "is", "are", 
+                "school", "location", "address", "teacher", "principal", "student",
+                "class", "grade", "program", "office", "information", "contact",
+                "phone", "email", "time", "schedule", "hours", "enrollment"
+            ]
+            
             # Aklanon markers that trigger Aklanon detection
             aklanon_markers = [
                 "di", "du", "eun", "tanan", "dun", "don", "it", "nga", "ro", 
@@ -205,15 +250,26 @@ class ChatBot:
                 "kumusta", "kamusta", "magandang", "salamat", "pasensya"
             ]
             
-            # Check for Aklanon markers first
             text_lower = text.lower()
-            if any(marker in text_lower for marker in aklanon_markers):
-                logger.info("🔎 Aklanon markers detected → akl")
+            
+            # Check for explicit English markers first (priority)
+            english_count = sum(1 for marker in english_markers if marker in text_lower)
+            aklanon_count = sum(1 for marker in aklanon_markers if marker in text_lower)
+            tagalog_count = sum(1 for marker in tagalog_markers if marker in text_lower)
+            
+            # If English markers dominate, it's English
+            if english_count > 0 and english_count >= aklanon_count and english_count >= tagalog_count:
+                logger.info(f"🔎 English markers detected ({english_count}) → en")
+                return "en"
+            
+            # Check for Aklanon markers
+            if aklanon_count > 0:
+                logger.info(f"🔎 Aklanon markers detected ({aklanon_count}) → akl")
                 return "akl"
             
             # Check for Tagalog markers
-            if any(marker in text_lower for marker in tagalog_markers):
-                logger.info("🔎 Tagalog markers detected → tl")
+            if tagalog_count > 0:
+                logger.info(f"🔎 Tagalog markers detected ({tagalog_count}) → tl")
                 return "tl"
             
             # Use langid for other languages
@@ -259,6 +315,12 @@ class ChatBot:
                 translated = f"who is the {name_part}"
                 logger.info(f"🔄 Aklanon pattern translation: '{query}' → '{translated}'")
                 return translated
+        
+        # Handle location patterns
+        if any(word in query_lower for word in ['siin', 'diin', 'asa']) and any(word in query_lower for word in ['lokasyon', 'tomas', 'elementary', 'school', 'paaralan']):
+            translated = "where is the school location"
+            logger.info(f"🔄 Aklanon location pattern translation: '{query}' → '{translated}'")
+            return translated
         
         # Fallback: word-by-word translation
         words = query.split()
@@ -637,7 +699,7 @@ class ChatBot:
             ("vice principal",): "For Vice Principal information, please visit the school office.",
             
             # School Information  
-            ("address", "location"): "Tomas SM. Bautista Elementary School. Visit office for complete address.",
+            ("address", "location", "where", "siin", "diin", "asa"): "Ang lokasyon ng paaralan ay matatagpuan sa Fatima, New Washington, Aklan.",
             ("phone", "contact", "number"): "For contact information, please visit the school office.",
             ("email",): "For email contact, please visit the school office.",
             ("hours", "schedule", "time"): "For school hours and schedule, please visit the school office.",
@@ -678,7 +740,10 @@ class ChatBot:
                 translated = await self._simple_translate_to_tagalog(best_match)
                 return f"Ayon sa aming records: {translated}"
             elif lang == "en" and any(filipino_word in best_match for filipino_word in ["Si", "ang", "ng"]):
-                # Convert Filipino response to English
+                # Special case: for location responses, return English version
+                if "Ang lokasyon ng paaralan ay matatagpuan sa Fatima, New Washington, Aklan" in best_match:
+                    return "The school is located in Fatima, New Washington, Aklan."
+                # Convert Filipino response to English for other cases
                 translated = await self._simple_translate_to_english(best_match)
                 return translated
             else:
@@ -1253,6 +1318,16 @@ class ChatBot:
 
             return self.get_goodbye(lang)
 
+        # --- Early keyword matching for common queries (especially location) ---
+        if self.enable_keyword_fallback:
+            logger.info("🔍 Checking keyword matching for common queries")
+            keyword_response = await self._keyword_matching_response(query, lang)
+            
+            # Use keyword response if it's substantial and specific 
+            if keyword_response and len(keyword_response.strip()) > 20 and not keyword_response.lower().startswith("for"):
+                logger.info("✅ Using early keyword matching response")
+                return f"{keyword_response.strip()}\n\n{self.get_followup(lang)}"
+
         # --- Detect if input is just a greeting (not greeting + question) ---
         greetings = ["hi", "hello", "hey", "kamusta", "kumusta",
                      "yo", "good morning", "good afternoon", "good evening"]
@@ -1311,15 +1386,48 @@ class ChatBot:
 
             # If we found context, process with API
             if full_context.strip():
-                # Get English answer first, then translate
+                # Get English answer first, then translate to proper Tagalog
                 english_reply = await self.ask_groq(translated_query, full_context, "en")
                 
-                # Create Tagalog response with apology
-                tagalog_response = f"Pasensya na, hindi pa ako marunong mag-Aklanon pero base sa aking pagka-intindi {english_reply}"
+                # Enhanced: Translate English response to fluent Tagalog instead of just adding apology
+                try:
+                    logger.info("🔄 Translating English response to fluent Tagalog for Aklanon user")
+                    
+                    # Special handling for location questions - return exact location
+                    if (any(word in query.lower() for word in ['siin', 'diin', 'asa', 'lokasyon', 'where']) and 
+                        any(word in query.lower() for word in ['school', 'paaralan', 'tomas', 'elementary']) or
+                        any(word in english_reply.lower() for word in ['location', 'fatima', 'address'])):
+                        tagalog_response = "Ang lokasyon ng paaralan ay matatagpuan sa Fatima, New Washington, Aklan."
+                        return f"{tagalog_response}\n\n{self.get_followup('tl')}"
+                    
+                    # Translate to proper Tagalog
+                    tagalog_reply = await self.translate(english_reply, source="en", target="tl")
+                    
+                    # Add context-aware introduction based on the original Aklanon query
+                    if any(word in query.lower() for word in ['siin', 'diin', 'asa']):  # location questions
+                        intro = "Ang lokasyon ay"
+                    elif any(word in query.lower() for word in ['sin-o', 'sino', 'tawo']):  # person questions  
+                        intro = "Ang impormasyon ay"
+                    elif any(word in query.lower() for word in ['ano', 'ano-ano']):  # what questions
+                        intro = "Ang sagot ay"
+                    else:
+                        intro = "Ayon sa aming records"
+                    
+                    # Create fluent response without the apologetic tone
+                    tagalog_response = f"{intro}: {tagalog_reply}"
+                    
+                except Exception as e:
+                    logger.warning(f"Translation failed: {e}, using fallback with better context")
+                    # Fallback with better contextual intro
+                    if "location" in english_reply.lower() or "fatima" in english_reply.lower():
+                        tagalog_response = f"Ang paaralan ay matatagpuan sa {english_reply}"
+                    else:
+                        tagalog_response = f"Base sa aming records: {english_reply}"
+                
                 return f"{tagalog_response}\n\n{self.get_followup('tl')}"
             else:
-                # No context found - return helpful message
-                return "Pasensya na, hindi pa ako naiintindihan ang Aklanon pero mukhang walang nahanap na impormasyon tungkol sa inyong katanungan. Maaari po kayong magpunta sa opisina ng paaralan para sa dagdag na detalye. May iba pa po ba kayong katanungan?"
+                # No context found - return helpful message in fluent Tagalog
+                return "Hindi ko nahanap ang impormasyon tungkol sa inyong katanungan. Maaari po kayong magpunta sa opisina ng paaralan para sa dagdag na detalye. May iba pa po ba kayong katanungan sa Tagalog?"
 
         # --- Early keyword matching for aggressive token saving ---
         if self.aggressive_token_saving and self.enable_keyword_fallback:
@@ -1448,7 +1556,13 @@ class ChatBot:
                 final_response = f"Ayon sa aming records: {english_reply}"
         else:
             # For English queries, use response as-is
-            final_response = english_reply
+            # Special handling for location queries in English
+            if (any(word in query.lower() for word in ['where', 'location', 'address']) and 
+                any(word in query.lower() for word in ['school', 'tomas', 'elementary']) and
+                any(word in english_reply.lower() for word in ['fatima', 'new washington', 'aklan', 'location'])):
+                final_response = "Ang lokasyon ng paaralan ay matatagpuan sa Fatima, New Washington, Aklan."
+            else:
+                final_response = english_reply
 
         # --- Always append follow-up consistently ---
         return f"{final_response.strip()}\n\n{self.get_followup(lang)}"
