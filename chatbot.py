@@ -1079,23 +1079,166 @@ class ChatBot:
         logger.info(f"⚠️ No match found in summarized text")
         return ""
 
+    def _analyze_human_request_intent(self, query: str) -> dict:
+        """
+        Advanced NLP analysis to determine if user actually wants human support.
+        Returns dict with 'wants_human': bool and 'confidence': float
+        """
+        query_lower = query.lower().strip()
+        
+        # Strong indicators of wanting human support (high confidence)
+        strong_human_indicators = [
+            "talk to a person", "talk to human", "live agent", "real person speaking",
+            "speak to someone", "contact a person", "human representative",
+            "makipag usap sa tao", "gusto ko ng tao", "kausapin ang tao",
+            "can i talk to", "let me speak to", "transfer me to",
+            "i need to speak", "connect me to"
+        ]
+        
+        # Check for strong indicators first
+        for indicator in strong_human_indicators:
+            if indicator in query_lower:
+                return {"wants_human": True, "confidence": 0.9}
+        
+        # Weak indicators that need context analysis
+        weak_indicators = ["person", "tao", "human", "someone", "people"]
+        
+        # Check if weak indicators are present
+        has_weak_indicator = any(word in query_lower for word in weak_indicators)
+        
+        if not has_weak_indicator:
+            return {"wants_human": False, "confidence": 0.9}
+        
+        # Context analysis for weak indicators
+        # Questions about people (not requesting human contact)
+        question_patterns = [
+            r"\b(who|what|where|when|how|why|sino|ano|saan|kailan|paano|bakit)\b",
+            r"\b(is|are|was|were|does|do|did|can|will|would|sino|ano)\b.*\b(person|people|tao)\b",
+            r"\b(how many|ilang|pila)\b.*\b(person|people|tao)\b",
+            r"\b(what.*call.*person|ano.*tawag.*tao)\b"
+        ]
+        
+        import re
+        for pattern in question_patterns:
+            if re.search(pattern, query_lower):
+                return {"wants_human": False, "confidence": 0.8}
+        
+        # Information requests about people
+        info_patterns = [
+            r"\b(about|regarding|tungkol|mahitungod)\b.*\b(person|people|tao)\b",
+            r"\b(list|mga|names|pangalan)\b.*\b(person|people|tao)\b",
+            r"\b(information|impormasyon|detalye)\b.*\b(person|people|tao)\b"
+        ]
+        
+        for pattern in info_patterns:
+            if re.search(pattern, query_lower):
+                return {"wants_human": False, "confidence": 0.7}
+        
+        # Check for explicit request verbs (higher chance of wanting human)
+        request_verbs = [
+            "connect", "transfer", "redirect", "forward", "escalate",
+            "ikonekta", "ilipat", "ipadala", "iabot"
+        ]
+        
+        if any(verb in query_lower for verb in request_verbs):
+            return {"wants_human": True, "confidence": 0.8}
+        
+        # Check sentence structure for direct requests
+        direct_request_patterns = [
+            r"\bi (want|need|would like|gusto|kailangan)\b.*\b(person|tao|human)\b",
+            r"\b(can you|pwede|maaari).*\b(connect|get|find).*\b(person|tao|human)\b",
+            r"\b(please|pakisuyo).*\b(person|tao|human)\b"
+        ]
+        
+        for pattern in direct_request_patterns:
+            if re.search(pattern, query_lower):
+                return {"wants_human": True, "confidence": 0.7}
+        
+        # Default: likely just mentioning people in context
+        return {"wants_human": False, "confidence": 0.6}
+
+    def _analyze_query_intent(self, query: str) -> dict:
+        """
+        Comprehensive intent analysis for better query understanding.
+        """
+        query_lower = query.lower().strip()
+        
+        # Greeting detection
+        greeting_patterns = [
+            r"^(hi|hello|hey|kamusta|kumusta|mayad|maayad)\s*[!.?]*$",
+            r"^(good morning|good afternoon|good evening|mayad nga agahon|mayad nga hapon|mayad nga gabi)\s*[!.?]*$"
+        ]
+        
+        import re
+        for pattern in greeting_patterns:
+            if re.search(pattern, query_lower):
+                return {"intent": "greeting", "confidence": 0.9}
+        
+        # Goodbye detection
+        goodbye_patterns = [
+            r"^(bye|goodbye|see you|salamat|thank you|wala na|tapos na|done|finished)\s*[!.?]*$",
+            r"^(that's all|ok na|okay na|wa na|waay na)\s*[!.?]*$"
+        ]
+        
+        for pattern in goodbye_patterns:
+            if re.search(pattern, query_lower):
+                return {"intent": "goodbye", "confidence": 0.9}
+        
+        # Question detection
+        question_indicators = [
+            r"\b(who|what|where|when|how|why|sino|ano|saan|kailan|paano|bakit|sin-o|asa|ano)\b",
+            r"^(is|are|was|were|does|do|did|can|will|would)\b",
+            r"\?$"
+        ]
+        
+        for pattern in question_indicators:
+            if re.search(pattern, query_lower):
+                return {"intent": "question", "confidence": 0.8}
+        
+        # Request detection
+        request_indicators = [
+            r"\b(please|pakisuyo|paki|help|tulong|bulig)\b",
+            r"\b(can you|could you|pwede|maaari)\b",
+            r"\b(i need|i want|kailangan|gusto)\b"
+        ]
+        
+        for pattern in request_indicators:
+            if re.search(pattern, query_lower):
+                return {"intent": "request", "confidence": 0.7}
+        
+        # Default: general query
+        return {"intent": "general", "confidence": 0.5}
+
     async def answer(self, query: str, context: str = None) -> str:
         lang = await self.detect_language(query)
+        lowered = query.lower().strip()  # For backward compatibility
 
-        # --- Detect if user explicitly wants human support ---
-        human_keywords = [
-            "talk to a person", "talk to human", "live agent", "real person", "live person",
-            "makipag usap sa tao", "tao", "gusto ko ng tao", "minatuod nga tawo"
-        ]
-        lowered = query.lower().strip()
-        if any(k in lowered for k in human_keywords):
-            logger.info("👤 User requested live person → triggering fallback handler.")
+        # --- Enhanced Intent Analysis ---
+        intent_analysis = self._analyze_query_intent(query)
+        human_analysis = self._analyze_human_request_intent(query)
+        
+        logger.info(f"🧠 Intent: {intent_analysis['intent']} (confidence: {intent_analysis['confidence']:.2f})")
+        logger.info(f"👤 Human request: {human_analysis['wants_human']} (confidence: {human_analysis['confidence']:.2f})")
+
+        # --- Detect if user explicitly wants human support (with high confidence) ---
+        if human_analysis['wants_human'] and human_analysis['confidence'] > 0.7:
+            logger.info("👤 High confidence human request → triggering fallback handler.")
             return self.fallback_handler.generate_fallback_message(lang)
 
         # --- Detect goodbye / end of conversation ---
+        if intent_analysis['intent'] == 'goodbye' and intent_analysis['confidence'] > 0.8:
+            logger.info("👋 User ended the conversation.")
+            return self.get_goodbye(lang)
+
+        # --- Detect pure greetings ---
+        if intent_analysis['intent'] == 'greeting' and intent_analysis['confidence'] > 0.8:
+            logger.info("👋 Pure greeting detected.")
+            return self.get_greeting(lang)
+        # --- Enhanced goodbye detection ---
         goodbye_keywords = [
-            "wala na", "none", "no more", "wa eun", "tapos na",
-            "that’s all", "finished", "done", "nope"
+            "goodbye", "bye", "see you", "farewell", "adios", "salamat", 
+            "thanks", "thank you", "ok thanks", "got it", "wala na", 
+            "wa eun", "waay na", "tapos na", "that's all", "finished", "done", "nope"
         ]
         if any(k in lowered for k in goodbye_keywords):
             logger.info("👋 User ended the conversation.")
@@ -1105,7 +1248,7 @@ class ChatBot:
                 lang = "akl"
             elif "tapos na" in lowered:
                 lang = "tl"
-            elif any(k in lowered for k in ["done", "finished", "none", "no more", "that’s all", "nope"]):
+            elif any(k in lowered for k in ["done", "finished", "none", "no more", "that's all", "nope"]):
                 lang = "en"
 
             return self.get_goodbye(lang)

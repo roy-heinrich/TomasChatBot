@@ -65,3 +65,7 @@ test_aklanon_particles.py
 test_aklanon_dictionary.py
 test_aklanon_translation.py
 test_dictionary_verification.py
+chatbot_temp.py
+test_nlp_intent_detection.py
+test_nlp_standalone.py
+NLP_NLU_ANALYSIS.md
