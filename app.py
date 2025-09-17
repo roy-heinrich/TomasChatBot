@@ -31,13 +31,34 @@ chatbot = ChatBot(groq_key=GROQ_API_KEY)
 # -----------------------
 app = FastAPI()
 
-# ✅ Proper CORS config
+# ✅ Enhanced CORS config for production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # for testing; restrict later to your frontend URL
+    allow_origins=[
+        "http://localhost",
+        "http://localhost:3000", 
+        "http://localhost:8080",
+        "http://localhost:5000",
+        "http://127.0.0.1",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8080", 
+        "http://127.0.0.1:5000",
+        "https://tomaschatbot.onrender.com",
+        "*"  # Allow all origins for now
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Accept",
+        "Accept-Language", 
+        "Content-Language",
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers"
+    ],
 )
 
 # -----------------------
@@ -64,20 +85,47 @@ async def fetch_supabase_context() -> str:
     return await loop.run_in_executor(None, fetch_sync)
 
 # -----------------------
+# Root endpoint for health check
+# -----------------------
+@app.get("/")
+async def root():
+    return {"message": "Tomas Chatbot API is running!", "status": "healthy"}
+
+# -----------------------
+# OPTIONS handler for CORS preflight
+# -----------------------
+@app.options("/chat")
+async def chat_options():
+    return {"message": "OK"}
+
+# -----------------------
 # Chat endpoint
 # -----------------------
 @app.post("/chat")
 async def chat_endpoint(data: ChatRequest):
-    query = data.query.strip()
-    if not query:
-        return {"response": "No query provided."}
+    try:
+        logger.info(f"📥 Received chat request: {data.query[:50]}...")
+        query = data.query.strip()
+        if not query:
+            logger.warning("⚠️ Empty query received")
+            return {"response": "No query provided."}
 
-    # Fetch context asynchronously
-    supabase_context = await fetch_supabase_context()
+        # Fetch context asynchronously
+        supabase_context = await fetch_supabase_context()
+        logger.info("📊 Context fetched from Supabase")
 
-    # Ask ChatBot with the context
-    answer = await chatbot.answer(query, context=supabase_context)
-    return {"response": answer}
+        # Ask ChatBot with the context
+        answer = await chatbot.answer(query, context=supabase_context)
+        logger.info(f"✅ Generated response: {answer[:50]}...")
+        
+        return {"response": answer}
+    
+    except Exception as e:
+        logger.error(f"❌ Error in chat endpoint: {str(e)}")
+        return JSONResponse(
+            content={"response": "I'm sorry, I encountered an error. Please try again."},
+            status_code=500
+        )
 
 # -----------------------
 # Admin reload endpoint
