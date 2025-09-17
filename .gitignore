@@ -61,3 +61,7 @@ test_emergency_tokens.py
 CHANGES_SUMMARY.md
 IMMEDIATE_ACTION_PLAN.md
 PORTABILITY_GUIDE.md
+test_aklanon_particles.py
+test_aklanon_dictionary.py
+test_aklanon_translation.py
+test_dictionary_verification.py

@@ -4,6 +4,21 @@
     "akl": "abaga",
     "en": "shoulder"
   },
+  "Good": {
+    "tl": "Maganda",
+    "akl": "Maayad",
+    "en": "Good"
+  },
+  "person": {
+    "tl": "tao",
+    "akl": "tawo",
+    "en": "person"
+  },
+  "real": {
+    "tl": "totoo",
+    "akl": "minatuod",
+    "en": "real"
+  },
   "fan": {
     "tl": "pamaypay",
     "akl": "kabkab",

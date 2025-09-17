@@ -32,6 +32,14 @@ try:
                 aklanon_word = translations["akl"].lower()
                 aklanon_dict[aklanon_word] = english_word
         logger.info(f"📚 Loaded {len(aklanon_dict)} Aklanon dictionary entries")
+        # Debug: Show some sample entries
+        sample_keys = list(aklanon_dict.keys())[:5]
+        logger.info(f"📚 Sample entries: {[(k, aklanon_dict[k]) for k in sample_keys]}")
+        # Debug: Check specific words we expect
+        if "tawo" in aklanon_dict:
+            logger.info(f"📚 Found 'tawo' → '{aklanon_dict['tawo']}'")
+        if "minatuod" in aklanon_dict:
+            logger.info(f"📚 Found 'minatuod' → '{aklanon_dict['minatuod']}'")
 except Exception as e:
     logger.warning(f"Could not load Aklanon dictionary: {e}")
     aklanon_dict = {}
@@ -224,7 +232,10 @@ class ChatBot:
         import re
         
         if not aklanon_dict:
+            logger.warning("⚠️ Aklanon dictionary is empty or not loaded")
             return query
+        
+        logger.info(f"📚 Using dictionary with {len(aklanon_dict)} entries")
         
         # First, handle specific patterns that are common in questions
         query_lower = query.lower()
@@ -253,11 +264,48 @@ class ChatBot:
         words = query.split()
         translated_words = []
         
+        # Aklanon particles - some should be converted, others should be removed
+        aklanon_particles = {
+            "nga": "",      # emphasis particle: remove in translation (just emphasis)
+            "kag": "and",   # and: "kag" → "and"
+            "it": "the",    # article: "it" → "the"
+            "sa": "in",     # preposition: "sa" → "in/at"
+            "si": "",       # personal marker: remove (no English equivalent)
+        }
+        
+        # Common spelling variations for Aklanon words
+        aklanon_variations = {
+            "mayad": "maayad",  # mayad → maayad (good)
+            "gabi": "gabi-i",   # gabi → gabi-i (evening)
+            "sino": "sin-o",    # sino → sin-o (who)
+        }
+        
+        logger.info(f"🔍 Translating words: {words}")
+        
         for word in words:
             clean_word = word.lower().strip('.,!?-')
+            logger.info(f"🔍 Checking word: '{clean_word}'")
             
-            # Check for exact match first
-            if clean_word in aklanon_dict:
+            # Check for Aklanon particles first
+            if clean_word in aklanon_particles:
+                particle_translation = aklanon_particles[clean_word]
+                if particle_translation:  # Only add if not empty string
+                    translated_words.append(particle_translation)
+                    logger.info(f"🔄 Particle translation: '{clean_word}' → '{particle_translation}'")
+                else:
+                    logger.info(f"🔄 Particle removed: '{clean_word}' (emphasis/marker only)")
+            # Check for spelling variations first
+            elif clean_word in aklanon_variations:
+                canonical_word = aklanon_variations[clean_word]
+                if canonical_word in aklanon_dict:
+                    english_meaning = aklanon_dict[canonical_word]
+                    translated_words.append(english_meaning)
+                    logger.info(f"🔄 Variation translated: '{clean_word}' → '{canonical_word}' → '{english_meaning}'")
+                else:
+                    translated_words.append(word)
+                    logger.info(f"🔍 Variation found but no translation for '{canonical_word}'")
+            # Check for exact match in main dictionary
+            elif clean_word in aklanon_dict:
                 english_meaning = aklanon_dict[clean_word]
                 translated_words.append(english_meaning)
                 logger.info(f"🔄 Translated '{clean_word}' → '{english_meaning}'")
@@ -273,10 +321,13 @@ class ChatBot:
                 logger.info(f"🔄 Translated '{clean_word}' → '{english_meaning}'")
             else:
                 translated_words.append(word)
+                logger.info(f"🔍 No translation for '{clean_word}', keeping original")
         
         translated_query = " ".join(translated_words)
         if translated_query != query:
             logger.info(f"📝 Query translation: '{query}' → '{translated_query}'")
+        else:
+            logger.info(f"📝 No translation changes made to: '{query}'")
         
         return translated_query
     async def enhanced_search_supabase(self, query: str) -> str:
