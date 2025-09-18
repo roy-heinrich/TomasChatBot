@@ -21,6 +21,10 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Load Aklanon dictionary for query translation
+# 🙏 Special thanks to Mr./Mrs. Cyberustics for providing the comprehensive 
+# Aklanon-English dictionary JSON file that enables multilingual support!
+# This valuable resource makes it possible for our chatbot to understand
+# and translate Aklanon language queries effectively.
 dict_path = os.path.join(os.path.dirname(__file__), "aklanon_dictionary.json")
 aklanon_dict = {}
 try:
