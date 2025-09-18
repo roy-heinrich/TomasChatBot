@@ -175,7 +175,7 @@ class ChatBot:
         else:
             return "default"  # Late night/early morning hours
 
-    def get_time_aware_system_prompt(self):
+    def get_time_aware_system_prompt(self, lang: str = "en"):
         """Generate a time-aware system prompt for Groq API"""
         current_hour = datetime.now().hour
         
@@ -189,7 +189,15 @@ class ChatBot:
         else:
             time_context = "It's late evening/night time (school is closed)."
         
-        return f"You are TOMAS! 😊 A friendly, enthusiastic assistant for Tomas SM. Bautista Elementary School. You're like talking to a warm school staff member who loves helping! {time_context} Use the context provided to give helpful, conversational answers in ENGLISH. Add emojis and personality - make it feel natural! 🏫✨"
+        # Handle Aklanon by treating it as Tagalog
+        if lang == "akl":
+            lang = "tl"
+        
+        # Create language-specific system prompts
+        if lang == "tl":
+            return f"Ikaw si TOMAS! 😊 Isang masigasig at palakaibigan na assistant para sa Tomas SM. Bautista Elementary School. Parang nakakausap mo ang isang mainit na staff member ng paaralan na gustong tumulong! {time_context} Gamitin ang context na ibinigay para magbigay ng kapaki-pakinabang at makakausap na mga sagot sa TAGALOG. Magdagdag ng mga emoji at personalidad - gawin itong natural! 🏫✨"
+        else:  # Default to English
+            return f"You are TOMAS! 😊 A friendly, enthusiastic assistant for Tomas SM. Bautista Elementary School. You're like talking to a warm school staff member who loves helping! {time_context} Use the context provided to give helpful, conversational answers in ENGLISH. Add emojis and personality - make it feel natural! 🏫✨"
 
     def get_greeting(self, lang: str = "en") -> str:
         time_period = self.get_time_period()
@@ -291,9 +299,9 @@ class ChatBot:
         """Rough token estimation (1 token ≈ 4 characters for English)."""
         return len(text) // 4
     
-    def _check_token_budget(self, query: str, context: str) -> dict:
+    def _check_token_budget(self, query: str, context: str, lang: str = "en") -> dict:
         """Check if we're within token budget and suggest optimizations."""
-        system_prompt = self.get_time_aware_system_prompt()
+        system_prompt = self.get_time_aware_system_prompt(lang)
         user_message = f"Context: {context}\nQuestion: {query}"
         
         estimated_input_tokens = self.estimate_tokens(system_prompt + user_message)
@@ -332,7 +340,9 @@ class ChatBot:
                 "where", "what", "when", "who", "why", "how", "the", "is", "are", 
                 "school", "location", "address", "teacher", "principal", "student",
                 "class", "grade", "program", "office", "information", "contact",
-                "phone", "email", "time", "schedule", "hours", "enrollment"
+                "phone", "email", "time", "schedule", "hours", "enrollment",
+                "good morning", "good afternoon", "good evening", "hello", "hi",
+                "thanks", "thank you", "please", "sorry", "excuse me"
             ]
             
             # Aklanon markers that trigger Aklanon detection
@@ -356,10 +366,36 @@ class ChatBot:
             
             text_lower = text.lower()
             
-            # Check for explicit English markers first (priority)
-            english_count = sum(1 for marker in english_markers if marker in text_lower)
-            aklanon_count = sum(1 for marker in aklanon_markers if marker in text_lower)
-            tagalog_count = sum(1 for marker in tagalog_markers if marker in text_lower)
+            # Check for explicit English phrases first (highest priority)
+            english_phrases = ["good morning", "good afternoon", "good evening", "hello", "hi there"]
+            for phrase in english_phrases:
+                if phrase in text_lower:
+                    logger.info(f"🔎 English phrase detected ('{phrase}') → en")
+                    return "en"
+            
+            # Check for explicit English markers (word boundaries for better matching)
+            english_count = 0
+            for marker in english_markers:
+                if len(marker.split()) > 1:  # Skip phrases (already checked above)
+                    continue
+                # Use word boundaries to avoid substring matches
+                if f" {marker} " in f" {text_lower} " or text_lower.startswith(f"{marker} ") or text_lower.endswith(f" {marker}"):
+                    english_count += 1
+            
+            # Count other language markers with word boundaries
+            aklanon_count = 0
+            for marker in aklanon_markers:
+                if f" {marker} " in f" {text_lower} " or text_lower.startswith(f"{marker} ") or text_lower.endswith(f" {marker}"):
+                    aklanon_count += 1
+                    
+            tagalog_count = 0  
+            for marker in tagalog_markers:
+                if len(marker.split()) > 1:  # Multi-word markers
+                    if marker in text_lower:
+                        tagalog_count += 1
+                else:  # Single word markers with word boundaries
+                    if f" {marker} " in f" {text_lower} " or text_lower.startswith(f"{marker} ") or text_lower.endswith(f" {marker}"):
+                        tagalog_count += 1
             
             # If English markers dominate, it's English
             if english_count > 0 and english_count >= aklanon_count and english_count >= tagalog_count:
@@ -724,7 +760,7 @@ class ChatBot:
     async def ask_groq(self, query: str, context: str, lang: str, conversation_history: list = None) -> str:
         """Token-optimized Groq API call with emergency fallbacks."""
         # Start with friendly, conversational prompt
-        system_prompt = self.get_time_aware_system_prompt()
+        system_prompt = self.get_time_aware_system_prompt(lang)
         
         # Emergency token management
         max_context_length = 1500
@@ -1582,45 +1618,12 @@ class ChatBot:
 
             # If we found context, process with API
             if full_context.strip():
-                # Get English answer first, then translate to proper Tagalog
-                english_reply = await self.ask_groq(translated_query, full_context, "en", conversation_history)
+                # Get response in target language (Tagalog for Aklanon users)
+                target_lang = "tl" if lang == "akl" else lang
+                response = await self.ask_groq(translated_query, full_context, target_lang, conversation_history)
                 
-                # Enhanced: Translate English response to fluent Tagalog instead of just adding apology
-                try:
-                    logger.info("🔄 Translating English response to fluent Tagalog for Aklanon user")
-                    
-                    # Special handling for location questions - return exact location
-                    if (any(word in query.lower() for word in ['siin', 'diin', 'asa', 'lokasyon', 'where']) and 
-                        any(word in query.lower() for word in ['school', 'paaralan', 'tomas', 'elementary']) or
-                        any(word in english_reply.lower() for word in ['location', 'fatima', 'address'])):
-                        tagalog_response = "Ang lokasyon ng paaralan ay matatagpuan sa Fatima, New Washington, Aklan."
-                        return f"{tagalog_response}\n\n{self.get_followup('tl')}"
-                    
-                    # Translate to proper Tagalog
-                    tagalog_reply = await self.translate(english_reply, source="en", target="tl")
-                    
-                    # Add context-aware introduction based on the original Aklanon query
-                    if any(word in query.lower() for word in ['siin', 'diin', 'asa']):  # location questions
-                        intro = "Ang lokasyon ay"
-                    elif any(word in query.lower() for word in ['sin-o', 'sino', 'tawo']):  # person questions  
-                        intro = "Ang impormasyon ay"
-                    elif any(word in query.lower() for word in ['ano', 'ano-ano']):  # what questions
-                        intro = "Ang sagot ay"
-                    else:
-                        intro = "Ayon sa aming records"
-                    
-                    # Create fluent response without the apologetic tone
-                    tagalog_response = f"{intro}: {tagalog_reply}"
-                    
-                except Exception as e:
-                    logger.warning(f"Translation failed: {e}, using fallback with better context")
-                    # Fallback with better contextual intro
-                    if "location" in english_reply.lower() or "fatima" in english_reply.lower():
-                        tagalog_response = f"Ang paaralan ay matatagpuan sa {english_reply}"
-                    else:
-                        tagalog_response = f"Base sa aming records: {english_reply}"
-                
-                return f"{tagalog_response}\n\n{self.get_followup('tl')}"
+                logger.info(f"✅ Generated response in {target_lang} for Aklanon user")
+                return response
             else:
                 # No context found - return helpful message in fluent Tagalog
                 return "Hindi ko nahanap ang impormasyon tungkol sa inyong katanungan. Maaari po kayong magpunta sa opisina ng paaralan para sa dagdag na detalye. May iba pa po ba kayong katanungan sa Tagalog?"
@@ -1670,7 +1673,7 @@ class ChatBot:
 
         # --- Only use keyword matching as last resort when tokens are at limit ---
         if full_context:
-            budget = self._check_token_budget(query, full_context)
+            budget = self._check_token_budget(query, full_context, lang)
             
             # Only use keyword matching if tokens are truly at their limit
             if budget['emergency_mode_needed'] or not budget['within_budget']:
@@ -1714,45 +1717,11 @@ class ChatBot:
             full_context = full_context[:max_len] + "\n...(truncated)..."
 
         logger.info("🤖 Normal flow: Sending query to Groq with context from summarized_text and Supabase")
-        # Always get English response first
-        english_reply = await self.ask_groq(query, full_context, "en", conversation_history)
+        # Get response in the user's detected language
+        response = await self.ask_groq(query, full_context, lang, conversation_history)
 
-        # --- Translate response to match user's language ---
-        if lang == "tl":
-            logger.info("🔄 Translating English response to Tagalog")
-            try:
-                # Simple approach: translate but keep important English terms
-                tagalog_reply = await self.translate(english_reply, source="en", target="tl")
-                
-                # Post-process to restore important English terms that should stay in English
-                terms_to_restore = {
-                    "pinuno ng guro": "Head Teacher",
-                    "punong guro": "Principal", 
-                    "punong-guro": "Principal",
-                    "bise principal": "Vice Principal",
-                    "elementarya paaralan": "Elementary School",
-                    "paaralan ng elementarya": "Elementary School",
-                    "grado 6": "Grade 6"
-                }
-                
-                for tagalog_term, english_term in terms_to_restore.items():
-                    if tagalog_term in tagalog_reply.lower():
-                        # Use case-insensitive replacement
-                        import re
-                        tagalog_reply = re.sub(re.escape(tagalog_term), english_term, 
-                                             tagalog_reply, flags=re.IGNORECASE)
-                
-                final_response = f"Ayon sa aming records: {tagalog_reply}"
-                
-            except Exception as e:
-                logger.warning(f"Translation failed: {e}, using English response")
-                final_response = f"Ayon sa aming records: {english_reply}"
-        else:
-            # For English queries, use English response as-is (keep lively tone)
-            final_response = english_reply
-
-        # --- Always append follow-up consistently ---
-        return f"{final_response.strip()}\n\n{self.get_followup(lang)}"
+        # Return the response (no translation needed since it's already in the right language)
+        return response
 
 
 if __name__ == "__main__":
