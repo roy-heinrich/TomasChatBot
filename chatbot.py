@@ -540,16 +540,10 @@ class ChatBot:
         """Detect if user is asking about a specific person/staff member."""
         query_lower = query.lower().strip()
         
-        # Patterns that indicate person queries
+        # Specific patterns that indicate person queries (more restrictive)
         person_patterns = [
             "who is",
             "sino si", "sin-o si", "sino ang", "sin-o ang",
-            "tell me about",
-            "about",
-            "know about",
-            "information about",
-            # Add common name patterns
-            "garcia",  # The test case that failed
         ]
         
         # Check if query matches person inquiry patterns
@@ -557,15 +551,28 @@ class ChatBot:
             if pattern in query_lower:
                 return True
         
-        # Check if query contains typical name patterns (first name + last name)
+        # Check for "tell me about [name]" patterns
+        # but be more restrictive to avoid false positives  
+        if "tell me about" in query_lower:
+            remaining = query_lower.replace("tell me about", "").strip()
+            # Only consider it a person query if the remaining part looks like a name
+            # and doesn't contain school-related words
+            school_words = ["school", "program", "class", "grade", "curriculum", "enrollment", "admission"]
+            if not any(word in remaining for word in school_words):
+                words = remaining.split()
+                if len(words) >= 1 and words[0].isalpha() and len(words[0]) > 2:
+                    # Additional check: does it contain known name patterns?
+                    known_names = ["garcia", "meliza", "delgado", "smith", "johnson"] 
+                    if any(name in remaining for name in known_names):
+                        return True
+        
+        # Very restrictive check for names - only if query is very short and contains potential names
         words = query_lower.split()
-        if len(words) >= 2:
-            # Look for potential name patterns
-            for i in range(len(words) - 1):
-                word1, word2 = words[i], words[i + 1]
-                # If both words are capitalized in original or seem like names
-                if (len(word1) > 2 and len(word2) > 2 and 
-                    word1.isalpha() and word2.isalpha()):
+        if len(words) == 2 or len(words) == 3:  # Only short queries
+            # Check if it contains common name indicators from our known staff
+            known_names = ["garcia", "meliza", "delgado", "nelda", "annalyn", "lezil", "michelle", "thedy", "jessica", "leny"]
+            for name in known_names:
+                if name in query_lower:
                     return True
         
         return False
@@ -1630,36 +1637,6 @@ class ChatBot:
         if human_analysis['wants_human'] and human_analysis['confidence'] > 0.7:
             logger.info("👤 High confidence human request → triggering fallback handler.")
             return self.fallback_handler.generate_fallback_message(lang)
-
-        # --- Enhanced Unknown Person Detection (EARLY CHECK) ---
-        if self._is_person_query(query):
-            logger.info("👤 Person query detected - checking if it's an unknown person")
-            # Try to search for the person in our database
-            person_context = await self.enhanced_search_supabase(query)
-            
-            # Extract the person's name from the query for more specific checking
-            query_lower = query.lower()
-            potential_name = ""
-            if "who is" in query_lower:
-                potential_name = query_lower.split("who is")[-1].strip()
-            elif "sino si" in query_lower:
-                potential_name = query_lower.split("sino si")[-1].strip()
-            elif "sin-o si" in query_lower:
-                potential_name = query_lower.split("sin-o si")[-1].strip()
-            
-            # Clean up the name (remove punctuation)
-            import re
-            potential_name = re.sub(r'[^\w\s]', '', potential_name).strip()
-            
-            # Check if the person's name actually appears in the context
-            name_in_context = potential_name and potential_name in person_context.lower() if person_context else False
-            
-            # If no context found OR the person's name doesn't appear in the context, treat as unknown
-            if not person_context or len(person_context.strip()) < 50 or not name_in_context:
-                logger.info(f"👤 Unknown person detected (name: '{potential_name}', name_in_context: {name_in_context}) - returning helpful response")
-                return self._get_unknown_person_response(lang)
-            # If we found substantial context about the person, continue with normal flow
-            logger.info("👤 Known person detected - continuing with normal flow")
 
         # --- Detect goodbye / end of conversation ---
         if intent_analysis['intent'] == 'goodbye' and intent_analysis['confidence'] > 0.8:

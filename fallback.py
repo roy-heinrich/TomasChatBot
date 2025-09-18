@@ -102,11 +102,6 @@ class FallbackHandler:
                 "en": "Meliza Delgado is the Head Teacher. For more details, visit the admin office.",
                 "tl": "Si Meliza Delgado ang Head Teacher. Para sa mas detalyadong impormasyon, pumunta sa admin office.",
                 "akl": "Si Meliza Delgado ang Head Teacher. Para sa dugang nga detalye, makadto sa admin office."
-            },
-            "maria santos": {
-                "en": "Maria Santos is the Principal. For more details, visit the admin office.",
-                "tl": "Si Maria Santos ang Principal. Para sa mas detalyadong impormasyon, pumunta sa admin office.",
-                "akl": "Si Maria Santos ang Principal. Para sa dugang nga detalye, makadto sa admin office."
             }
         }
         
