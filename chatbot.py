@@ -8,6 +8,7 @@ from supabase import create_client, Client
 # Remove unused import: from utils import fetch_summarized_text  
 from fallback import FallbackHandler
 import time
+from datetime import datetime
 from rapidfuzz import fuzz, process
 import json
 from deep_translator import GoogleTranslator
@@ -71,21 +72,61 @@ class ChatBot:
         self.enable_keyword_fallback = enable_keyword_fallback
         self.aggressive_token_saving = aggressive_token_saving
 
-        # ✅ Centralized greetings + followups
+        # ✅ Centralized greetings + followups with time-aware variants
         self.messages = {
             "greeting": {
-                "en": [
-                    "Hello there! 👋 I'm Tomas, your friendly school assistant! What can I help you with today?",
-                    "Hi! 😊 Welcome to Tomas SM. Bautista Elementary School! How can I assist you?",
-                    "Hey! Great to see you here! What would you like to know about our school?",
-                    "Hello! 🏫 I'm here to help with any questions about our lovely school. What's on your mind?"
-                ],
-                "tl": [
-                    "Magandang araw! 👋 Ako si Tomas, ang inyong kaibigan dito sa paaralan! Paano ko kayo matutulungan ngayon?",
-                    "Kamusta! 😊 Maligayang pagdating sa Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
-                    "Uy, kumusta! Masaya akong makausap kayo! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
-                    "Hello po! 🏫 Nandito ako para tumulong sa inyong mga tanong. Ano ang nasa isip ninyo?"
-                ]
+                "en": {
+                    "morning": [
+                        "Good morning! ☀️ I'm Tomas, your friendly school assistant! What can I help you with today?",
+                        "Good morning! 😊 Welcome to Tomas SM. Bautista Elementary School! How can I assist you?",
+                        "Morning! Great to see you here bright and early! What would you like to know about our school?",
+                        "Good morning! 🏫 I'm here to help with any questions about our lovely school. What's on your mind?"
+                    ],
+                    "afternoon": [
+                        "Good afternoon! ☀️ I'm Tomas, your friendly school assistant! What can I help you with today?",
+                        "Good afternoon! � Welcome to Tomas SM. Bautista Elementary School! How can I assist you?",
+                        "Afternoon! Great to see you here! What would you like to know about our school?",
+                        "Good afternoon! 🏫 I'm here to help with any questions about our lovely school. What's on your mind?"
+                    ],
+                    "evening": [
+                        "Good evening! 🌙 I'm Tomas, your friendly school assistant! What can I help you with today?",
+                        "Good evening! 😊 Welcome to Tomas SM. Bautista Elementary School! How can I assist you?",
+                        "Evening! Nice to see you here! What would you like to know about our school?",
+                        "Good evening! 🏫 I'm here to help with any questions about our lovely school. What's on your mind?"
+                    ],
+                    "default": [
+                        "Hello there! �👋 I'm Tomas, your friendly school assistant! What can I help you with today?",
+                        "Hi! 😊 Welcome to Tomas SM. Bautista Elementary School! How can I assist you?",
+                        "Hey! Great to see you here! What would you like to know about our school?",
+                        "Hello! 🏫 I'm here to help with any questions about our lovely school. What's on your mind?"
+                    ]
+                },
+                "tl": {
+                    "morning": [
+                        "Magandang umaga! ☀️ Ako si Tomas, ang inyong kaibigan dito sa paaralan! Paano ko kayo matutulungan ngayon?",
+                        "Magandang umaga! 😊 Maligayang pagdating sa Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
+                        "Umaga! Masaya akong makita kayo dito nang maaga! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
+                        "Magandang umaga po! 🏫 Nandito ako para tumulong sa inyong mga tanong. Ano ang nasa isip ninyo?"
+                    ],
+                    "afternoon": [
+                        "Magandang hapon! ☀️ Ako si Tomas, ang inyong kaibigan dito sa paaralan! Paano ko kayo matutulungan ngayon?",
+                        "Magandang hapon! 😊 Maligayang pagdating sa Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
+                        "Hapon! Masaya akong makausap kayo! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
+                        "Magandang hapon po! 🏫 Nandito ako para tumulong sa inyong mga tanong. Ano ang nasa isip ninyo?"
+                    ],
+                    "evening": [
+                        "Magandang gabi! 🌙 Ako si Tomas, ang inyong kaibigan dito sa paaralan! Paano ko kayo matutulungan ngayon?",
+                        "Magandang gabi! 😊 Maligayang pagdating sa Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
+                        "Gabi! Masaya akong makausap kayo ngayong gabi! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
+                        "Magandang gabi po! 🏫 Nandito ako para tumulong sa inyong mga tanong. Ano ang nasa isip ninyo?"
+                    ],
+                    "default": [
+                        "Magandang araw! 👋 Ako si Tomas, ang inyong kaibigan dito sa paaralan! Paano ko kayo matutulungan ngayon?",
+                        "Kamusta! 😊 Maligayang pagdating sa Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
+                        "Uy, kumusta! Masaya akong makausap kayo! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
+                        "Hello po! 🏫 Nandito ako para tumulong sa inyong mga tanong. Ano ang nasa isip ninyo?"
+                    ]
+                }
             },
             "follow_up": {
                 "en": [
@@ -121,8 +162,47 @@ class ChatBot:
             },
         ]
 
+    def get_time_period(self) -> str:
+        """Determine the time of day based on current hour"""
+        current_hour = datetime.now().hour
+        
+        if 5 <= current_hour < 12:
+            return "morning"
+        elif 12 <= current_hour < 18:
+            return "afternoon"
+        elif 18 <= current_hour < 22:
+            return "evening"
+        else:
+            return "default"  # Late night/early morning hours
+
+    def get_time_aware_system_prompt(self):
+        """Generate a time-aware system prompt for Groq API"""
+        current_hour = datetime.now().hour
+        
+        # Determine time context for the AI
+        if 5 <= current_hour < 12:
+            time_context = "It's morning time (school starts at 8 AM)."
+        elif 12 <= current_hour < 18:
+            time_context = "It's afternoon time (school day in progress or just ended)."
+        elif 18 <= current_hour < 22:
+            time_context = "It's evening time (school day has ended)."
+        else:
+            time_context = "It's late evening/night time (school is closed)."
+        
+        return f"You are TOMAS! 😊 A friendly, enthusiastic assistant for Tomas SM. Bautista Elementary School. You're like talking to a warm school staff member who loves helping! {time_context} Use the context provided to give helpful, conversational answers in ENGLISH. Add emojis and personality - make it feel natural! 🏫✨"
+
     def get_greeting(self, lang: str = "en") -> str:
-        greetings = self.messages["greeting"].get(lang, self.messages["greeting"]["en"])
+        time_period = self.get_time_period()
+        
+        # Get time-aware greetings
+        greetings_dict = self.messages["greeting"].get(lang, self.messages["greeting"]["en"])
+        
+        # If the structure is the old flat list format, use default behavior
+        if isinstance(greetings_dict, list):
+            return random.choice(greetings_dict)
+        
+        # Use time-specific greetings
+        greetings = greetings_dict.get(time_period, greetings_dict.get("default", greetings_dict["morning"]))
         return random.choice(greetings)
 
     def get_followup(self, lang: str = "en") -> str:
@@ -213,7 +293,7 @@ class ChatBot:
     
     def _check_token_budget(self, query: str, context: str) -> dict:
         """Check if we're within token budget and suggest optimizations."""
-        system_prompt = "You are TOMAS! 😊 A friendly, enthusiastic assistant for Tomas SM. Bautista Elementary School. You're like talking to a warm school staff member who loves helping! Use the context provided to give helpful, conversational answers in ENGLISH. Add emojis and personality - make it feel natural! 🏫✨"
+        system_prompt = self.get_time_aware_system_prompt()
         user_message = f"Context: {context}\nQuestion: {query}"
         
         estimated_input_tokens = self.estimate_tokens(system_prompt + user_message)
@@ -644,7 +724,7 @@ class ChatBot:
     async def ask_groq(self, query: str, context: str, lang: str, conversation_history: list = None) -> str:
         """Token-optimized Groq API call with emergency fallbacks."""
         # Start with friendly, conversational prompt
-        system_prompt = "You are TOMAS! 😊 A friendly, enthusiastic assistant for Tomas SM. Bautista Elementary School. You're like talking to a warm school staff member who loves helping! Use the context provided to give helpful, conversational answers in ENGLISH. Add emojis and personality - make it feel natural! 🏫✨"
+        system_prompt = self.get_time_aware_system_prompt()
         
         # Emergency token management
         max_context_length = 1500
