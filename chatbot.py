@@ -5,7 +5,7 @@ import httpx
 import langid
 import random
 from supabase import create_client, Client
-from utils import fetch_summarized_text
+# Remove unused import: from utils import fetch_summarized_text  
 from fallback import FallbackHandler
 import time
 from rapidfuzz import fuzz, process
@@ -18,7 +18,7 @@ import urllib.parse
 logger = logging.getLogger("chatbot")
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Note: Supabase client will be created in the ChatBot class to ensure env vars are loaded
 
 # Load Aklanon dictionary for query translation
 # 🙏 Special thanks to Mr./Mrs. Cyberustics for providing the comprehensive 
@@ -788,6 +788,12 @@ class ChatBot:
                 "default": "For contact information, please visit the school office."
             },
 
+            # Language Questions - Aklanon
+            ("speak", "aklanon", "language", "can you"): {
+                "en": "Yes, I can understand some Aklanon! 😊 I have basic knowledge of Aklanon words and phrases. Feel free to ask me questions in Aklanon, English, or Tagalog - I'll do my best to help! Kumusta ka? 🤗",
+                "tl": "Oo, nakakaintindi ako ng kaunting Aklanon! 😊 May alam akong mga salita at parirala sa Aklanon. Magtanong lang kayo sa Aklanon, English, o Tagalog - gagawin ko ang makakaya ko! Kumusta ka? 🤗",
+                "default": "Oo, nakakaintindi ako ng kaunting Aklanon! Magtanong lang kayo! 😊"
+            },
             
             # Academic Information
             ("enrollment", "admission", "register"): {
@@ -1449,6 +1455,18 @@ class ChatBot:
         if is_greeting_only:
             logger.info("👋 User sent a greeting only.")
             return self.get_greeting(lang)
+
+        # --- Early check for language capability questions ---
+        language_question_patterns = [
+            "can you speak", "do you speak", "can you understand", "do you understand",
+            "nakakaintindi ka", "marunong ka", "alam mo ba", "nakakaalam ka",
+            "speak aklanon", "speak tagalog", "speak english", "understand aklanon"
+        ]
+        if any(pattern in lowered for pattern in language_question_patterns):
+            logger.info("🗣️ Language capability question detected - using keyword response")
+            keyword_response = await self._keyword_matching_response(query, lang)
+            if keyword_response and "office" not in keyword_response:  # Avoid generic responses
+                return keyword_response
 
         # --- Special handling for Aklanon queries ---
         if lang == "akl":
