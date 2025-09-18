@@ -455,7 +455,7 @@ class ChatBot:
         query_lower = query.lower()
         name_role_mappings = {
             # Staff name to their role/position
-            ("meliza", "delgado"): ["head teacher", "teacher"],
+            ("meliza", "delgado"): ["head teacher", ],
             ("meliza a delgado", "meliza a. delgado"): ["head teacher"],
             
             # Mrs. Nelda B. Delos Santos - Teacher 3 - Kindergarten Jude
