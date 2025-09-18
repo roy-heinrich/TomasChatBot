@@ -985,6 +985,38 @@ class ChatBot:
                 "tl": "Si Mrs. Meliza A. Delgado yan! 📚 Napakagaling naming Head Teacher - talagang expert!",
                 "default": "Si Meliza A. Delgado ang Head Teacher."
             },
+            # TEACHERS QUERY - Return proper staff list (Enhanced patterns)
+            ("guro", "teacher", "teachers", "mga", "staff", "faculty", "nagtuturo", "maestro", "maestra"): {
+                "en": f"Here are our wonderful teachers at Tomas SM. Bautista Elementary School! 👩‍🏫👨‍🏫\n\n{self._get_known_staff_list('en')}",
+                "tl": f"Narito ang aming mga guro sa Tomas SM. Bautista Elementary School! 👩‍🏫👨‍🏫\n\n{self._get_known_staff_list('tl')}",
+                "default": f"Narito ang mga guro ng Tomas SM. Bautista Elementary School:\n\n{self._get_known_staff_list('tl')}"
+            },
+            # Additional teacher query patterns
+            ("tell", "about", "staff"): {
+                "en": f"Here are the known staff members at TOMAS Elementary School:\n\n{self._get_known_staff_list('en')}",
+                "tl": f"Narito ang mga kilalang miyembro ng staff ng TOMAS Elementary School:\n\n{self._get_known_staff_list('tl')}",
+                "default": f"Narito ang mga staff ng TOMAS Elementary School:\n\n{self._get_known_staff_list('tl')}"
+            },
+            ("list", "faculty", "members"): {
+                "en": f"Here are the known staff members at TOMAS Elementary School:\n\n{self._get_known_staff_list('en')}",
+                "tl": f"Narito ang mga kilalang miyembro ng staff ng TOMAS Elementary School:\n\n{self._get_known_staff_list('tl')}",
+                "default": f"Narito ang mga faculty ng TOMAS Elementary School:\n\n{self._get_known_staff_list('tl')}"
+            },
+            ("who", "are", "teachers"): {
+                "en": f"Here are the known staff members at TOMAS Elementary School:\n\n{self._get_known_staff_list('en')}",
+                "tl": f"Narito ang mga kilalang miyembro ng staff ng TOMAS Elementary School:\n\n{self._get_known_staff_list('tl')}",
+                "default": f"Narito ang mga guro ng TOMAS Elementary School:\n\n{self._get_known_staff_list('tl')}"
+            },
+            ("sino", "mga", "faculty"): {
+                "en": f"Here are the known staff members at TOMAS Elementary School:\n\n{self._get_known_staff_list('en')}",
+                "tl": f"Narito ang mga kilalang miyembro ng staff ng TOMAS Elementary School:\n\n{self._get_known_staff_list('tl')}",
+                "default": f"Narito ang mga faculty ng TOMAS Elementary School:\n\n{self._get_known_staff_list('tl')}"
+            },
+            ("taong", "nagtuturo", "dito"): {
+                "en": f"Here are our wonderful teachers at Tomas SM. Bautista Elementary School! 👩‍🏫👨‍🏫\n\n{self._get_known_staff_list('en')}",
+                "tl": f"Narito ang aming mga guro sa Tomas SM. Bautista Elementary School! 👩‍🏫👨‍🏫\n\n{self._get_known_staff_list('tl')}",
+                "default": f"Narito ang mga nagtuturo dito:\n\n{self._get_known_staff_list('tl')}"
+            },
             # School Information - Friendly location response
             ("address", "location", "where", "siin", "diin", "asa", "saan"): {
                 "en": "We're located in the beautiful area of Fatima, New Washington, Aklan! 🏫 It's a lovely spot for learning!",
@@ -1691,6 +1723,20 @@ class ChatBot:
         if is_greeting_only:
             logger.info("👋 User sent a greeting only.")
             return self.get_greeting(lang)
+
+        # --- Early check for teacher/staff queries to prevent AI hallucination ---
+        teacher_patterns = [
+            "mga guro", "mga teacher", "teachers", "who are the teachers", 
+            "sino ang mga guro", "tell me about the teachers", "staff members",
+            "mga staff", "faculty", "tell me about the staff", "about the staff",
+            "list the faculty", "faculty members", "can you list the faculty",
+            "sino ang mga faculty", "mga taong nagtuturo", "nagtuturo dito",
+            "list ng mga guro", "nakikita ko ang mga teacher", "teachers of this school",
+            "guro dito sa school", "the teachers", "our teachers", "teacher", "guro"
+        ]
+        if any(pattern in lowered for pattern in teacher_patterns):
+            logger.info("👩‍🏫 Teacher query detected - using staff list to prevent hallucination")
+            return self._get_known_staff_list(lang)
 
         # --- Early check for language capability questions ---
         language_question_patterns = [
