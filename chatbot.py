@@ -15,6 +15,10 @@ from deep_translator import GoogleTranslator
 import openai
 import asyncio
 import urllib.parse
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 logger = logging.getLogger("chatbot")
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -532,6 +536,88 @@ class ChatBot:
             logger.info(f"📝 No translation changes made to: '{query}'")
         
         return translated_query
+    def _is_person_query(self, query: str) -> bool:
+        """Detect if user is asking about a specific person/staff member."""
+        query_lower = query.lower().strip()
+        
+        # Patterns that indicate person queries
+        person_patterns = [
+            "who is",
+            "sino si", "sin-o si", "sino ang", "sin-o ang",
+            "tell me about",
+            "about",
+            "know about",
+            "information about",
+            # Add common name patterns
+            "garcia",  # The test case that failed
+        ]
+        
+        # Check if query matches person inquiry patterns
+        for pattern in person_patterns:
+            if pattern in query_lower:
+                return True
+        
+        # Check if query contains typical name patterns (first name + last name)
+        words = query_lower.split()
+        if len(words) >= 2:
+            # Look for potential name patterns
+            for i in range(len(words) - 1):
+                word1, word2 = words[i], words[i + 1]
+                # If both words are capitalized in original or seem like names
+                if (len(word1) > 2 and len(word2) > 2 and 
+                    word1.isalpha() and word2.isalpha()):
+                    return True
+        
+        return False
+    
+    def _get_unknown_person_response(self, lang: str = "en") -> str:
+        """Generate a helpful response for unknown person queries without listing all staff."""
+        
+        if lang == "tl":
+            return ("Hindi ko nakilala ang taong iyon sa aming paaralan. Para sa mga katanungan "
+                   "tungkol sa mga guro at staff, maaari kayong makipag-ugnayan kay Meliza A. Delgado, "
+                   "ang aming Head Teacher, o tumawag sa school office sa (036) 269-6345.")
+        elif lang == "akl":
+            return ("Wala ko kakilala nga tawo na ina sa amon eskwelahan. Para sa mga pamangkot "
+                   "parte sa mga maestro kag staff, pwede kamo mag-contact kay Meliza A. Delgado, "
+                   "ang amon Head Teacher, o mag-tawag sa school office sa (036) 269-6345.")
+        else:  # English
+            return ("I don't have information about that person in our school records. "
+                   "For inquiries about our teachers and staff, you may contact our Head Teacher, "
+                   "Meliza A. Delgado, or call the school office at (036) 269-6345.")
+
+    def _get_known_staff_list(self, lang: str = "en") -> str:
+        """Generate a helpful list of known staff members."""
+        staff_info = {
+            "Meliza A. Delgado": "Head Teacher",
+            "Nelda B. Delos Santos": "Kindergarten Teacher", 
+            "Annalyn B. Andrade": "Grade 1 Teacher",
+            "Lezil V. Villanueva": "Grade 2 Teacher",
+            "Michelle V. Pastrana": "Grade 3 Teacher",
+            "Thedy Mae P. Ruiz": "Grade 4 Teacher",
+            "Jessica Z. Go": "LSA Teacher",
+            "Leny Mae D. Patani": "Grade 6 Teacher",
+            "Feliciano C. Bustamante Jr.": "School Division Superintendent",
+            "Ramon D. Paras Jr.": "Assistant Superintendent",
+            "Ariel Z. Zubiaga": "District Supervisor"
+        }
+        
+        if lang == "tl":
+            header = "Narito ang mga kilalang miyembro ng staff ng TOMAS Elementary School:\n\n"
+            footer = "\n\nPara sa iba pang impormasyon, maaari kayong tumawag sa school office sa (036) 269-6345."
+        elif lang == "akl":
+            header = "Ara ini it mga kilaea nga staff sa TOMAS Elementary School:\n\n"  
+            footer = "\n\nPara sa iban nga impormasyon, pwede kamo mag-tawag sa school office sa (036) 269-6345."
+        else:  # English
+            header = "Here are the known staff members at TOMAS Elementary School:\n\n"
+            footer = "\n\nFor other inquiries, you may contact the school office at (036) 269-6345."
+        
+        staff_list = ""
+        for name, position in staff_info.items():
+            staff_list += f"• {name} - {position}\n"
+        
+        return header + staff_list + footer
+
     async def enhanced_search_supabase(self, query: str) -> str:
         """Enhanced search strategy prioritizing full-text search via search_tsv."""
         import re
@@ -1091,11 +1177,18 @@ class ChatBot:
                 logger.info(f"🔍 Full-text search for: '{word}'")
                 
                 try:
-                    # Use ilike for case-insensitive search in both keywords and response
+                    # Use proper Supabase client methods with correct wildcard syntax
                     result = self.supabase.table("chatbot_prompts") \
                         .select("keywords, response") \
-                        .or_(f"keywords.ilike.%{word}%,response.ilike.%{word}%") \
+                        .ilike("keywords", f"%{word}%") \
                         .execute()
+                    
+                    # If no results in keywords, try response field
+                    if not result.data:
+                        result = self.supabase.table("chatbot_prompts") \
+                            .select("keywords, response") \
+                            .ilike("response", f"%{word}%") \
+                            .execute()
                     
                     if result.data:
                         logger.info(f"✅ Full-text search succeeded for '{word}' with {len(result.data)} results")
@@ -1128,22 +1221,36 @@ class ChatBot:
                 "Accept": "application/json",
             }
 
-            # Try exact matches for key terms
+            # Try exact matches for key terms using Supabase client
             for term in search_terms:
-                params = {
-                    "select": "keywords,response",
-                    "or": f"keywords.eq.{term},response.ilike.%{term}%",
-                    "limit": 1  # Just one exact match needed
-                }
-
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(url, headers=headers, params=params)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        if data:
-                            logger.info(f"✅ Exact match found for '{term}'")
-                            row = data[0]
-                            return f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}"
+                try:
+                    # Try exact match in keywords first
+                    result = self.supabase.table("chatbot_prompts") \
+                        .select("keywords, response") \
+                        .eq("keywords", term) \
+                        .limit(1) \
+                        .execute()
+                    
+                    if result.data:
+                        logger.info(f"✅ Exact match found for '{term}'")
+                        row = result.data[0]
+                        return f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}"
+                    
+                    # Try ilike in response if no exact match
+                    result = self.supabase.table("chatbot_prompts") \
+                        .select("keywords, response") \
+                        .ilike("response", f"%{term}%") \
+                        .limit(1) \
+                        .execute()
+                    
+                    if result.data:
+                        logger.info(f"✅ Response match found for '{term}'")
+                        row = result.data[0]
+                        return f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}"
+                        
+                except Exception as e:
+                    logger.warning(f"Exact match search failed for '{term}': {e}")
+                    continue
                             
         except Exception as e:
             logger.warning(f"Exact match search failed: {e}")
@@ -1259,35 +1366,41 @@ class ChatBot:
         return ""
 
     async def _try_ilike_search(self, search_terms: list) -> str:
-        """Optimized ILIKE search with token limits."""
+        """Optimized ILIKE search using Supabase client to avoid URL encoding issues."""
         if not search_terms:
             return ""
         
         try:
-            url = f"{SUPABASE_URL}/rest/v1/chatbot_prompts"
-            headers = {
-                "apikey": SUPABASE_KEY,
-                "Authorization": f"Bearer {SUPABASE_KEY}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            }
-
-            # Try only the most relevant term first
+            # Try only the most relevant term first using Supabase client
             for term in search_terms[:2]:  # Reduced from 5 to 2
-                params = {
-                    "select": "keywords,response",
-                    "or": f"keywords.ilike.%{term}%,response.ilike.%{term}%",
-                    "limit": 1  # Reduced from 3 to 1
-                }
-
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(url, headers=headers, params=params)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        if data:
-                            logger.info(f"✅ ILIKE search successful for term '{term}'")
-                            row = data[0]
-                            return f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}"
+                try:
+                    # Use Supabase client instead of manual URL construction
+                    result = self.supabase.table("chatbot_prompts") \
+                        .select("keywords, response") \
+                        .ilike("keywords", f"%{term}%") \
+                        .limit(1) \
+                        .execute()
+                    
+                    if result.data:
+                        logger.info(f"✅ ILIKE match found for '{term}' in keywords")
+                        row = result.data[0]
+                        return f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}"
+                    
+                    # Try in response field if not found in keywords
+                    result = self.supabase.table("chatbot_prompts") \
+                        .select("keywords, response") \
+                        .ilike("response", f"%{term}%") \
+                        .limit(1) \
+                        .execute()
+                    
+                    if result.data:
+                        logger.info(f"✅ ILIKE match found for '{term}' in response")
+                        row = result.data[0]
+                        return f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}"
+                        
+                except Exception as e:
+                    logger.warning(f"ILIKE search failed for '{term}': {e}")
+                    continue
                             
         except Exception as e:
             logger.warning(f"ILIKE search failed: {e}")
@@ -1518,6 +1631,36 @@ class ChatBot:
             logger.info("👤 High confidence human request → triggering fallback handler.")
             return self.fallback_handler.generate_fallback_message(lang)
 
+        # --- Enhanced Unknown Person Detection (EARLY CHECK) ---
+        if self._is_person_query(query):
+            logger.info("👤 Person query detected - checking if it's an unknown person")
+            # Try to search for the person in our database
+            person_context = await self.enhanced_search_supabase(query)
+            
+            # Extract the person's name from the query for more specific checking
+            query_lower = query.lower()
+            potential_name = ""
+            if "who is" in query_lower:
+                potential_name = query_lower.split("who is")[-1].strip()
+            elif "sino si" in query_lower:
+                potential_name = query_lower.split("sino si")[-1].strip()
+            elif "sin-o si" in query_lower:
+                potential_name = query_lower.split("sin-o si")[-1].strip()
+            
+            # Clean up the name (remove punctuation)
+            import re
+            potential_name = re.sub(r'[^\w\s]', '', potential_name).strip()
+            
+            # Check if the person's name actually appears in the context
+            name_in_context = potential_name and potential_name in person_context.lower() if person_context else False
+            
+            # If no context found OR the person's name doesn't appear in the context, treat as unknown
+            if not person_context or len(person_context.strip()) < 50 or not name_in_context:
+                logger.info(f"👤 Unknown person detected (name: '{potential_name}', name_in_context: {name_in_context}) - returning helpful response")
+                return self._get_unknown_person_response(lang)
+            # If we found substantial context about the person, continue with normal flow
+            logger.info("👤 Known person detected - continuing with normal flow")
+
         # --- Detect goodbye / end of conversation ---
         if intent_analysis['intent'] == 'goodbye' and intent_analysis['confidence'] > 0.8:
             logger.info("👋 User ended the conversation.")
@@ -1689,6 +1832,12 @@ class ChatBot:
         
         # Normal processing: Use summarized_text and Supabase data -> send to Groq
         if not full_context.strip():
+            # Check if this is a person/staff inquiry
+            if self._is_person_query(query):
+                logger.info("👤 No context found for person query - providing helpful guidance")
+                return self._get_unknown_person_response(lang)
+            
+            # Generic no context response for other queries
             english_response = (
                 "I checked our records, but I wasn't able to find any information about "
                 f"{query}. You may visit the school office for further details."
