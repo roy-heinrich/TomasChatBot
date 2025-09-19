@@ -697,6 +697,83 @@ class ChatBot:
             else:
                 return "For enrollment information, please visit the school office."
 
+    def _get_personalized_name_response(self, user_name: str, child_name: str, lang: str) -> str:
+        """Generate warm, personalized response when user asks about their name."""
+        
+        if user_name:
+            # Warm, personal responses
+            if lang == "tl":
+                greetings = [
+                    f"Oo, {user_name}! Natatandaan ko kayo 😊 Ikaw nga si {user_name}, tama ba?",
+                    f"Of course! Kayo po si {user_name} 😊 Hindi ko makakalimutan yan!",
+                    f"Syempre naman! Si {user_name} kayo! 😊 Kamusta naman?",
+                    f"Oo nga! {user_name} nga ang pangalan ninyo 😊 Mabuti naman ba kayo?"
+                ]
+                if child_name:
+                    greetings.extend([
+                        f"Kayo po si {user_name}, ang magulang ni {child_name}! 😊 Paano naman sila?",
+                        f"Si {user_name} nga kayo! 😊 Ang parent ni {child_name}, di ba?"
+                    ])
+            else:  # English
+                greetings = [
+                    f"Of course! You're {user_name}! 😊 How could I forget?",
+                    f"Yes, you're {user_name}! 😊 Good to see you again!",
+                    f"Absolutely! Your name is {user_name} 😊 How are you doing?",
+                    f"That's right! You're {user_name} 😊 Nice chatting with you again!"
+                ]
+                if child_name:
+                    greetings.extend([
+                        f"You're {user_name}, {child_name}'s parent! 😊 How is {child_name} doing?",
+                        f"Of course! You're {user_name}! 😊 {child_name}'s mom/dad, right?",
+                        f"Yes! {user_name}! 😊 The wonderful parent of {child_name}!"
+                    ])
+            
+            import random
+            return random.choice(greetings)
+        else:
+            # Gentle way to ask for their name if not found
+            if lang == "tl":
+                return "Hindi ko pa narinig ang pangalan ninyo sa usapan natin 😊 Pwede bang malaman kung ano ang tawag sa inyo?"
+            else:
+                return "I don't think you've mentioned your name yet in our conversation 😊 Could you remind me what I should call you?"
+
+    def _get_personalized_child_response(self, user_name: str, child_name: str, lang: str) -> str:
+        """Generate warm, personalized response when user asks about their child's name."""
+        
+        if child_name:
+            # Warm responses about their child
+            if lang == "tl":
+                responses = [
+                    f"Si {child_name}! 😊 Ang anak ninyo nga si {child_name}, tama ba?",
+                    f"Oo nga! Si {child_name} ang pangalan ng anak ninyo 😊 Cute name!",
+                    f"Si {child_name} nga! 😊 Kamusta naman siya?",
+                ]
+                if user_name:
+                    responses.extend([
+                        f"Si {child_name} nga, {user_name}! 😊 Proud parent ka talaga!",
+                        f"Your child's name is {child_name}, right {user_name}? 😊"
+                    ])
+            else:  # English
+                responses = [
+                    f"That's {child_name}! 😊 Your child's name is {child_name}, right?",
+                    f"Of course! Your son/daughter is {child_name}! 😊 Such a lovely name!",
+                    f"Yes! {child_name}! 😊 How is {child_name} doing?",
+                ]
+                if user_name:
+                    responses.extend([
+                        f"That's {child_name}, {user_name}! 😊 You must be so proud!",
+                        f"Your child {child_name}, right {user_name}? 😊 Great kid!"
+                    ])
+            
+            import random
+            return random.choice(responses)
+        else:
+            # Gentle response if child name not found
+            if lang == "tl":
+                return "Hindi ko pa narinig ang pangalan ng anak ninyo 😊 Ano nga ulit ang tawag sa kanya?"
+            else:
+                return "I don't think you've mentioned your child's name yet 😊 Could you remind me what their name is?"
+
     def _get_unknown_person_response(self, lang: str = "en") -> str:
         """Generate a helpful response for unknown person queries without listing all staff."""
         
@@ -1380,6 +1457,21 @@ class ChatBot:
                 "tl": "Oo, nakakaintindi ako ng kaunting Aklanon! 😊 May alam akong mga salita at parirala sa Aklanon. Magtanong lang kayo sa Aklanon, English, o Tagalog - gagawin ko ang makakaya ko! Kumusta ka? 🤗",
                 "default": "Oo, nakakaintindi ako ng kaunting Aklanon! Magtanong lang kayo! 😊"
             },
+
+            # PERSONALIZED NAME QUERIES - Warm, contextual responses
+            ("whats", "my", "name"): "PERSONALIZED_NAME_QUERY",  # Special marker
+            ("what", "is", "my", "name"): "PERSONALIZED_NAME_QUERY",  # Special marker
+            ("my", "name", "again"): "PERSONALIZED_NAME_QUERY",  # Special marker
+            ("remind", "me", "my", "name"): "PERSONALIZED_NAME_QUERY",  # Special marker
+            ("tell", "me", "my", "name"): "PERSONALIZED_NAME_QUERY",  # Special marker
+            ("do", "you", "remember", "my", "name"): "PERSONALIZED_NAME_QUERY",  # Special marker
+            ("whats", "my", "sons", "name"): "PERSONALIZED_CHILD_QUERY",  # Special marker
+            ("what", "is", "my", "sons", "name"): "PERSONALIZED_CHILD_QUERY",  # Special marker
+            ("my", "sons", "name"): "PERSONALIZED_CHILD_QUERY",  # Special marker
+            ("remind", "me", "my", "sons", "name"): "PERSONALIZED_CHILD_QUERY",  # Special marker
+            ("whats", "my", "daughters", "name"): "PERSONALIZED_CHILD_QUERY",  # Special marker
+            ("what", "is", "my", "daughters", "name"): "PERSONALIZED_CHILD_QUERY",  # Special marker
+            ("my", "daughters", "name"): "PERSONALIZED_CHILD_QUERY",  # Special marker
             
             # Academic Information - MOVED BEFORE LANGUAGE TO PRIORITIZE
             ("enrollment", "admission", "register", "help", "can you help"): "PERSONALIZED_ENROLLMENT",  # Special marker
@@ -1417,6 +1509,16 @@ class ChatBot:
             if best_response == "PERSONALIZED_ENROLLMENT":
                 logger.info("🎯 Generating personalized enrollment response")
                 return self._get_personalized_enrollment_response(user_name, child_name, lang)
+            
+            # Special handling for name queries - generate warm, personalized response
+            if best_response == "PERSONALIZED_NAME_QUERY":
+                logger.info("🎯 Generating personalized name response")
+                return self._get_personalized_name_response(user_name, child_name, lang)
+            
+            # Special handling for child name queries - generate warm, personalized response
+            if best_response == "PERSONALIZED_CHILD_QUERY":
+                logger.info("🎯 Generating personalized child name response")
+                return self._get_personalized_child_response(user_name, child_name, lang)
             
             # Handle new dictionary format with language-specific responses
             if isinstance(best_response, dict):
@@ -2158,10 +2260,23 @@ class ChatBot:
                 # 🛡️ Apply validation even to direct responses
                 return self._validate_response_against_facts(response, query, lang)
 
+        # --- Check for personalized queries BEFORE memory detection ---
+        personalized_patterns = [
+            "whats my name", "what is my name", "my name again", "remind me my name", 
+            "tell me my name", "do you remember my name", "whats my sons name", 
+            "what is my sons name", "my sons name", "remind me my sons name",
+            "whats my daughters name", "what is my daughters name", "my daughters name"
+        ]
+        if any(pattern in lowered for pattern in personalized_patterns):
+            logger.info("👤 Personalized name query detected - using keyword matching")
+            keyword_response = await self._keyword_matching_response(query, lang, conversation_history)
+            if keyword_response:
+                return self._validate_response_against_facts(keyword_response, query, lang)
+
         # --- Early check for memory/conversation context queries ---
         memory_patterns = [
             "do you remember", "remember my", "what is my", "what was my", 
-            "my name", "my daughter", "my child", "what did i tell you",
+            "my daughter", "my child", "what did i tell you",  # Removed "my name" since it's handled above
             "naaalala mo ba", "naaalala mo", "ano ang pangalan ko", "nabanggit ko"
         ]
         if any(pattern in lowered for pattern in memory_patterns):
