@@ -75,8 +75,32 @@ class NLUEngine:
         return rule_result
     
     def _rule_based_classification(self, user_input: str) -> NLUResult:
-        """Fallback rule-based classification"""
+        """Enhanced rule-based classification with better multilingual support"""
         user_lower = user_input.lower().strip()
+        
+        # PHASE 1: Exact phrase matching (highest priority)
+        # This catches complex multilingual phrases before word-by-word analysis
+        exact_phrases = {
+            # Tagalog location phrases
+            "saan ang lokasyon ng paaralan": (Intent.LOCATION_INQUIRY, 0.9),
+            "saan ang paaralan": (Intent.LOCATION_INQUIRY, 0.9),
+            "ano ang contact number ninyo": (Intent.CONTACT_INFO, 0.9),
+            "sabihin mo sa akin ang tungkol sa school programs": (Intent.SCHOOL_INFO, 0.9),
+            "sabihin sa akin tungkol sa": (Intent.GENERAL_INFO, 0.8),
+            
+            # Aklanon location phrases  
+            "diin ang lokasyon sang paaralan": (Intent.LOCATION_INQUIRY, 0.9),
+            "diin ang paaralan": (Intent.LOCATION_INQUIRY, 0.9),
+            "diin nga lokasyon": (Intent.LOCATION_INQUIRY, 0.9),
+            "ano nga contact number": (Intent.CONTACT_INFO, 0.9),
+        }
+        
+        for phrase, (intent, confidence) in exact_phrases.items():
+            if phrase in user_lower:
+                logger.info(f"🎯 Exact phrase match: '{phrase}' → {intent.value}")
+                return NLUResult(intent, confidence, [])
+        
+        # PHASE 2: Pattern-based matching with context awareness
         
         # Priority 1: Denials and clarifications (check first to avoid false positives)
         if any(phrase in user_lower for phrase in ["not asking", "i am not", "i'm not", "hindi ako", "wala ako"]):
@@ -163,23 +187,36 @@ class NLUEngine:
         if any(pattern in user_lower for pattern in facilities_patterns):
             return NLUResult(Intent.FACILITIES_INQUIRY, 0.7, [])
         
-        # Priority 11: Facilities inquiries
+        # Priority 11: General Info inquiries - Enhanced for multilingual
         general_info_patterns = [
             "about the school", "school overview", "mission", "vision", 
             "history", "background", "tell me about", "describe",
-            "ano ang", "tungkol sa", "paano ang", "school description"
+            "ano ang", "tungkol sa", "paano ang", "school description",
+            # Enhanced Tagalog patterns
+            "sabihin mo sa akin", "sabihin sa akin", "tungkol sa school",
+            "kwento mo", "ikwento mo", "about sa school", "tungkol sa paaralan",
+            "ano about", "ano tungkol", "tell me tungkol sa",
+            # Enhanced Aklanon patterns  
+            "storya mo", "istorya mo", "tungkol sa eskwelahan",
+            "ano parte sa", "sabihin parte sa", "kwento nga"
         ]
         if any(pattern in user_lower for pattern in general_info_patterns):
             return NLUResult(Intent.GENERAL_INFO, 0.8, [])
         
-        # Priority 13: Location inquiries
+        # Priority 13: Location inquiries - Enhanced for multilingual
         location_patterns = [
             "where", "direction", "directions", "address", "location", "map",
             "how to get", "how do i get", "saan", "paano pumunta", "nasaan",
-            "address ninyo", "located", "find you"
+            "address ninyo", "located", "find you", "school located",
+            # Enhanced Tagalog patterns
+            "saan ang lokasyon", "saan ang paaralan", "lokasyon ng", "address ng",
+            "nasaan ang school", "saan makikita", "paano makarating",
+            # Enhanced Aklanon patterns  
+            "diin ang lokasyon", "diin ang paaralan", "diin nga", "asa ang",
+            "lokasyon sang", "diin makita", "paano maka-abot"
         ]
         if any(pattern in user_lower for pattern in location_patterns):
-            return NLUResult(Intent.LOCATION_INQUIRY, 0.7, [])
+            return NLUResult(Intent.LOCATION_INQUIRY, 0.8, [])
         
         # Priority 14: Help requests
         help_patterns = [
@@ -198,19 +235,35 @@ class NLUEngine:
         if any(pattern in user_lower for pattern in appreciation_patterns):
             return NLUResult(Intent.APPRECIATION, 0.7, [])
         
-        # Priority 16: Confirmation responses
+        # Priority 16: Confirmation responses - Enhanced for multilingual
         confirmation_patterns = [
             "yes", "yeah", "yep", "yup", "correct", "right", "exactly", "oo", 
-            "tama", "yes please", "that's right", "ganun nga", "ok", "okay"
+            "tama", "yes please", "that's right", "ganun nga", "ok", "okay",
+            # Enhanced Tagalog patterns - but avoid "diin" which means "where" in Aklanon
+            "sakto", "tumpak", "oo nga", "ganon nga", "korek", "sige",
+            # Enhanced Aklanon patterns - be careful not to include location words
+            "huo", "sakto man", "tama man", "oo man"
         ]
+        # Special handling: avoid classifying location words as confirmation
         if any(pattern in user_lower for pattern in confirmation_patterns):
-            return NLUResult(Intent.CONFIRMATION, 0.7, [])
+            # But NOT if it contains location indicators
+            location_indicators = ["diin", "lokasyon", "paaralan", "eskwelahan", "sang"]
+            if not any(loc in user_lower for loc in location_indicators):
+                return NLUResult(Intent.CONFIRMATION, 0.7, [])
         
-        # Priority 17: Contact information
-        # Priority 17: Contact information
-        contact_words = ["contact", "phone", "number", "address", "location", "email"]
-        if any(word in user_lower for word in contact_words):
-            return NLUResult(Intent.CONTACT_INFO, 0.7, [])
+        # Priority 17: Contact information - Enhanced for multilingual
+        contact_patterns = [
+            "contact", "phone", "number", "address", "email", "telephone",
+            "contact number", "phone number", "contact info", "contact information",
+            # Enhanced Tagalog patterns
+            "numero", "contact number ninyo", "phone number ninyo", "numero ninyo",
+            "ano ang contact", "ano ang numero", "contact info ninyo",
+            # Enhanced Aklanon patterns
+            "numero ninyo", "contact nga numero", "phone nga numero",
+            "ano nga contact", "ano nga numero"
+        ]
+        if any(pattern in user_lower for pattern in contact_patterns):
+            return NLUResult(Intent.CONTACT_INFO, 0.8, [])
         
         # Priority 18: Goodbyes
         if any(word in user_lower for word in ["bye", "goodbye", "thanks", "thank you", "salamat", "tapos na"]):

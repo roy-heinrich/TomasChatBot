@@ -744,31 +744,39 @@ class ChatBot:
             return self._handle_clarification(query, lang)
             
         elif intent == Intent.STAFF_INQUIRY:
-            return self._handle_staff_inquiry(query, lang)
+            # Let AI handle with database context for staff information
+            return None
             
         elif intent == Intent.SCHOOL_INFO:
-            return self._handle_school_info_inquiry(query, lang)
+            # Let AI handle with database context for school information
+            return None
             
         elif intent == Intent.CONTACT_INFO:
-            return self._handle_contact_inquiry(lang)
+            # Let AI handle with database context for contact information
+            return None
             
         elif intent == Intent.GOODBYE:
             return self.get_goodbye(lang)
             
         elif intent == Intent.FACILITIES_INQUIRY:
-            return self._handle_facilities_inquiry(query, lang)
+            # Let AI handle with database context - no hardcoded responses
+            return None
             
         elif intent == Intent.FINANCIAL_INQUIRY:
-            return self._handle_financial_inquiry(query, lang)
+            # Let AI handle with database context - no hardcoded responses
+            return None
             
         elif intent == Intent.GENERAL_INFO:
-            return self._handle_general_info_inquiry(query, lang)
+            # Let AI handle with database context - no hardcoded responses
+            return None
             
         elif intent == Intent.LOCATION_INQUIRY:
-            return self._handle_location_inquiry(lang)
+            # Let AI handle with database context - no hardcoded responses
+            return None
             
         elif intent == Intent.HELP_REQUEST:
-            return self._handle_help_request(lang)
+            # Let AI handle with database context - no hardcoded responses
+            return None
             
         elif intent == Intent.APPRECIATION:
             return self._handle_appreciation(lang)
@@ -914,10 +922,9 @@ class ChatBot:
     def _handle_financial_inquiry(self, query: str, lang: str) -> str:
         """Handle financial/tuition-related questions"""
         if lang == "tl" or lang == "akl":
-            return "Para sa tuition fees at iba pang bayarin, makipag-ugnayan sa school office sa (036) 269-6345. May mga scholarship programs din kami na available."
+            return "Para sa tuition fees at iba pang bayarin, makipag-ugnayan sa school office."
         else:
-            return "For tuition fees and other charges, please contact the school office at (036) 269-6345. We also have scholarship programs available."
-    
+            return "For tuition fees and other charges, please contact the school office."
     def _handle_general_info_inquiry(self, query: str, lang: str) -> str:
         """Handle general school information questions"""
         if lang == "tl" or lang == "akl":
@@ -925,12 +932,28 @@ class ChatBot:
         else:
             return "Tomas SM. Bautista Elementary School is an educational institution dedicated to the holistic development of children. We have experienced teachers and modern facilities."
     
-    def _handle_location_inquiry(self, lang: str) -> str:
-        """Handle location and directions questions"""
-        if lang == "tl" or lang == "akl":
-            return "Nasa Tomas SM. Bautista Elementary School kami. Para sa specific directions, tumawag sa (036) 269-6345 o bisitahin ang school office."
-        else:
-            return "We're located at Tomas SM. Bautista Elementary School. For specific directions, call (036) 269-6345 or visit the school office."
+    async def _handle_location_inquiry(self, lang: str) -> str:
+        """Handle location and directions questions by fetching from database"""
+        try:
+            # Search for location information in the database
+            location_info = await self.enhanced_search_supabase("location")
+            
+            if location_info:
+                # We found specific location information in the database
+                return location_info
+            else:
+                # Fallback to basic information if database search fails
+                if lang == "tl" or lang == "akl":
+                    return "Nasa Tomas SM. Bautista Elementary School kami. Para sa specific directions, tumawag sa (036) 269-6345 o bisitahin ang school office."
+                else:
+                    return "We're located at Tomas SM. Bautista Elementary School. For specific directions, call (036) 269-6345 or visit the school office."
+        except Exception as e:
+            logger.warning(f"Error fetching location from database: {e}")
+            # Fallback response if there's any error
+            if lang == "tl" or lang == "akl":
+                return "Nasa Tomas SM. Bautista Elementary School kami. Para sa specific directions, tumawag sa (036) 269-6345 o bisitahin ang school office."
+            else:
+                return "We're located at Tomas SM. Bautista Elementary School. For specific directions, call (036) 269-6345 or visit the school office."
     
     def _handle_help_request(self, lang: str) -> str:
         """Handle general help requests"""
