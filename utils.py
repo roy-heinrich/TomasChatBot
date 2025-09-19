@@ -20,9 +20,9 @@ from pptx import Presentation
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
-DOCS_BUCKET = "chatbot-docs"
-SUMMARY_BUCKET = "summarized-text"
-SUMMARY_FILENAME = "summarized_text.md"
+DOCS_BUCKET = os.getenv("DOCS_BUCKET", "chatbot-docs")  # Default fallback
+SUMMARY_BUCKET = os.getenv("SUMMARY_BUCKET", "summarized-text")  # Default fallback
+SUMMARY_FILENAME = os.getenv("SUMMARY_FILENAME", "summarized_text.md")  # Default fallback
 
 # -------------------------
 # Create Supabase client

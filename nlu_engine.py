@@ -300,7 +300,7 @@ class NLUEngine:
         """
         
         prompt = f"""
-        Analyze this user message and classify the intent.
+        Analyze this user message and classify the intent. Also extract any important entities.
         
         User message: "{user_input}"
         
@@ -308,8 +308,23 @@ class NLUEngine:
         
         Context: {context or "No previous context"}
         
+        Extract entities such as:
+        - person_name: The user's own name (when they introduce themselves)
+        - child_name: Names of children/students mentioned
+        - relationship: Family relationships (son, daughter, child)
+        - age: Ages mentioned
+        - grade: School grades mentioned
+        - location: Places or locations mentioned
+        - staff_name: Names of teachers or staff mentioned
+        
         Return only a JSON object with:
-        {{"intent": "intent_name", "confidence": 0.0-1.0, "entities": []}}
+        {{"intent": "intent_name", "confidence": 0.0-1.0, "entities": [
+            {{"type": "entity_type", "value": "extracted_value", "confidence": 0.0-1.0}}
+        ]}}
+        
+        Examples:
+        "Hi my name is John" -> {{"intent": "name_introduction", "confidence": 0.9, "entities": [{{"type": "person_name", "value": "John", "confidence": 0.9}}]}}
+        "I got a daughter named Sarah" -> {{"intent": "child_introduction", "confidence": 0.9, "entities": [{{"type": "child_name", "value": "Sarah", "confidence": 0.9}}, {{"type": "relationship", "value": "daughter", "confidence": 0.9}}]}}
         """
         
         return prompt
@@ -348,5 +363,32 @@ class NLUEngine:
     
     async def _call_groq(self, prompt: str) -> str:
         """Call Groq API for intent classification"""
-        # Implementation would go here
-        raise NotImplementedError("Groq integration not yet implemented")
+        import httpx
+        import os
+        
+        groq_key = os.getenv("GROQ_API_KEY")
+        if not groq_key:
+            raise Exception("GROQ_API_KEY not found")
+            
+        headers = {
+            "Authorization": f"Bearer {groq_key}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "llama-3.1-8b-instant",
+            "messages": [
+                {"role": "system", "content": "You are an expert at analyzing user messages for intent and entity extraction. Always respond with valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.1,
+            "max_tokens": 200
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post("https://api.groq.com/openai/v1/chat/completions", 
+                                       headers=headers, json=data, timeout=10.0)
+            response.raise_for_status()
+            
+            result = response.json()
+            return result["choices"][0]["message"]["content"].strip()

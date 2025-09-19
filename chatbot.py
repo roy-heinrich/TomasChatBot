@@ -175,25 +175,25 @@ class ChatBot:
         """Determine the time of day based on current hour"""
         current_hour = datetime.now().hour
         
-        if 5 <= current_hour < 12:
+        if 1 <= current_hour < 12:  # 1am-11:59am = morning
             return "morning"
-        elif 12 <= current_hour < 18:
+        elif 12 <= current_hour < 19:  # 12pm-6:59pm = afternoon  
             return "afternoon"
-        elif 18 <= current_hour <= 23:  # Include 22:00 and 23:00 in evening
+        elif 19 <= current_hour <= 23 or current_hour == 0:  # 7pm-12:59am = evening
             return "evening"
         else:
-            return "evening"  # Late night hours (0-4) also considered evening
+            return "default"
 
     def get_time_aware_system_prompt(self, lang: str = "en", user_name: str = ""):
         """Generate a time-aware system prompt for Groq API"""
         current_hour = datetime.now().hour
         
         # Determine time context for the AI
-        if 5 <= current_hour < 12:
+        if 1 <= current_hour < 12:  # 1am-11:59am = morning
             time_context = "It's morning time (school starts at 8 AM)."
-        elif 12 <= current_hour < 18:
+        elif 12 <= current_hour < 19:  # 12pm-6:59pm = afternoon
             time_context = "It's afternoon time (school day in progress or just ended)."
-        elif 18 <= current_hour < 22:
+        elif 19 <= current_hour <= 23 or current_hour == 0:  # 7pm-12:59am = evening
             time_context = "It's evening time (school day has ended)."
         else:
             time_context = "It's late evening/night time (school is closed)."
@@ -605,27 +605,51 @@ class ChatBot:
         
         return False
     
-    def _extract_user_name(self, conversation_history: list) -> str:
-        """Extract user's name from conversation history before it gets truncated."""
+    async def _extract_entities_with_nlu(self, user_message: str) -> dict:
+        """Extract entities using NLU engine instead of hardcoded patterns"""
+        try:
+            result = await self.nlu_engine.analyze_intent(user_message)
+            return result.get('entities', {})
+        except Exception as e:
+            print(f"Error in NLU entity extraction: {e}")
+            return {}
+
+    async def _extract_user_name_async(self, conversation_history: list) -> str:
+        """Extract user's name from conversation history - async version with NLU first."""
         if not conversation_history:
             return ""
         
+        # Try NLU approach first for recent messages
+        for message in reversed(conversation_history[-3:]):  # Check last 3 messages with NLU
+            if message.get("role") == "user":
+                content = message.get("content", "").strip()
+                try:
+                    entities = await self._extract_entities_with_nlu(content)
+                    if entities.get('person_name'):
+                        return entities['person_name'].capitalize()
+                except Exception:
+                    pass  # Fall back to regex
+        
+        # Fallback to regex patterns
+        return self._extract_user_name_regex(conversation_history)
+    
+    def _extract_user_name_regex(self, conversation_history: list) -> str:
+        """Extract user's name using regex patterns only."""
         import re
         
-        # Common introduction patterns
         name_patterns = [
             r"hi[,\s]*i['\s]*m\s+(\w+)",           # "Hi, I'm John" 
-            r"hi[,\s]+i\s+am\s+(\w+)",             # "Hi, I am John" (NEW)
+            r"hi[,\s]+i\s+am\s+(\w+)",             # "Hi, I am John"
             r"hello[,\s]*i['\s]*m\s+(\w+)",        # "Hello, I'm John"
-            r"hello[,\s]+i\s+am\s+(\w+)",          # "Hello, I am John" (NEW)
+            r"hello[,\s]+i\s+am\s+(\w+)",          # "Hello, I am John"
             r"my\s+name\s+is\s+(\w+)",             # "my name is John"
             r"i['\s]*m\s+(\w+)",                   # "I'm John"
-            r"i\s+am\s+(\w+)",                     # "I am John" (NEW)
+            r"i\s+am\s+(\w+)",                     # "I am John"
             r"call\s+me\s+(\w+)",                  # "call me John"
             r"this\s+is\s+(\w+)",                  # "this is John"
         ]
         
-        # Search through ALL conversation history, not just recent 8 messages
+        # Search through ALL conversation history
         for message in conversation_history:
             if message.get("role") == "user":
                 content = message.get("content", "").lower().strip()
@@ -639,15 +663,55 @@ class ChatBot:
                             return name.capitalize()
         
         return ""
-    
-    def _extract_child_name(self, conversation_history: List[Dict]) -> str:
-        """Extract child's name from conversation history."""
+
+    def _extract_user_name(self, conversation_history: list) -> str:
+        """Extract user's name from conversation history - uses NLU first, regex as fallback."""
         if not conversation_history:
             return ""
         
+        # For sync calls, try regex directly (async version available as _extract_user_name_async)
+        try:
+            # Try to use existing event loop if available
+            import asyncio
+            loop = asyncio.get_running_loop()
+            # If we're in an async context, we can't create a new loop
+            return self._extract_user_name_regex(conversation_history)
+        except RuntimeError:
+            # No event loop running, we can create one
+            try:
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                result = loop.run_until_complete(self._extract_user_name_async(conversation_history))
+                loop.close()
+                return result
+            except Exception:
+                # Fall back to regex only
+                return self._extract_user_name_regex(conversation_history)
+    
+    async def _extract_child_name_async(self, conversation_history: List[Dict]) -> str:
+        """Extract child's name from conversation history - async version with NLU first."""
+        if not conversation_history:
+            return ""
+        
+        # Try NLU approach first for recent messages
+        for message in reversed(conversation_history[-3:]):  # Check last 3 messages with NLU
+            if message.get("role") == "user":
+                content = message.get("content", "").strip()
+                try:
+                    entities = await self._extract_entities_with_nlu(content)
+                    if entities.get('child_name'):
+                        return entities['child_name'].capitalize()
+                except Exception:
+                    pass  # Fall back to regex
+        
+        # Fallback to regex patterns
+        return self._extract_child_name_regex(conversation_history)
+    
+    def _extract_child_name_regex(self, conversation_history: List[Dict]) -> str:
+        """Extract child's name using regex patterns only."""
         import re
         
-        # Child name patterns
         child_patterns = [
             r"my\s+son['\s]*s?\s+name\s+is\s+(\w+)",      # "my son's name is Lucio"
             r"my\s+daughter['\s]*s?\s+name\s+is\s+(\w+)",  # "my daughter's name is Maria"
@@ -655,6 +719,9 @@ class ChatBot:
             r"his\s+name\s+is\s+(\w+)",                    # "his name is Lucio"
             r"her\s+name\s+is\s+(\w+)",                    # "her name is Maria"
             r"their\s+name\s+is\s+(\w+)",                  # "their name is Alex"
+            r"i\s+got\s+a\s+(?:son|daughter|child)\s+named\s+(\w+)",     # "i got a daughter named gret"
+            r"i\s+have\s+a\s+(?:son|daughter|child)\s+named\s+(\w+)",    # "i have a son named john"
+            r"(?:son|daughter|child)\s+named\s+(\w+)",                   # "daughter named gret"
         ]
         
         # Check conversation from most recent to oldest
@@ -670,6 +737,31 @@ class ChatBot:
                             return name.capitalize()
         
         return ""
+
+    def _extract_child_name(self, conversation_history: List[Dict]) -> str:
+        """Extract child's name from conversation history - uses NLU first, regex as fallback."""
+        if not conversation_history:
+            return ""
+        
+        # For sync calls, try regex directly (async version available as _extract_child_name_async)
+        try:
+            # Try to use existing event loop if available
+            import asyncio
+            loop = asyncio.get_running_loop()
+            # If we're in an async context, we can't create a new loop
+            return self._extract_child_name_regex(conversation_history)
+        except RuntimeError:
+            # No event loop running, we can create one
+            try:
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                result = loop.run_until_complete(self._extract_child_name_async(conversation_history))
+                loop.close()
+                return result
+            except Exception:
+                # Fall back to regex only
+                return self._extract_child_name_regex(conversation_history)
     
     def _get_personalized_enrollment_response(self, user_name: str, child_name: str, lang: str) -> str:
         """Generate personalized enrollment response based on extracted names."""
@@ -759,8 +851,8 @@ class ChatBot:
             return self.get_goodbye(lang)
             
         elif intent == Intent.FACILITIES_INQUIRY:
-            # Let AI handle with database context - no hardcoded responses
-            return None
+            # Use intelligent facilities inquiry with database search
+            return await self._handle_facilities_inquiry_intelligent(query, lang)
             
         elif intent == Intent.FINANCIAL_INQUIRY:
             # Let AI handle with database context - no hardcoded responses
@@ -883,41 +975,77 @@ class ChatBot:
         else:
             return "Contact us: School Office - (036) 269-6345. We're located at Tomas SM. Bautista Elementary School."
     
-    def _handle_facilities_inquiry(self, query: str, lang: str) -> str:
-        """Handle facilities-related questions"""
+    async def _handle_facilities_inquiry_intelligent(self, query: str, lang: str) -> str:
+        """Handle facilities-related questions by searching database first, then providing intelligent responses"""
+        try:
+            # Search the database/summarized text for facility information
+            facility_info = await self.enhanced_search_supabase(query)
+            
+            if facility_info and facility_info.strip():
+                # Found information in database - return it
+                logger.info(f"🏫 Found facility information in database for: {query}")
+                return facility_info
+            
+            # If no specific information found, extract facility type from query and provide appropriate response
+            return self._generate_no_facility_response(query, lang)
+            
+        except Exception as e:
+            logger.warning(f"Error searching for facility information: {e}")
+            return self._generate_no_facility_response(query, lang)
+    
+    def _generate_no_facility_response(self, query: str, lang: str) -> str:
+        """Generate appropriate 'no information found' response based on query and language"""
+        
+        # Extract facility type from query using NLP patterns
         query_lower = query.lower()
         
-        # Check for specific facility mentions
-        if "cafeteria" in query_lower or "canteen" in query_lower:
-            if lang == "tl" or lang == "akl":
-                return "May cafeteria kami na nagsisilbi ng masarap at nutritious na pagkain para sa mga bata. Bukas ito sa lunch time."
-            else:
-                return "We have a cafeteria that serves delicious and nutritious meals for the children. It's open during lunch time."
+        # Common facility types that might be asked about
+        facility_patterns = {
+            "cafeteria": ["cafeteria", "canteen", "food", "lunch", "dining"],
+            "library": ["library", "books", "reading", "study"],
+            "gymnasium": ["gym", "gymnasium", "sports", "physical education", "pe", "basketball"],
+            "playground": ["playground", "play area", "outdoor", "recreation"],
+            "science lab": ["science", "laboratory", "experiments", "science lab"],  # Fixed: moved before computer lab
+            "computer lab": ["computer", "lab", "technology", "it"],
+            "clinic": ["clinic", "health", "medical", "nurse"],
+            "guidance office": ["guidance", "counseling", "counselor"],
+            "faculty room": ["faculty", "teachers room", "staff room"],
+            "classroom": ["classroom", "class", "room"],
+            "comfort room": ["comfort room", "cr", "restroom", "bathroom", "toilet"]
+        }
         
-        elif "library" in query_lower:
-            if lang == "tl" or lang == "akl":
-                return "May library kami na puno ng mga educational books at materials. Bukas ito para sa mga estudyante araw-araw."
-            else:
-                return "We have a library filled with educational books and materials. It's open for students daily."
+        # Find which facility type is being asked about
+        detected_facility = "facility"
+        for facility_type, keywords in facility_patterns.items():
+            if any(keyword in query_lower for keyword in keywords):
+                detected_facility = facility_type
+                break
         
-        elif "gym" in query_lower or "gymnasium" in query_lower:
-            if lang == "tl" or lang == "akl":
-                return "May gymnasium kami para sa physical education at sports activities ng mga bata."
-            else:
-                return "We have a gymnasium for physical education and sports activities for the children."
-        
-        elif "playground" in query_lower:
-            if lang == "tl" or lang == "akl":
-                return "May safe at malaking playground kami para sa mga bata na maglaro at mag-exercise."
-            else:
-                return "We have a safe and spacious playground for children to play and exercise."
-        
+        # Generate response based on language
+        if lang == "tl" or lang == "akl":
+            return f"As of now, walang nakarecord na {detected_facility} sa school database namin. Maaari kayong makipag-ugnayan sa school office para sa mas detalyadong impormasyon tungkol sa mga facilities."
         else:
-            # General facilities information
-            if lang == "tl" or lang == "akl":
-                return "May mga facilities kami tulad ng library, cafeteria, gymnasium, playground, computer lab, at science lab. Ano specifically ang gusto ninyong malaman?"
-            else:
-                return "We have facilities including a library, cafeteria, gymnasium, playground, computer lab, and science lab. What specifically would you like to know about?"
+            return f"As of now, there are no recorded {detected_facility} in the school database. You can contact the school office for more information about our facilities."
+
+    def _handle_facilities_inquiry(self, query: str, lang: str) -> str:
+        """DEPRECATED: Old hardcoded method - now redirects to intelligent version"""
+        # This method is kept for backward compatibility but should use the intelligent version
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            # If we're in an async context, we can't easily call async method
+            return self._generate_no_facility_response(query, lang)
+        except RuntimeError:
+            # No event loop running, we can create one for this call
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(self._handle_facilities_inquiry_intelligent(query, lang))
+                loop.close()
+                return result
+            except Exception:
+                loop.close()
+                return self._generate_no_facility_response(query, lang)
     
     def _handle_financial_inquiry(self, query: str, lang: str) -> str:
         """Handle financial/tuition-related questions"""
@@ -975,7 +1103,30 @@ class ChatBot:
             return "Salamat sa confirmation! 😊 Ano ang susunod na maitutulong ko sa inyo?"
         else:
             return "Thank you for confirming! 😊 What can I help you with next?"
-            if lang == "tl" or lang == "akl":  # Both Tagalog and Aklanon queries get Tagalog responses
+
+    def _get_personalized_name_response(self, user_name: str, child_name: str, lang: str) -> str:
+        """Generate warm, personalized response when user asks about their own name."""
+        
+        if user_name:
+            # We know their name - respond warmly
+            if lang == "tl" or lang == "akl":
+                responses = [
+                    f"Oo, {user_name}! 😊 Natatandaan ko kayo. Ikaw nga si {user_name}, tama ba?",
+                    f"Si {user_name} nga! 😊 Hindi ko nalilimutan ang pangalan ninyo.",
+                    f"Alam ko! Ikaw si {user_name}! 😊 Kumusta ka naman?",
+                ]
+            else:
+                responses = [
+                    f"Of course! Your name is {user_name}! 😊 How could I forget?",
+                    f"Yes, I remember! You're {user_name}! 😊 How are you doing?",
+                    f"That's {user_name}! 😊 Nice to chat with you again!",
+                ]
+            
+            import random
+            return random.choice(responses)
+        else:
+            # We don't have their name in conversation history
+            if lang == "tl" or lang == "akl":
                 return "Hindi ko pa narinig ang pangalan ninyo sa usapan natin 😊 Pwede bang malaman kung ano ang tawag sa inyo?"
             else:
                 return "I don't think you've mentioned your name yet in our conversation 😊 Could you remind me what I should call you?"
