@@ -18,6 +18,13 @@ class Intent(Enum):
     NAME_INTRODUCTION = "name_introduction"
     CHILD_INTRODUCTION = "child_introduction"
     NAME_QUERY = "name_query"  # New: "what is my name" queries
+    FACILITIES_INQUIRY = "facilities_inquiry"  # New: cafeteria, library, gym, etc.
+    FINANCIAL_INQUIRY = "financial_inquiry"  # New: tuition, fees, payments
+    GENERAL_INFO = "general_info"  # New: school overview, mission, vision
+    CONFIRMATION = "confirmation"  # New: yes/no responses
+    LOCATION_INQUIRY = "location_inquiry"  # New: directions, address, campus map
+    HELP_REQUEST = "help_request"  # New: general help, assistance
+    APPRECIATION = "appreciation"  # New: thank you, thanks
     CLARIFICATION = "clarification"
     DENIAL = "denial"
     GOODBYE = "goodbye"
@@ -128,17 +135,84 @@ class NLUEngine:
         if any(word in user_lower for word in staff_words):
             return NLUResult(Intent.STAFF_INQUIRY, 0.7, [])
         
-        # Priority 9: School information
-        school_words = ["curriculum", "program", "subjects", "classes", "facilities", "school hours"]
+        # Priority 9: School information - expanded patterns but lower priority than general_info
+        school_words = [
+            "curriculum", "program", "subjects", "classes", "school hours",
+            "looking for", "we need information", "help me understand",
+            "available programs", "what programs", "what classes", "school offers"
+        ]
         if any(word in user_lower for word in school_words):
             return NLUResult(Intent.SCHOOL_INFO, 0.7, [])
         
-        # Priority 10: Contact information
+        # Priority 10.5: Financial inquiries (moved up before facilities for "scholarship available")
+        financial_patterns = [
+            "tuition", "fee", "fees", "payment", "cost", "price", "bayad", 
+            "magkano", "how much", "pricing", "scholarship", "financial aid",
+            "installment", "bayarin", "singil", "scholarship available"
+        ]
+        if any(pattern in user_lower for pattern in financial_patterns):
+            return NLUResult(Intent.FINANCIAL_INQUIRY, 0.8, [])
+        
+        # Priority 10: Facilities inquiries
+        facilities_patterns = [
+            "cafeteria", "canteen", "library", "gym", "gymnasium", "playground", 
+            "computer lab", "science lab", "clinic", "office", "classroom",
+            "facilities", "amenities", "available", "have you got",
+            "saan ang", "nasaan ang", "may"
+        ]
+        if any(pattern in user_lower for pattern in facilities_patterns):
+            return NLUResult(Intent.FACILITIES_INQUIRY, 0.7, [])
+        
+        # Priority 11: Facilities inquiries
+        general_info_patterns = [
+            "about the school", "school overview", "mission", "vision", 
+            "history", "background", "tell me about", "describe",
+            "ano ang", "tungkol sa", "paano ang", "school description"
+        ]
+        if any(pattern in user_lower for pattern in general_info_patterns):
+            return NLUResult(Intent.GENERAL_INFO, 0.8, [])
+        
+        # Priority 13: Location inquiries
+        location_patterns = [
+            "where", "direction", "directions", "address", "location", "map",
+            "how to get", "how do i get", "saan", "paano pumunta", "nasaan",
+            "address ninyo", "located", "find you"
+        ]
+        if any(pattern in user_lower for pattern in location_patterns):
+            return NLUResult(Intent.LOCATION_INQUIRY, 0.7, [])
+        
+        # Priority 14: Help requests
+        help_patterns = [
+            "help", "assist", "assistance", "support", "tulong", "guide",
+            "help me", "can you help", "i need help", "tulungan mo ako",
+            "guide me", "what should i do", "ano gagawin ko"
+        ]
+        if any(pattern in user_lower for pattern in help_patterns):
+            return NLUResult(Intent.HELP_REQUEST, 0.7, [])
+        
+        # Priority 15: Appreciation/Thanks
+        appreciation_patterns = [
+            "thank you", "thanks", "salamat", "thank u", "thx", "maraming salamat",
+            "appreciate", "grateful", "nice", "good", "great", "excellent"
+        ]
+        if any(pattern in user_lower for pattern in appreciation_patterns):
+            return NLUResult(Intent.APPRECIATION, 0.7, [])
+        
+        # Priority 16: Confirmation responses
+        confirmation_patterns = [
+            "yes", "yeah", "yep", "yup", "correct", "right", "exactly", "oo", 
+            "tama", "yes please", "that's right", "ganun nga", "ok", "okay"
+        ]
+        if any(pattern in user_lower for pattern in confirmation_patterns):
+            return NLUResult(Intent.CONFIRMATION, 0.7, [])
+        
+        # Priority 17: Contact information
+        # Priority 17: Contact information
         contact_words = ["contact", "phone", "number", "address", "location", "email"]
         if any(word in user_lower for word in contact_words):
             return NLUResult(Intent.CONTACT_INFO, 0.7, [])
         
-        # Priority 11: Goodbyes
+        # Priority 18: Goodbyes
         if any(word in user_lower for word in ["bye", "goodbye", "thanks", "thank you", "salamat", "tapos na"]):
             return NLUResult(Intent.GOODBYE, 0.7, [])
         
@@ -152,11 +226,19 @@ class NLUEngine:
         - greeting_with_name: User greets and introduces their name
         - greeting_simple: Simple greeting without name
         - name_introduction: User introduces their name without greeting
+        - name_query: User asks about their own name ("what is my name", "sino ang pangalan ko")
         - child_introduction: User introduces their child
         - enrollment_inquiry: Questions about school enrollment/admission
         - staff_inquiry: Questions about teachers or staff
         - school_info: General school information requests
         - schedule_inquiry: Questions about school hours or schedules
+        - facilities_inquiry: Questions about school facilities (cafeteria, library, gym, etc.)
+        - financial_inquiry: Questions about tuition, fees, payments, costs
+        - general_info: Questions about school overview, mission, vision, history
+        - location_inquiry: Questions about school address, directions, location
+        - help_request: General requests for help or assistance
+        - appreciation: Thank you messages, gratitude expressions
+        - confirmation: Yes/no responses, agreement ("yes", "oo", "correct")
         - contact_info: Requests for contact information
         - denial: User denying or clarifying they weren't asking about something
         - clarification: User clarifying what they meant

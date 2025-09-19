@@ -755,6 +755,27 @@ class ChatBot:
         elif intent == Intent.GOODBYE:
             return self.get_goodbye(lang)
             
+        elif intent == Intent.FACILITIES_INQUIRY:
+            return self._handle_facilities_inquiry(query, lang)
+            
+        elif intent == Intent.FINANCIAL_INQUIRY:
+            return self._handle_financial_inquiry(query, lang)
+            
+        elif intent == Intent.GENERAL_INFO:
+            return self._handle_general_info_inquiry(query, lang)
+            
+        elif intent == Intent.LOCATION_INQUIRY:
+            return self._handle_location_inquiry(lang)
+            
+        elif intent == Intent.HELP_REQUEST:
+            return self._handle_help_request(lang)
+            
+        elif intent == Intent.APPRECIATION:
+            return self._handle_appreciation(lang)
+            
+        elif intent == Intent.CONFIRMATION:
+            return self._handle_confirmation(lang)
+            
         else:
             # For unknown or general intents, fall back to AI processing
             return None  # Will trigger normal AI flow
@@ -853,40 +874,84 @@ class ChatBot:
             return "Makipag-ugnayan sa amin: School Office - (036) 269-6345. Nasa Tomas SM. Bautista Elementary School kami."
         else:
             return "Contact us: School Office - (036) 269-6345. We're located at Tomas SM. Bautista Elementary School."
-        """Generate warm, personalized response when user asks about their name."""
+    
+    def _handle_facilities_inquiry(self, query: str, lang: str) -> str:
+        """Handle facilities-related questions"""
+        query_lower = query.lower()
         
-        if user_name:
-            # Warm, personal responses
-            if lang == "tl" or lang == "akl":  # Both Tagalog and Aklanon queries get Tagalog responses
-                greetings = [
-                    f"Oo, {user_name}! Natatandaan ko kayo 😊 Ikaw nga si {user_name}, tama ba?",
-                    f"Of course! Kayo po si {user_name} 😊 Hindi ko makakalimutan yan!",
-                    f"Syempre naman! Si {user_name} kayo! 😊 Kamusta naman?",
-                    f"Oo nga! {user_name} nga ang pangalan ninyo 😊 Mabuti naman ba kayo?"
-                ]
-                if child_name:
-                    greetings.extend([
-                        f"Kayo po si {user_name}, ang magulang ni {child_name}! 😊 Paano naman sila?",
-                        f"Si {user_name} nga kayo! 😊 Ang parent ni {child_name}, di ba?"
-                    ])
-            else:  # English
-                greetings = [
-                    f"Of course! You're {user_name}! 😊 How could I forget?",
-                    f"Yes, you're {user_name}! 😊 Good to see you again!",
-                    f"Absolutely! Your name is {user_name} 😊 How are you doing?",
-                    f"That's right! You're {user_name} 😊 Nice chatting with you again!"
-                ]
-                if child_name:
-                    greetings.extend([
-                        f"You're {user_name}, {child_name}'s parent! 😊 How is {child_name} doing?",
-                        f"Of course! You're {user_name}! 😊 {child_name}'s mom/dad, right?",
-                        f"Yes! {user_name}! 😊 The wonderful parent of {child_name}!"
-                    ])
-            
-            import random
-            return random.choice(greetings)
+        # Check for specific facility mentions
+        if "cafeteria" in query_lower or "canteen" in query_lower:
+            if lang == "tl" or lang == "akl":
+                return "May cafeteria kami na nagsisilbi ng masarap at nutritious na pagkain para sa mga bata. Bukas ito sa lunch time."
+            else:
+                return "We have a cafeteria that serves delicious and nutritious meals for the children. It's open during lunch time."
+        
+        elif "library" in query_lower:
+            if lang == "tl" or lang == "akl":
+                return "May library kami na puno ng mga educational books at materials. Bukas ito para sa mga estudyante araw-araw."
+            else:
+                return "We have a library filled with educational books and materials. It's open for students daily."
+        
+        elif "gym" in query_lower or "gymnasium" in query_lower:
+            if lang == "tl" or lang == "akl":
+                return "May gymnasium kami para sa physical education at sports activities ng mga bata."
+            else:
+                return "We have a gymnasium for physical education and sports activities for the children."
+        
+        elif "playground" in query_lower:
+            if lang == "tl" or lang == "akl":
+                return "May safe at malaking playground kami para sa mga bata na maglaro at mag-exercise."
+            else:
+                return "We have a safe and spacious playground for children to play and exercise."
+        
         else:
-            # Gentle way to ask for their name if not found
+            # General facilities information
+            if lang == "tl" or lang == "akl":
+                return "May mga facilities kami tulad ng library, cafeteria, gymnasium, playground, computer lab, at science lab. Ano specifically ang gusto ninyong malaman?"
+            else:
+                return "We have facilities including a library, cafeteria, gymnasium, playground, computer lab, and science lab. What specifically would you like to know about?"
+    
+    def _handle_financial_inquiry(self, query: str, lang: str) -> str:
+        """Handle financial/tuition-related questions"""
+        if lang == "tl" or lang == "akl":
+            return "Para sa tuition fees at iba pang bayarin, makipag-ugnayan sa school office sa (036) 269-6345. May mga scholarship programs din kami na available."
+        else:
+            return "For tuition fees and other charges, please contact the school office at (036) 269-6345. We also have scholarship programs available."
+    
+    def _handle_general_info_inquiry(self, query: str, lang: str) -> str:
+        """Handle general school information questions"""
+        if lang == "tl" or lang == "akl":
+            return "Ang Tomas SM. Bautista Elementary School ay isang educational institution na nag-aalaga sa holistic development ng mga bata. Mayroon kaming experienced teachers at modern facilities."
+        else:
+            return "Tomas SM. Bautista Elementary School is an educational institution dedicated to the holistic development of children. We have experienced teachers and modern facilities."
+    
+    def _handle_location_inquiry(self, lang: str) -> str:
+        """Handle location and directions questions"""
+        if lang == "tl" or lang == "akl":
+            return "Nasa Tomas SM. Bautista Elementary School kami. Para sa specific directions, tumawag sa (036) 269-6345 o bisitahin ang school office."
+        else:
+            return "We're located at Tomas SM. Bautista Elementary School. For specific directions, call (036) 269-6345 or visit the school office."
+    
+    def _handle_help_request(self, lang: str) -> str:
+        """Handle general help requests"""
+        if lang == "tl" or lang == "akl":
+            return "Nandito ako para tumulong! 😊 Maaari kayong magtanong tungkol sa enrollment, school programs, facilities, o anumang school-related na impormasyon."
+        else:
+            return "I'm here to help! 😊 You can ask me about enrollment, school programs, facilities, or any school-related information."
+    
+    def _handle_appreciation(self, lang: str) -> str:
+        """Handle thank you messages"""
+        if lang == "tl" or lang == "akl":
+            return "Walang anuman! 😊 Masaya akong makatulong. May iba pa bang kailangan ninyo?"
+        else:
+            return "You're welcome! 😊 I'm happy to help. Is there anything else you need?"
+    
+    def _handle_confirmation(self, lang: str) -> str:
+        """Handle yes/confirmation responses"""
+        if lang == "tl" or lang == "akl":
+            return "Salamat sa confirmation! 😊 Ano ang susunod na maitutulong ko sa inyo?"
+        else:
+            return "Thank you for confirming! 😊 What can I help you with next?"
             if lang == "tl" or lang == "akl":  # Both Tagalog and Aklanon queries get Tagalog responses
                 return "Hindi ko pa narinig ang pangalan ninyo sa usapan natin 😊 Pwede bang malaman kung ano ang tawag sa inyo?"
             else:
