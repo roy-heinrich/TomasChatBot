@@ -2219,7 +2219,8 @@ class ChatBot:
         # For name introductions, process the name and give a personalized greeting
         if is_introduction:
             # Extract name from conversation history or query
-            user_name, child_name = self._extract_names_from_history(conversation_history or [])
+            user_name = self._extract_user_name(conversation_history or [])
+            child_name = self._extract_child_name(conversation_history or [])
             if not user_name:
                 # Try to extract from current query
                 name_match = re.search(r"my\s+name\s+is\s+(\w+)", lowered)
