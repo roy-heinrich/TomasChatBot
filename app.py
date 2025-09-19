@@ -111,6 +111,17 @@ async def chat_endpoint(data: ChatRequest):
             logger.warning("⚠️ Empty query received")
             return {"response": "No query provided."}
 
+        # 🔍 DEBUG: Log conversation history details
+        logger.info(f"📚 Conversation history received: {len(data.conversation_history)} messages")
+        for i, msg in enumerate(data.conversation_history[-3:]):  # Log last 3 messages
+            logger.info(f"   Message {i+1}: {msg.get('role', 'unknown')} -> '{msg.get('content', '')[:30]}...'")
+        
+        # Test name extraction on the conversation history
+        if data.conversation_history:
+            user_name = chatbot._extract_user_name(data.conversation_history)
+            child_name = chatbot._extract_child_name(data.conversation_history)
+            logger.info(f"🔍 Extracted names: user='{user_name}', child='{child_name}'")
+
         # Fetch context asynchronously
         supabase_context = await fetch_supabase_context()
         logger.info("📊 Context fetched from Supabase")
