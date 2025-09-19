@@ -8,6 +8,7 @@ from typing import List, Dict
 from supabase import create_client, Client
 # Remove unused import: from utils import fetch_summarized_text  
 from fallback import FallbackHandler
+from nlu_engine import NLUEngine, Intent, NLUResult
 import time
 from datetime import datetime
 from rapidfuzz import fuzz, process
@@ -64,6 +65,9 @@ class ChatBot:
         self.groq_api = "https://api.groq.com/openai/v1/chat/completions"
         self.bucket = "summarized-text"
         self.file = "summarized_text.md"
+        
+        # Initialize NLU Engine for intent understanding
+        self.nlu_engine = NLUEngine()
         
         # Initialize Supabase client for full-text search
         from supabase import create_client, Client
@@ -175,10 +179,10 @@ class ChatBot:
             return "morning"
         elif 12 <= current_hour < 18:
             return "afternoon"
-        elif 18 <= current_hour < 22:
+        elif 18 <= current_hour <= 23:  # Include 22:00 and 23:00 in evening
             return "evening"
         else:
-            return "default"  # Late night/early morning hours
+            return "evening"  # Late night hours (0-4) also considered evening
 
     def get_time_aware_system_prompt(self, lang: str = "en", user_name: str = ""):
         """Generate a time-aware system prompt for Groq API"""
@@ -697,7 +701,140 @@ class ChatBot:
             else:
                 return "For enrollment information, please visit the school office."
 
-    def _get_personalized_name_response(self, user_name: str, child_name: str, lang: str) -> str:
+    async def _handle_intent_based_response(self, nlu_result: NLUResult, query: str, lang: str, conversation_history: List[Dict] = None) -> str:
+        """
+        Handle responses based on NLU intent classification instead of keyword matching
+        """
+        intent = nlu_result.intent
+        entities = nlu_result.entities
+        
+        # Extract names from entities or conversation history
+        user_name = self._extract_user_name(conversation_history or [])
+        child_name = self._extract_child_name(conversation_history or [])
+        
+        # Extract names from current entities
+        for entity in entities:
+            if entity.type == "person_name" and not user_name:
+                user_name = entity.value
+            elif entity.type == "child_name" and not child_name:
+                child_name = entity.value
+        
+        logger.info(f"🎯 Handling intent: {intent.value} with entities: {[f'{e.type}:{e.value}' for e in entities]}")
+        
+        # Handle each intent intelligently
+        if intent == Intent.GREETING_WITH_NAME:
+            return self._handle_greeting_with_name(user_name, child_name, lang)
+            
+        elif intent == Intent.GREETING_SIMPLE:
+            return self.get_greeting(lang)
+            
+        elif intent == Intent.ENROLLMENT_INQUIRY:
+            return self._get_personalized_enrollment_response(user_name, child_name, lang)
+            
+        elif intent == Intent.NAME_INTRODUCTION:
+            return self._handle_name_introduction(user_name, lang)
+            
+        elif intent == Intent.CHILD_INTRODUCTION:
+            return self._handle_child_introduction(user_name, child_name, lang)
+            
+        elif intent == Intent.DENIAL or intent == Intent.CLARIFICATION:
+            return self._handle_clarification(query, lang)
+            
+        elif intent == Intent.STAFF_INQUIRY:
+            return self._handle_staff_inquiry(query, lang)
+            
+        elif intent == Intent.SCHOOL_INFO:
+            return self._handle_school_info_inquiry(query, lang)
+            
+        elif intent == Intent.CONTACT_INFO:
+            return self._handle_contact_inquiry(lang)
+            
+        elif intent == Intent.GOODBYE:
+            return self.get_goodbye(lang)
+            
+        else:
+            # For unknown or general intents, fall back to AI processing
+            return None  # Will trigger normal AI flow
+    
+    def _handle_greeting_with_name(self, user_name: str, child_name: str, lang: str) -> str:
+        """Handle greeting with name introduction"""
+        time_period = self.get_time_period()
+        
+        if lang == "tl" or lang == "akl":
+            if time_period == "morning":
+                base_greeting = f"Good morning, {user_name}!" if user_name else "Good morning!"
+            elif time_period == "afternoon": 
+                base_greeting = f"Good afternoon, {user_name}!" if user_name else "Good afternoon!"
+            elif time_period == "evening":
+                base_greeting = f"Good evening, {user_name}!" if user_name else "Good evening!"
+            else:
+                base_greeting = f"Hello, {user_name}!" if user_name else "Hello!"
+            
+            return f"{base_greeting} 😊 Ako si Tomas, ang inyong school assistant! Ano ang maitutulong ko sa inyo ngayon?"
+        else:
+            if time_period == "morning":
+                base_greeting = f"Good morning, {user_name}!" if user_name else "Good morning!"
+            elif time_period == "afternoon":
+                base_greeting = f"Good afternoon, {user_name}!" if user_name else "Good afternoon!" 
+            elif time_period == "evening":
+                base_greeting = f"Good evening, {user_name}!" if user_name else "Good evening!"
+            else:
+                base_greeting = f"Hello, {user_name}!" if user_name else "Hello!"
+            
+            return f"{base_greeting} ☀️ I'm Tomas, your friendly school assistant! What can I help you with today?"
+    
+    def _handle_name_introduction(self, user_name: str, lang: str) -> str:
+        """Handle when user introduces their name"""
+        if lang == "tl" or lang == "akl":
+            return f"Salamat, {user_name}! 😊 Natutuwa akong makilala kayo. Ako si Tomas, ang school assistant. Paano ko kayo matutulungan?"
+        else:
+            return f"Nice to meet you, {user_name}! 😊 I'm Tomas, your school assistant. How can I help you today?"
+    
+    def _handle_child_introduction(self, user_name: str, child_name: str, lang: str) -> str:
+        """Handle when user introduces their child"""
+        if lang == "tl" or lang == "akl":
+            if user_name and child_name:
+                return f"Salamat sa pagpapakilala, {user_name}! 😊 Nice to know about {child_name}. Ano ang maitutulong ko sa inyo?"
+            elif child_name:
+                return f"Nice to know about {child_name}! 😊 Ano ang maitutulong ko sa inyo?"
+            else:
+                return "Salamat sa pagpapakilala! 😊 Ano ang maitutulong ko sa inyo?"
+        else:
+            if user_name and child_name:
+                return f"Thank you for the introduction, {user_name}! 😊 Nice to know about {child_name}. How can I help you?"
+            elif child_name:
+                return f"Nice to know about {child_name}! 😊 How can I help you?"
+            else:
+                return "Thank you for the introduction! 😊 How can I help you?"
+    
+    def _handle_clarification(self, query: str, lang: str) -> str:
+        """Handle clarifications and denials"""
+        if lang == "tl" or lang == "akl":
+            return "Paumanhin sa pagkakamali! 😊 Malinaw naman. Ano nga ang maitutulong ko sa inyo?"
+        else:
+            return "I apologize for the misunderstanding! 😊 I understand now. What can I help you with?"
+    
+    def _handle_staff_inquiry(self, query: str, lang: str) -> str:
+        """Handle staff-related questions"""
+        # This could be enhanced to search for specific staff members
+        if lang == "tl" or lang == "akl":
+            return "Para sa impormasyon ng mga guro at staff, maaari kayong pumunta sa school office o tumawag sa (036) 269-6345."
+        else:
+            return "For information about our teachers and staff, please visit the school office or call (036) 269-6345."
+    
+    def _handle_school_info_inquiry(self, query: str, lang: str) -> str:
+        """Handle general school information questions"""
+        if lang == "tl" or lang == "akl":
+            return "Para sa mga detalye tungkol sa school programs at curriculum, maaari kayong makipag-ugnayan sa school office."
+        else:
+            return "For details about our school programs and curriculum, please contact the school office."
+    
+    def _handle_contact_inquiry(self, lang: str) -> str:
+        """Handle contact information requests"""
+        if lang == "tl" or lang == "akl":
+            return "Makipag-ugnayan sa amin: School Office - (036) 269-6345. Nasa Tomas SM. Bautista Elementary School kami."
+        else:
+            return "Contact us: School Office - (036) 269-6345. We're located at Tomas SM. Bautista Elementary School."
         """Generate warm, personalized response when user asks about their name."""
         
         if user_name:
@@ -2156,11 +2293,31 @@ class ChatBot:
         lang = await self.detect_language(query)
         lowered = query.lower().strip()  # For backward compatibility
 
-        # --- Enhanced Intent Analysis ---
+        # --- NEW: NLU-Based Intent Analysis ---
+        try:
+            # Pass Groq client to NLU engine for AI-powered classification
+            if hasattr(self, 'groq_key'):
+                # Create async Groq client for NLU
+                import httpx
+                nlu_client = httpx.AsyncClient()
+                self.nlu_engine.groq_client = nlu_client
+            
+            nlu_result = await self.nlu_engine.analyze_intent(query, conversation_history)
+            logger.info(f"🧠 NLU Intent: {nlu_result.intent.value} (confidence: {nlu_result.confidence:.2f})")
+            
+            # Try to handle with intelligent NLU-based routing
+            nlu_response = await self._handle_intent_based_response(nlu_result, query, lang, conversation_history)
+            if nlu_response:
+                return nlu_response
+                
+        except Exception as e:
+            logger.warning(f"NLU processing failed, falling back to legacy system: {e}")
+        
+        # --- Legacy fallback for compatibility ---
         intent_analysis = self._analyze_query_intent(query)
         human_analysis = self._analyze_human_request_intent(query)
         
-        logger.info(f"🧠 Intent: {intent_analysis['intent']} (confidence: {intent_analysis['confidence']:.2f})")
+        logger.info(f"🔄 Fallback Intent: {intent_analysis['intent']} (confidence: {intent_analysis['confidence']:.2f})")
         logger.info(f"👤 Human request: {human_analysis['wants_human']} (confidence: {human_analysis['confidence']:.2f})")
 
         # --- Detect if user explicitly wants human support (with high confidence) ---
@@ -2172,11 +2329,6 @@ class ChatBot:
         if intent_analysis['intent'] == 'goodbye' and intent_analysis['confidence'] > 0.8:
             logger.info("👋 User ended the conversation.")
             return self.get_goodbye(lang)
-
-        # --- Detect pure greetings ---
-        if intent_analysis['intent'] == 'greeting' and intent_analysis['confidence'] > 0.8:
-            logger.info("👋 Pure greeting detected.")
-            return self.get_greeting(lang)
         # --- Enhanced goodbye detection ---
         goodbye_keywords = [
             "goodbye", "bye", "see you", "farewell", "adios", "salamat", 
