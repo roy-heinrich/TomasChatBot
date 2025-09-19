@@ -179,7 +179,7 @@ class ChatBot:
         else:
             return "default"  # Late night/early morning hours
 
-    def get_time_aware_system_prompt(self, lang: str = "en"):
+    def get_time_aware_system_prompt(self, lang: str = "en", user_name: str = ""):
         """Generate a time-aware system prompt for Groq API"""
         current_hour = datetime.now().hour
         
@@ -199,9 +199,11 @@ class ChatBot:
         
         # Create language-specific system prompts
         if lang == "tl":
-            return f"Ikaw si TOMAS! 😊 Isang masigasig at palakaibigan na assistant para sa Tomas SM. Bautista Elementary School. Parang nakakausap mo ang isang mainit na staff member ng paaralan na gustong tumulong! {time_context} Gamitin ang context na ibinigay para magbigay ng kapaki-pakinabang at makakausap na mga sagot sa TAGALOG. Magdagdag ng mga emoji at personalidad - gawin itong natural! 🏫✨"
+            return f"Ikaw si TOMAS, ang digital assistant ng Tomas SM. Bautista Elementary School. {time_context} Magbigay ng tumpak at kapaki-pakinabang na impormasyon tungkol sa paaralan. Huwag mag-imbento ng mga detalye na hindi mo alam. Kung hindi mo alam ang sagot, sabihin na makakausap nila ang school office para sa kumpletong impormasyon. Gamitin ang context na ibinigay para sa mga sagot sa TAGALOG."
         else:  # Default to English
-            return f"You are TOMAS! 😊 A friendly, enthusiastic assistant for Tomas SM. Bautista Elementary School. You're like talking to a warm school staff member who loves helping! {time_context} Use the context provided to give helpful, conversational answers in ENGLISH. Add emojis and personality - make it feel natural! 🏫✨"
+            # Add name context if available
+            name_context = f" The person you're talking to is named {user_name}." if user_name else ""
+            return f"You are TOMAS, the digital assistant for Tomas SM. Bautista Elementary School. {time_context}{name_context} Provide accurate and helpful information about the school based only on the context provided. Do not make up details, times, or procedures that you don't know. If you don't have specific information, direct them to contact the school office. Remember names from conversation history when asked. Keep responses professional and factual."
 
     def get_greeting(self, lang: str = "en") -> str:
         time_period = self.get_time_period()
@@ -305,7 +307,7 @@ class ChatBot:
     
     def _check_token_budget(self, query: str, context: str, lang: str = "en") -> dict:
         """Check if we're within token budget and suggest optimizations."""
-        system_prompt = self.get_time_aware_system_prompt(lang)
+        system_prompt = self.get_time_aware_system_prompt(lang, "")
         user_message = f"Context: {context}\nQuestion: {query}"
         
         estimated_input_tokens = self.estimate_tokens(system_prompt + user_message)
@@ -326,15 +328,6 @@ class ChatBot:
         logger.info(f"📊 Token budget: {total_estimated}/{context_limit} (~{(total_estimated/context_limit)*100:.1f}%)")
         
         return status
-        """Quick check if text seems to be in English based on common English words"""
-        english_indicators = [
-            "the", "and", "is", "are", "was", "were", "have", "has", "had", 
-            "will", "would", "can", "could", "should", "must", "may", "might",
-            "this", "that", "these", "those", "with", "for", "from", "about"
-        ]
-        text_lower = text.lower()
-        english_word_count = sum(1 for word in english_indicators if f" {word} " in f" {text_lower} ")
-        return english_word_count >= 2
 
     async def detect_language(self, text: str) -> str:
         """Detect language with Aklanon markers triggering special handling."""
@@ -466,6 +459,15 @@ class ChatBot:
             logger.info(f"🔄 Aklanon location pattern translation: '{query}' → '{translated}'")
             return translated
         
+        # Handle teacher/staff patterns
+        teacher_aklanon_words = ['maestra', 'maestro', 'guro', 'nagtuturo', 'staff', 'faculty']
+        who_words = ['sin-o', 'sino']
+        
+        if any(who_word in query_lower for who_word in who_words) and any(teacher_word in query_lower for teacher_word in teacher_aklanon_words):
+            translated = "who are the teachers"
+            logger.info(f"🔄 Aklanon teacher pattern translation: '{query}' → '{translated}'")
+            return translated
+        
         # Fallback: word-by-word translation
         words = query.split()
         translated_words = []
@@ -540,6 +542,26 @@ class ChatBot:
         """Detect if user is asking about a specific person/staff member."""
         query_lower = query.lower().strip()
         
+        # EXCLUSIONS: These are NOT person queries even if they might seem like it
+        location_patterns = [
+            "where is", "where can i find", "location of", "saan ang", "nasaan ang",
+            "office", "room", "building", "classroom", "library", "clinic", "guidance office"
+        ]
+        
+        # Family/enrollment context patterns - these are NOT person queries about staff
+        family_patterns = [
+            "her name is", "his name is", "my daughter", "my son", "my child", 
+            "she's", "he's", "years old", "grade", "enroll", "student"
+        ]
+        
+        # If it's asking about location/place, it's NOT a person query
+        if any(pattern in query_lower for pattern in location_patterns):
+            return False
+            
+        # If it's about family/enrollment context, it's NOT a staff person query
+        if any(pattern in query_lower for pattern in family_patterns):
+            return False
+        
         # Specific patterns that indicate person queries (more restrictive)
         person_patterns = [
             "who is",
@@ -562,20 +584,53 @@ class ChatBot:
                 words = remaining.split()
                 if len(words) >= 1 and words[0].isalpha() and len(words[0]) > 2:
                     # Additional check: does it contain known name patterns?
-                    known_names = ["garcia", "meliza", "delgado", "smith", "johnson"] 
+                    known_names = [ "meliza", "delgado", "johnson"] 
                     if any(name in remaining for name in known_names):
                         return True
         
         # Very restrictive check for names - only if query is very short and contains potential names
+        # BUT exclude if it's in family/enrollment context
         words = query_lower.split()
         if len(words) == 2 or len(words) == 3:  # Only short queries
             # Check if it contains common name indicators from our known staff
-            known_names = ["garcia", "meliza", "delgado", "nelda", "annalyn", "lezil", "michelle", "thedy", "jessica", "leny"]
+            known_names = [ "meliza", "delgado", "nelda", "annalyn", "lezil", "michelle", "thedy", "jessica", "leny"]
             for name in known_names:
                 if name in query_lower:
                     return True
         
         return False
+    
+    def _extract_user_name(self, conversation_history: list) -> str:
+        """Extract user's name from conversation history before it gets truncated."""
+        if not conversation_history:
+            return ""
+        
+        import re
+        
+        # Common introduction patterns
+        name_patterns = [
+            r"hi[,\s]*i['\s]*m\s+(\w+)",           # "Hi, I'm John" 
+            r"hello[,\s]*i['\s]*m\s+(\w+)",        # "Hello, I'm John"
+            r"my\s+name\s+is\s+(\w+)",             # "my name is John"
+            r"i['\s]*m\s+(\w+)",                   # "I'm John"
+            r"call\s+me\s+(\w+)",                  # "call me John"
+            r"this\s+is\s+(\w+)",                  # "this is John"
+        ]
+        
+        # Search through ALL conversation history, not just recent 8 messages
+        for message in conversation_history:
+            if message.get("role") == "user":
+                content = message.get("content", "").lower().strip()
+                
+                for pattern in name_patterns:
+                    match = re.search(pattern, content)
+                    if match:
+                        name = match.group(1).strip()
+                        # Filter out common words that aren't names
+                        if name and len(name) > 1 and name not in ["the", "a", "an", "and", "or", "but", "to", "for", "of", "in", "on", "at", "with", "by"]:
+                            return name.capitalize()
+        
+        return ""
     
     def _get_unknown_person_response(self, lang: str = "en") -> str:
         """Generate a helpful response for unknown person queries without listing all staff."""
@@ -586,12 +641,11 @@ class ChatBot:
                    "ang aming Head Teacher, o tumawag sa school office sa (036) 269-6345.")
         elif lang == "akl":
             return ("Wala ko kakilala nga tawo na ina sa amon eskwelahan. Para sa mga pamangkot "
-                   "parte sa mga maestro kag staff, pwede kamo mag-contact kay Meliza A. Delgado, "
-                   "ang amon Head Teacher, o mag-tawag sa school office sa (036) 269-6345.")
+                   "parte sa mga maestro kag staff, pwede kamo mag-contact kay Meliza A. Delgado, ")
         else:  # English
             return ("I don't have information about that person in our school records. "
                    "For inquiries about our teachers and staff, you may contact our Head Teacher, "
-                   "Meliza A. Delgado, or call the school office at (036) 269-6345.")
+                   "Meliza A. Delgado")
 
     def _get_known_staff_list(self, lang: str = "en") -> str:
         """Generate a helpful list of known staff members."""
@@ -611,13 +665,13 @@ class ChatBot:
         
         if lang == "tl":
             header = "Narito ang mga kilalang miyembro ng staff ng TOMAS Elementary School:\n\n"
-            footer = "\n\nPara sa iba pang impormasyon, maaari kayong tumawag sa school office sa (036) 269-6345."
+            footer = "\n\nPara sa iba pang impormasyon, maaari kayong tumawag sa school office sa ."
         elif lang == "akl":
             header = "Ara ini it mga kilaea nga staff sa TOMAS Elementary School:\n\n"  
-            footer = "\n\nPara sa iban nga impormasyon, pwede kamo mag-tawag sa school office sa (036) 269-6345."
+            footer = "\n\nPara sa iban nga impormasyon, pwede kamo mag-tawag sa school office sa ."
         else:  # English
             header = "Here are the known staff members at TOMAS Elementary School:\n\n"
-            footer = "\n\nFor other inquiries, you may contact the school office at (036) 269-6345."
+            footer = "\n\nFor other inquiries, you may contact the school office at ."
         
         staff_list = ""
         for name, position in staff_info.items():
@@ -639,6 +693,34 @@ class ChatBot:
         if not query:
             logger.warning("⚠️ Enhanced search received empty string after cleanup")
             return ""
+
+        # 🏠 PRIORITY CHECK: Address/location queries should search for "location" keyword first
+        # BUT: Specific facility queries (like guidance office) should NOT use general location
+        query_lower = query.lower()
+        
+        # Specific facility patterns - these should NOT use general location search
+        specific_facility_patterns = [
+            "guidance office", "guidance room", "clinic", "library", "classroom", 
+            "computer room", "faculty room", "office location", "comfort room", "cr"
+        ]
+        
+        # Only use general location search if it's NOT asking about a specific facility
+        is_specific_facility = any(facility in query_lower for facility in specific_facility_patterns)
+        
+        address_patterns = [
+            "address", "where is", "location", "located", "school address", 
+            "what's the address", "where is the school", "school location",
+            "where is tomas", "where can i find", "saan ang", "nasaan ang"
+        ]
+        
+        if any(pattern in query_lower for pattern in address_patterns) and not is_specific_facility:
+            logger.info("🏠 General address query detected - prioritizing 'location' search")
+            location_result = await self.fetch_prompts_from_supabase("location")
+            if location_result:
+                logger.info("✅ Found address via 'location' keyword")
+                return location_result
+        elif is_specific_facility:
+            logger.info(f"🏢 Specific facility query detected - skipping general location search")
         
         # 1. PRIORITY: Try full-text search first (most comprehensive)
         logger.info(f"🔍 Trying full-text search: '{query}'")
@@ -663,6 +745,30 @@ class ChatBot:
                 if name_result:
                     logger.info(f"✅ Found context for name: {name}")
                     return name_result
+
+        # 3.5. Enhanced address/location query mapping
+        query_lower = query.lower()
+        address_patterns = [
+            "address", "where is", "location", "located", "school address", 
+            "what's the address", "where is the school", "school location",
+            "where is tomas", "where can i find", "saan ang", "nasaan ang"
+        ]
+        
+        if any(pattern in query_lower for pattern in address_patterns):
+            logger.info("🏠 Address/location query detected - searching for 'location' keyword")
+            # Try searching for the specific 'location' keyword which has the address
+            location_result = await self.fetch_prompts_from_supabase("location")
+            if location_result:
+                logger.info("✅ Found location information")
+                return location_result
+            
+            # Fallback to other location-related searches
+            location_keywords = ["fatima", "new washington", "aklan", "where"]
+            for keyword in location_keywords:
+                location_result = await self.fetch_prompts_from_supabase(keyword)
+                if location_result:
+                    logger.info(f"✅ Found location via keyword: {keyword}")
+                    return location_result
         
         # 4. Enhanced name-to-role mapping for common staff
         query_lower = query.lower()
@@ -850,10 +956,174 @@ class ChatBot:
         self._last_fetched = now
         return text
 
+    def _validate_response_against_facts(self, response: str, query: str, lang: str) -> str:
+        """🛡️ Validate AI response against known facts to prevent hallucination."""
+        
+        # DEBUG: Log validation entry
+        logger.info(f"🛡️ VALIDATION: Checking response for hallucinations")
+        logger.info(f"📝 Response excerpt: {response[:100]}...")
+        
+        # Known staff members (ONLY these exist)
+        known_staff = {
+            "meliza a. delgado", "meliza delgado", "meliza", "delgado",
+            "nelda b. delos santos", "nelda delos santos", "nelda", 
+            "annalyn b. andrade", "annalyn andrade", "annalyn",
+            "lezil v. villanueva", "lezil villanueva", "lezil",
+            "michelle v. pastrana", "michelle pastrana", "michelle",
+            "thedy mae p. ruiz", "thedy mae ruiz", "thedy",
+            "jessica z. go", "jessica go", "jessica",
+            "leny mae d. patani", "leny mae patani", "leny",
+            "feliciano c. bustamante jr.", "feliciano bustamante", "feliciano",
+            "ramon d. paras jr.", "ramon paras", "ramon",
+            "ariel z. zubiaga", "ariel zubiaga", "ariel"
+        }
+        
+        # Fictional people to block (common made-up names)
+        # NOTE: Be specific to avoid blocking legitimate staff names
+        forbidden_people = {
+            "mrs. garcia", "garcia", "mrs garcia", "ms garcia", "ms. garcia",
+            "mrs. rodriguez", "rodriguez", "mrs rodriguez", "ms rodriguez", "ms. rodriguez", 
+            "principal martinez", "martinez", "mrs martinez", "ms martinez"
+            # Removed "mrs. santos", "santos" - we have real staff member "Nelda B. Delos Santos"
+            # Removed "tomas sm. bautista", "tomas bautista", "mr. bautista" - this is the school's actual name!
+        }
+        
+        # School facts to validate
+        known_facts = {
+            "address": "fatima, new washington, aklan",
+            "school_name": "tomas sm. bautista elementary school",
+            "head_teacher": "meliza a. delgado"
+        }
+        
+        response_lower = response.lower()
+        current_hour = datetime.now().hour
+        
+        # 🕐 CHECK FOR INAPPROPRIATE TIME GREETINGS
+        if current_hour >= 22 or current_hour < 5:  # Night time (10 PM - 5 AM)
+            inappropriate_greetings = ["good morning", "good afternoon", "magandang umaga", "magandang hapon"]
+            if any(greeting in response_lower for greeting in inappropriate_greetings):
+                logger.warning(f"🚨 INAPPROPRIATE TIME GREETING: Using {inappropriate_greetings} at {current_hour}:XX")
+                # Replace with appropriate neutral greeting
+                if lang == "tl" or lang == "akl":
+                    return "Kumusta! Ako si Tomas, ang inyong assistant. Paano ko kayo matutulungan?"
+                else:
+                    return "Hello! I'm Tomas, your school assistant. How can I help you?"
+        
+        # 🚨 CHECK FOR FORBIDDEN PEOPLE
+        logger.info(f"🔍 Checking for forbidden people in response...")
+        for forbidden_person in forbidden_people:
+            if forbidden_person in response_lower:
+                logger.warning(f"🚨 HALLUCINATION DETECTED: Mentioned non-existent person '{forbidden_person}'")
+                logger.info(f"📍 Found '{forbidden_person}' in response: {response_lower[:200]}...")
+                # Return a safe factual response instead
+                if "teacher" in query.lower() or "staff" in query.lower() or "guro" in query.lower() or "maestra" in query.lower():
+                    return self._get_known_staff_list(lang)
+                else:
+                    return self._get_safe_response_for_unknown_person(lang)
+        logger.info(f"✅ No forbidden people found in response")
+        
+        # 🚨 CHECK FOR MADE-UP DATES/HISTORY  
+        made_up_patterns = [
+            "1990", "founded", "established", "built in", "since 19", "year 19", "century",
+            "hero", "brave", "great tomas", "renowned educator", "community leader",
+            "bustos, laguna", "laguna", "bustos", "insert year", "[insert year]",
+            "dedicated his life", "served the people", "worked tirelessly",
+            "san mateo, rizal", "rizal", "san mateo", "named after tomas", "strong advocate",
+            "quality education", "legacy", "nurturing environment"
+        ]
+        if any(pattern in response_lower for pattern in made_up_patterns):
+            logger.warning(f"🚨 HALLUCINATION DETECTED: Made-up historical/location information")
+            if ("history" in query.lower() or "founded" in query.lower() or "when" in query.lower() or 
+                "😊🎉🏫" in query or "tell me about" in query.lower() or "about tomas" in query.lower()):
+                return self._get_safe_historical_response(lang)
+            elif "location" in query.lower() or "address" in query.lower() or "saan" in query.lower() or "diin" in query.lower():
+                return self._get_safe_address_response(lang)
+        
+        # 🚨 CHECK FOR FAKE ROLEPLAY ACTIONS
+        roleplay_patterns = [
+            "*checks calendar*", "*checks with", "*checking", "*looks at", "*reviews",
+            "*checks schedule*", "*confirms", "*verifies", "let me check", "let me just check",
+            "*walks to", "*goes to", "*searches through", "would you like me to escort",
+            "*prepares", "*organizes", "*arranges", "8:30 am to 10:00 am", "specific time slots"
+        ]
+        if any(pattern in response_lower for pattern in roleplay_patterns):
+            logger.warning(f"🚨 ROLEPLAY DETECTED: Fake actions and made-up schedules")
+            if "enrollment" in query.lower() or "documents" in query.lower():
+                return "For enrollment information and required documents, please visit the school office during regular hours."
+            elif "schedule" in query.lower() or "time" in query.lower():
+                return "For current schedules and specific timing, please contact the school office directly."
+            else:
+                return "For detailed information about school procedures, please visit the school office."
+        
+        # 🚨 CHECK FOR NON-EXISTENT STAFF MENTIONED
+        # First check for specific fictional staff roles
+        fictional_staff_patterns = [
+            "guidance counselor", "school counselor", "librarian", "nurse", "security guard"
+        ]
+        
+        # Special handling: Allow "guidance office" but block "guidance counselor"
+        # Check if the response mentions guidance office location (which is OK) vs guidance counselor (which is not OK)
+        guidance_office_ok = False
+        if "guidance office" in response_lower:
+            # If it's talking about the location/address of the office, that's okay
+            if any(location_word in response_lower for location_word in ["located", "matatagpuan", "nasa", "sa loob", "malapit", "address", "location"]):
+                guidance_office_ok = True
+                logger.info("✅ Guidance office location mention is allowed")
+        
+        # Only check for fictional staff if it's not an allowed guidance office mention
+        if not guidance_office_ok and any(pattern in response_lower for pattern in fictional_staff_patterns):
+            logger.warning(f"🚨 HALLUCINATION DETECTED: Mentioned non-existent staff role")
+            if "teacher" in query.lower() or "staff" in query.lower() or "guro" in query.lower() or "maestra" in query.lower():
+                return self._get_known_staff_list(lang)
+            else:
+                return self._get_safe_response_for_unknown_person(lang)
+        
+        # Additionally, if it mentions "counselor" alone (without "guidance office" context), block it
+        if "counselor" in response_lower and not guidance_office_ok:
+            logger.warning(f"🚨 HALLUCINATION DETECTED: Mentioned non-existent counselor")
+            return self._get_safe_response_for_unknown_person(lang)
+        
+        # Then check for unknown staff names - BUT ONLY if response specifically mentions a name with title
+        # Don't trigger on generic mentions of "teacher" or general office references
+        words = response_lower.split()
+        for i, word in enumerate(words):
+            if word in ["mrs.", "mr.", "ms."] and i + 1 < len(words):
+                mentioned_name = words[i + 1].strip(".,!?")
+                # Only flag if it's actually claiming a specific person exists
+                if mentioned_name not in [name.split()[-1].lower() for name in known_staff]:
+                    logger.warning(f"🚨 HALLUCINATION DETECTED: Unknown staff member '{mentioned_name}'")
+                    return self._get_safe_response_for_unknown_person(lang)
+        
+        return response
+    
+    def _get_safe_response_for_unknown_person(self, lang: str) -> str:
+        """Safe response when asked about unknown people."""
+        if lang == "tl" or lang == "akl":
+            return "Hindi ko kilala ang taong iyon. Para sa impormasyon tungkol sa aming staff, makakausap ninyo ang school office."
+        else:
+            return "I don't have information about that person. For staff information, please contact the school office."
+    
+    def _get_safe_historical_response(self, lang: str) -> str:
+        """Safe response for historical queries."""
+        if lang == "tl" or lang == "akl":
+            return "Hindi ko po alam ang eksaktong kasaysayan ng paaralan. Para sa historical information, makakausap ninyo ang school office."
+        else:
+            return "I don't have specific historical information about the school. Please contact the school office for detailed history."
+    
+    def _get_safe_address_response(self, lang: str) -> str:
+        """Safe response for address/location queries."""
+        if lang == "tl" or lang == "akl":
+            return "Ang Tomas SM. Bautista Elementary School ay matatagpuan sa Fatima, New Washington, Aklan."
+        else:
+            return "Tomas SM. Bautista Elementary School is located in Fatima, New Washington, Aklan."
+
     async def ask_groq(self, query: str, context: str, lang: str, conversation_history: list = None) -> str:
         """Token-optimized Groq API call with emergency fallbacks."""
+        # Extract user name from full conversation history before truncation
+        user_name = self._extract_user_name(conversation_history) if conversation_history else ""
+        
         # Start with friendly, conversational prompt
-        system_prompt = self.get_time_aware_system_prompt(lang)
+        system_prompt = self.get_time_aware_system_prompt(lang, user_name)
         
         # Emergency token management
         max_context_length = 1500
@@ -920,10 +1190,13 @@ class ChatBot:
                     response.raise_for_status()
                     ai_response = response.json()["choices"][0]["message"]["content"].strip()
                     
+                    # 🛡️ VALIDATE RESPONSE TO PREVENT HALLUCINATION
+                    validated_response = self._validate_response_against_facts(ai_response, query, lang)
+                    
                     if mode != "normal":
                         logger.warning(f"⚠️ Used {mode} token mode for response")
                     
-                    return ai_response
+                    return validated_response
                     
             except Exception as e:
                 error_msg = str(e).lower()
@@ -958,15 +1231,18 @@ class ChatBot:
         
         # Check for common names/keywords in query
         if any(name in query_lower for name in ["meliza", "delgado"]):
-            return "Meliza Delgado is the Head Teacher. Visit school office for details."  
+            response = "Meliza Delgado is the Head Teacher. Visit school office for details."
         elif any(word in query_lower for word in ["teacher", "staff", "faculty"]):
-            return "For staff information, please visit the school office."
+            response = "For staff information, please visit the school office."
         elif any(word in query_lower for word in ["contact", "phone", "email", "address"]):
-            return "For contact information, please visit the school office."
+            response = "For contact information, please visit the school office."
         elif any(word in query_lower for word in ["enrollment", "admission", "register"]):
-            return "For enrollment information, please visit the school office."
+            response = "For enrollment information, please visit the school office."
         else:
-            return "Please visit the school office for assistance with your inquiry."
+            response = "Please visit the school office for assistance with your inquiry."
+        
+        # 🛡️ Apply validation even to emergency responses
+        return self._validate_response_against_facts(response, query, lang)
 
     async def _keyword_matching_response(self, query: str, lang: str) -> str:
         """Enhanced keyword matching - zero token usage alternative."""
@@ -1732,11 +2008,54 @@ class ChatBot:
             "list the faculty", "faculty members", "can you list the faculty",
             "sino ang mga faculty", "mga taong nagtuturo", "nagtuturo dito",
             "list ng mga guro", "nakikita ko ang mga teacher", "teachers of this school",
-            "guro dito sa school", "the teachers", "our teachers", "teacher", "guro"
+            "guro dito sa school", "the teachers", "our teachers", "teacher", "guro",
+            "mga maestra", "maestra sa school", "maestra", "maestro", "mga maestro",
+            "plural maestra", "maestra in school"
         ]
+        
+        # Check original query
         if any(pattern in lowered for pattern in teacher_patterns):
             logger.info("👩‍🏫 Teacher query detected - using staff list to prevent hallucination")
-            return self._get_known_staff_list(lang)
+            response = self._get_known_staff_list(lang)
+            # 🛡️ Apply validation even to direct responses
+            return self._validate_response_against_facts(response, query, lang)
+        
+        # For Aklanon queries, also check the translated version
+        if lang == "akl":
+            translated_query = self.translate_aklanon_query_keywords(query)
+            if any(pattern in translated_query.lower() for pattern in teacher_patterns):
+                logger.info("👩‍🏫 Aklanon teacher query detected via translation - using staff list")
+                response = self._get_known_staff_list(lang)
+                # 🛡️ Apply validation even to direct responses
+                return self._validate_response_against_facts(response, query, lang)
+
+        # --- Early check for memory/conversation context queries ---
+        memory_patterns = [
+            "do you remember", "remember my", "what is my", "what was my", 
+            "my name", "my daughter", "my child", "what did i tell you",
+            "naaalala mo ba", "naaalala mo", "ano ang pangalan ko", "nabanggit ko"
+        ]
+        if any(pattern in lowered for pattern in memory_patterns):
+            logger.info("🧠 Memory/context query detected - forcing AI processing with conversation history")
+            # Skip keyword matching completely for memory queries and force AI processing
+            # This ensures conversation history is properly analyzed
+            
+            # Get minimal context to avoid token issues
+            summarized_text = await self.fetch_summarized_file()
+            supabase_prompts = await self.enhanced_search_supabase(query)
+            
+            # Build minimal context
+            minimal_context = ""
+            if supabase_prompts:
+                minimal_context += f"DB: {supabase_prompts[:200]}...\n"
+            if summarized_text:
+                snippet = await self.extract_snippet(summarized_text, query)
+                if snippet:
+                    minimal_context += f"Summary: {snippet[:200]}...\n"
+            
+            # Force AI processing with conversation history
+            logger.info("🤖 Processing memory query with AI and conversation history")
+            return await self.ask_groq(query, minimal_context, lang, conversation_history)
 
         # --- Early check for language capability questions ---
         language_question_patterns = [
@@ -1748,7 +2067,8 @@ class ChatBot:
             logger.info("🗣️ Language capability question detected - using keyword response")
             keyword_response = await self._keyword_matching_response(query, lang)
             if keyword_response and "office" not in keyword_response:  # Avoid generic responses
-                return keyword_response
+                # 🛡️ Apply validation even to keyword responses
+                return self._validate_response_against_facts(keyword_response, query, lang)
 
         # --- Special handling for Aklanon queries ---
         if lang == "akl":
@@ -1792,7 +2112,9 @@ class ChatBot:
                 return response
             else:
                 # No context found - return helpful message in fluent Tagalog
-                return "Hindi ko nahanap ang impormasyon tungkol sa inyong katanungan. Maaari po kayong magpunta sa opisina ng paaralan para sa dagdag na detalye. May iba pa po ba kayong katanungan sa Tagalog?"
+                response = "Hindi ko nahanap ang impormasyon tungkol sa inyong katanungan. Maaari po kayong magpunta sa opisina ng paaralan para sa dagdag na detalye. May iba pa po ba kayong katanungan sa Tagalog?"
+                # 🛡️ Apply validation even to Aklanon fallback responses  
+                return self._validate_response_against_facts(response, query, lang)
 
         # --- Removed aggressive token saving early keyword matching ---
         # Keyword matching will only be used when tokens are at their limit
@@ -1849,7 +2171,8 @@ class ChatBot:
                 # If keyword matching found a good match, use it (saves tokens)
                 if keyword_response and "visit the school office" not in keyword_response.lower():
                     logger.info("✅ Using keyword matching emergency fallback due to token limit")
-                    return f"{keyword_response.strip()}\n\n{self.get_followup(lang)}"
+                    validated_response = self._validate_response_against_facts(keyword_response, query, lang)
+                    return f"{validated_response.strip()}\n\n{self.get_followup(lang)}"
                 else:
                     logger.warning("⚠️ Keyword matching didn't find good answer, proceeding with truncated context")
         
@@ -1858,7 +2181,9 @@ class ChatBot:
             # Check if this is a person/staff inquiry
             if self._is_person_query(query):
                 logger.info("👤 No context found for person query - providing helpful guidance")
-                return self._get_unknown_person_response(lang)
+                response = self._get_unknown_person_response(lang)
+                # 🛡️ Apply validation even to direct responses
+                return self._validate_response_against_facts(response, query, lang)
             
             # Generic no context response for other queries
             english_response = (
@@ -1880,7 +2205,9 @@ class ChatBot:
             else:
                 final_response = english_response
                 
-            return final_response + f" {self.get_followup(lang)}"
+            # 🛡️ Apply validation even to no-context responses
+            validated_final_response = self._validate_response_against_facts(final_response, query, lang)
+            return validated_final_response + f" {self.get_followup(lang)}"
 
         # Truncate before sending to Groq (token management)
         max_len = 1500  # Reduced from 4000 for token efficiency
@@ -1889,12 +2216,12 @@ class ChatBot:
             full_context = full_context[:max_len] + "\n...(truncated)..."
 
         logger.info("🤖 Normal flow: Sending query to Groq with context from summarized_text and Supabase")
-        # Get response in the user's detected language
+        
+        # Regular AI call - no special handling
         response = await self.ask_groq(query, full_context, lang, conversation_history)
 
         # Return the response (no translation needed since it's already in the right language)
         return response
-
 
 if __name__ == "__main__":
     import asyncio
