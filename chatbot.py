@@ -610,9 +610,12 @@ class ChatBot:
         # Common introduction patterns
         name_patterns = [
             r"hi[,\s]*i['\s]*m\s+(\w+)",           # "Hi, I'm John" 
+            r"hi[,\s]+i\s+am\s+(\w+)",             # "Hi, I am John" (NEW)
             r"hello[,\s]*i['\s]*m\s+(\w+)",        # "Hello, I'm John"
+            r"hello[,\s]+i\s+am\s+(\w+)",          # "Hello, I am John" (NEW)
             r"my\s+name\s+is\s+(\w+)",             # "my name is John"
             r"i['\s]*m\s+(\w+)",                   # "I'm John"
+            r"i\s+am\s+(\w+)",                     # "I am John" (NEW)
             r"call\s+me\s+(\w+)",                  # "call me John"
             r"this\s+is\s+(\w+)",                  # "this is John"
         ]
@@ -1312,8 +1315,8 @@ class ChatBot:
                 "default": "Oo, nakakaintindi ako ng kaunting Aklanon! Magtanong lang kayo! 😊"
             },
             
-            # Academic Information
-            ("enrollment", "admission", "register"): {
+            # Academic Information - MOVED BEFORE LANGUAGE TO PRIORITIZE
+            ("enrollment", "admission", "register", "help", "can you help"): {
                 "en": "Ready to join our school family? 🎒 Head to the office for all the enrollment info - they'll guide you through everything!",
                 "tl": "Ready na ba kayong sumali sa pamilya namin? 🎒 Punta sa office para sa enrollment info - gabayan nila kayo sa lahat!",
                 "default": "For enrollment information, please visit the school office."
@@ -1980,6 +1983,23 @@ class ChatBot:
         greetings = ["hi", "hello", "hey", "kamusta", "kumusta",
                      "yo", "good morning", "good afternoon", "good evening"]
         
+        # Check for greeting + introduction pattern first (e.g., "hi i am john")
+        introduction_patterns = [
+            r"^(hi|hello|hey)\s+i\s+am\s+\w+",
+            r"^(hi|hello|hey)\s+i'm\s+\w+",
+            r"^(hi|hello|hey)\s+my\s+name\s+is\s+\w+"
+        ]
+        
+        is_introduction = False
+        for pattern in introduction_patterns:
+            if re.match(pattern, lowered):
+                logger.info(f"👋 Greeting with introduction detected: {lowered}")
+                is_introduction = True
+                break
+        
+        if is_introduction:
+            return self.get_greeting(lang)
+        
         # Only treat as greeting if it's ONLY a greeting (no additional content)
         is_greeting_only = False
         for greeting in greetings:
@@ -1999,6 +2019,45 @@ class ChatBot:
         if is_greeting_only:
             logger.info("👋 User sent a greeting only.")
             return self.get_greeting(lang)
+
+        # --- Early check for family/enrollment context to avoid irrelevant DB searches ---
+        family_enrollment_patterns = [
+            "my son", "my daughter", "my child", "his name", "her name", 
+            "child's name", "son's name", "daughter's name", "child is",
+            "son is", "daughter is", "years old", "grade", "enroll"
+        ]
+        
+        if any(pattern in lowered for pattern in family_enrollment_patterns):
+            logger.info("👨‍👩‍👧‍👦 Family/enrollment context detected - avoiding generic database search")
+            # For family context, use AI processing with minimal context to avoid irrelevant matches
+            # Get minimal context to avoid token issues
+            summarized_text = await self.fetch_summarized_file()
+            
+            # Only get specific enrollment-related context, not general DB search
+            minimal_context = ""
+            if summarized_text:
+                snippet = await self.extract_snippet(summarized_text, "enrollment procedure")
+                if snippet:
+                    minimal_context += f"Enrollment Info: {snippet[:300]}...\n"
+            
+            # Force AI processing with conversation history but minimal context
+            logger.info("🤖 Processing family context with AI and conversation history")
+            return await self.ask_groq(query, minimal_context, lang, conversation_history)
+
+        # --- Early check for enrollment queries ---
+        enrollment_patterns = [
+            "enroll", "enrollment", "admission", "register", "want to enroll", 
+            "i want to enroll", "enroll my", "register my", "admission for",
+            "apply", "application", "join the school", "join your school",
+            "would like to register", "can you help with admission",
+            "help with enrollment", "help with admission"
+        ]
+        
+        if any(pattern in lowered for pattern in enrollment_patterns):
+            logger.info("🏫 Enrollment query detected - using keyword response")
+            keyword_response = await self._keyword_matching_response(query, lang)
+            if keyword_response:  # Use any enrollment response
+                return self._validate_response_against_facts(keyword_response, query, lang)
 
         # --- Early check for teacher/staff queries to prevent AI hallucination ---
         teacher_patterns = [
@@ -2061,9 +2120,19 @@ class ChatBot:
         language_question_patterns = [
             "can you speak", "do you speak", "can you understand", "do you understand",
             "nakakaintindi ka", "marunong ka", "alam mo ba", "nakakaalam ka",
-            "speak aklanon", "speak tagalog", "speak english", "understand aklanon"
+            "speak aklanon", "speak tagalog", "speak english", "understand aklanon",
+            "can you speak aklanon", "can you understand aklanon"  # More specific patterns
         ]
-        if any(pattern in lowered for pattern in language_question_patterns):
+        # Only match if it's clearly about language capability, not other "can you" questions
+        is_language_question = False
+        for pattern in language_question_patterns:
+            if pattern in lowered:
+                # Extra check: make sure it's not about school services
+                if not any(service in lowered for service in ["admission", "enrollment", "help with"]):
+                    is_language_question = True
+                    break
+        
+        if is_language_question:
             logger.info("🗣️ Language capability question detected - using keyword response")
             keyword_response = await self._keyword_matching_response(query, lang)
             if keyword_response and "office" not in keyword_response:  # Avoid generic responses
