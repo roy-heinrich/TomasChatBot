@@ -702,7 +702,7 @@ class ChatBot:
         
         if user_name:
             # Warm, personal responses
-            if lang == "tl":
+            if lang == "tl" or lang == "akl":  # Both Tagalog and Aklanon queries get Tagalog responses
                 greetings = [
                     f"Oo, {user_name}! Natatandaan ko kayo 😊 Ikaw nga si {user_name}, tama ba?",
                     f"Of course! Kayo po si {user_name} 😊 Hindi ko makakalimutan yan!",
@@ -732,7 +732,7 @@ class ChatBot:
             return random.choice(greetings)
         else:
             # Gentle way to ask for their name if not found
-            if lang == "tl":
+            if lang == "tl" or lang == "akl":  # Both Tagalog and Aklanon queries get Tagalog responses
                 return "Hindi ko pa narinig ang pangalan ninyo sa usapan natin 😊 Pwede bang malaman kung ano ang tawag sa inyo?"
             else:
                 return "I don't think you've mentioned your name yet in our conversation 😊 Could you remind me what I should call you?"
@@ -742,7 +742,7 @@ class ChatBot:
         
         if child_name:
             # Warm responses about their child
-            if lang == "tl":
+            if lang == "tl" or lang == "akl":  # Both Tagalog and Aklanon queries get Tagalog responses
                 responses = [
                     f"Si {child_name}! 😊 Ang anak ninyo nga si {child_name}, tama ba?",
                     f"Oo nga! Si {child_name} ang pangalan ng anak ninyo 😊 Cute name!",
@@ -751,7 +751,7 @@ class ChatBot:
                 if user_name:
                     responses.extend([
                         f"Si {child_name} nga, {user_name}! 😊 Proud parent ka talaga!",
-                        f"Your child's name is {child_name}, right {user_name}? 😊"
+                        f"Ang anak mo si {child_name}, tama {user_name}? 😊"
                     ])
             else:  # English
                 responses = [
@@ -769,7 +769,7 @@ class ChatBot:
             return random.choice(responses)
         else:
             # Gentle response if child name not found
-            if lang == "tl":
+            if lang == "tl" or lang == "akl":  # Both Tagalog and Aklanon queries get Tagalog responses
                 return "Hindi ko pa narinig ang pangalan ng anak ninyo 😊 Ano nga ulit ang tawag sa kanya?"
             else:
                 return "I don't think you've mentioned your child's name yet 😊 Could you remind me what their name is?"
@@ -1459,12 +1459,23 @@ class ChatBot:
             },
 
             # PERSONALIZED NAME QUERIES - Warm, contextual responses
+            # English patterns
             ("whats", "my", "name"): "PERSONALIZED_NAME_QUERY",  # Special marker
             ("what", "is", "my", "name"): "PERSONALIZED_NAME_QUERY",  # Special marker
             ("my", "name", "again"): "PERSONALIZED_NAME_QUERY",  # Special marker
             ("remind", "me", "my", "name"): "PERSONALIZED_NAME_QUERY",  # Special marker
             ("tell", "me", "my", "name"): "PERSONALIZED_NAME_QUERY",  # Special marker
             ("do", "you", "remember", "my", "name"): "PERSONALIZED_NAME_QUERY",  # Special marker
+            
+            # Tagalog patterns for name queries
+            ("ano", "ang", "pangalan", "ko"): "PERSONALIZED_NAME_QUERY",  # Special marker
+            ("pangalan", "ko", "ulit"): "PERSONALIZED_NAME_QUERY",  # Special marker
+            ("naaalala", "mo", "pangalan", "ko"): "PERSONALIZED_NAME_QUERY",  # Special marker
+            ("sino", "ako"): "PERSONALIZED_NAME_QUERY",  # Special marker
+            ("tawag", "sa", "akin"): "PERSONALIZED_NAME_QUERY",  # Special marker
+            ("kung", "ano", "pangalan", "ko"): "PERSONALIZED_NAME_QUERY",  # Special marker
+            
+            # English child name patterns
             ("whats", "my", "sons", "name"): "PERSONALIZED_CHILD_QUERY",  # Special marker
             ("what", "is", "my", "sons", "name"): "PERSONALIZED_CHILD_QUERY",  # Special marker
             ("my", "sons", "name"): "PERSONALIZED_CHILD_QUERY",  # Special marker
@@ -1472,6 +1483,28 @@ class ChatBot:
             ("whats", "my", "daughters", "name"): "PERSONALIZED_CHILD_QUERY",  # Special marker
             ("what", "is", "my", "daughters", "name"): "PERSONALIZED_CHILD_QUERY",  # Special marker
             ("my", "daughters", "name"): "PERSONALIZED_CHILD_QUERY",  # Special marker
+            ("whats", "my", "childs", "name"): "PERSONALIZED_CHILD_QUERY",  # Special marker
+            ("my", "childs", "name"): "PERSONALIZED_CHILD_QUERY",  # Special marker
+            
+            # Tagalog child name patterns
+            ("ano", "pangalan", "ng", "anak", "ko"): "PERSONALIZED_CHILD_QUERY",  # Special marker
+            ("pangalan", "ng", "anak", "ko"): "PERSONALIZED_CHILD_QUERY",  # Special marker
+            ("sino", "ang", "anak", "ko"): "PERSONALIZED_CHILD_QUERY",  # Special marker
+            ("tawag", "sa", "anak", "ko"): "PERSONALIZED_CHILD_QUERY",  # Special marker
+            ("naaalala", "mo", "anak", "ko"): "PERSONALIZED_CHILD_QUERY",  # Special marker
+            ("ano", "pangalan", "ng", "bata", "ko"): "PERSONALIZED_CHILD_QUERY",  # Special marker
+            
+            # Aklanon patterns for name queries  
+            ("ano", "nga", "ngaean", "ko"): "PERSONALIZED_NAME_QUERY",  # What is my name
+            ("sin-o", "ako"): "PERSONALIZED_NAME_QUERY",  # Who am I
+            ("ngaean", "ko", "ulit"): "PERSONALIZED_NAME_QUERY",  # My name again
+            ("nahanumdom", "mo", "ngaean", "ko"): "PERSONALIZED_NAME_QUERY",  # Do you remember my name
+            
+            # Aklanon patterns for child name queries
+            ("ano", "ngaean", "sang", "imo", "unga"): "PERSONALIZED_CHILD_QUERY",  # What is my child's name
+            ("sin-o", "ang", "unga", "ko"): "PERSONALIZED_CHILD_QUERY",  # Who is my child
+            ("ngaean", "sang", "unga", "ko"): "PERSONALIZED_CHILD_QUERY",  # My child's name
+            ("nahanumdom", "mo", "unga", "ko"): "PERSONALIZED_CHILD_QUERY",  # Do you remember my child
             
             # Academic Information - MOVED BEFORE LANGUAGE TO PRIORITIZE
             ("enrollment", "admission", "register", "help", "can you help"): "PERSONALIZED_ENROLLMENT",  # Special marker
