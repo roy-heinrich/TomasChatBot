@@ -737,6 +737,9 @@ class ChatBot:
         elif intent == Intent.CHILD_INTRODUCTION:
             return self._handle_child_introduction(user_name, child_name, lang)
             
+        elif intent == Intent.NAME_QUERY:
+            return self._handle_name_query(user_name, lang)
+            
         elif intent == Intent.DENIAL or intent == Intent.CLARIFICATION:
             return self._handle_clarification(query, lang)
             
@@ -806,6 +809,21 @@ class ChatBot:
                 return f"Nice to know about {child_name}! 😊 How can I help you?"
             else:
                 return "Thank you for the introduction! 😊 How can I help you?"
+    
+    def _handle_name_query(self, user_name: str, lang: str) -> str:
+        """Handle when user asks about their own name"""
+        if user_name:
+            # We know their name - respond accordingly
+            if lang == "tl" or lang == "akl":
+                return f"Oo, {user_name}! Natatandaan ko kayo 😊 Ikaw nga si {user_name}, tama ba?"
+            else:
+                return f"Yes, I remember! Your name is {user_name} 😊 How can I help you today?"
+        else:
+            # We don't have their name in conversation history
+            if lang == "tl" or lang == "akl":
+                return "Hindi ko pa alam ang pangalan ninyo 😊 Maaari ninyong sabihin sa akin ang inyong pangalan?"
+            else:
+                return "I don't know your name yet 😊 Could you please tell me your name?"
     
     def _handle_clarification(self, query: str, lang: str) -> str:
         """Handle clarifications and denials"""

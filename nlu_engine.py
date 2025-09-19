@@ -17,6 +17,7 @@ class Intent(Enum):
     CONTACT_INFO = "contact_info"
     NAME_INTRODUCTION = "name_introduction"
     CHILD_INTRODUCTION = "child_introduction"
+    NAME_QUERY = "name_query"  # New: "what is my name" queries
     CLARIFICATION = "clarification"
     DENIAL = "denial"
     GOODBYE = "goodbye"
@@ -88,9 +89,25 @@ class NLUEngine:
         if any(greet in user_lower for greet in ["good morning", "good afternoon", "good evening", "magandang umaga", "magandang hapon"]):
             return NLUResult(Intent.GREETING_SIMPLE, 0.9, [])
         
-        # Priority 4: Name introductions (without greeting)
-        if "my name is" in user_lower and not any(greet in user_lower for greet in ["hi", "hello", "hey"]):
-            return NLUResult(Intent.NAME_INTRODUCTION, 0.8, [])
+        # Priority 4: Name queries - asking about their own name
+        name_query_patterns = [
+            "what is my name", "whats my name", "my name is", "tell me my name",
+            "do you remember my name", "can you remember my name", 
+            "sino ang pangalan ko", "ano ang pangalan ko", "pangalan ko",
+            "sino ako", "who am i"
+        ]
+        if any(pattern in user_lower for pattern in name_query_patterns):
+            # But exclude name introductions ("my name is John")
+            if not any(intro in user_lower for intro in ["my name is", "ako si"]):
+                return NLUResult(Intent.NAME_QUERY, 0.9, [])
+        
+        # Priority 5: Name introductions (without greeting)
+        name_intro_patterns = [
+            "my name is", "i am", "i'm", "im ", "ako si", "ako ay"
+        ]
+        for pattern in name_intro_patterns:
+            if pattern in user_lower and not any(greet in user_lower for greet in ["hi", "hello", "hey"]):
+                return NLUResult(Intent.NAME_INTRODUCTION, 0.8, [])
         
         # Priority 5: Enrollment (check before child introduction to avoid conflicts)
         if any(word in user_lower for word in ["enroll", "enrollment", "admission", "register", "pag-enroll"]):

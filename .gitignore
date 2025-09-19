@@ -74,3 +74,5 @@ test_conversation_memory.py
 Comprehensive_test.py
 debug_test.py
 400_error_status.md
+explain_architecture.py
+visual_flow.py
