@@ -1523,13 +1523,30 @@ class ChatBot:
             ("supplies", "materials"): "For school supplies list, please visit the school office.",
         }
         
-        # Find matching keywords
+        # Find matching keywords with exact pattern matching for personalized responses
         best_match = None
         max_matches = 0
         best_response = None
         
         for keywords, response in keyword_responses.items():
-            matches = sum(1 for keyword in keywords if keyword in query_lower)
+            # For personalized patterns, require ALL keywords to be present for exact matching
+            if response in ["PERSONALIZED_NAME_QUERY", "PERSONALIZED_CHILD_QUERY", "PERSONALIZED_ENROLLMENT"]:
+                # For personalized responses, all keywords must be present in sequence or exact match
+                query_words = query_lower.split()
+                keyword_matches = 0
+                for keyword in keywords:
+                    if keyword in query_words:
+                        keyword_matches += 1
+                
+                # Only match if ALL keywords in the pattern are found
+                if keyword_matches == len(keywords):
+                    matches = keyword_matches
+                else:
+                    matches = 0
+            else:
+                # For regular patterns, use the old partial matching
+                matches = sum(1 for keyword in keywords if keyword in query_lower)
+            
             if matches > max_matches:
                 max_matches = matches
                 best_match = keywords
@@ -2195,12 +2212,44 @@ class ChatBot:
         is_introduction = False
         for pattern in introduction_patterns:
             if re.match(pattern, lowered):
-                logger.info(f"👋 Greeting with introduction detected: {lowered}")
+                logger.info(f"👋 Greeting with name introduction detected: {lowered}")
                 is_introduction = True
                 break
         
+        # For name introductions, process the name and give a personalized greeting
         if is_introduction:
-            return self.get_greeting(lang)
+            # Extract name from conversation history or query
+            user_name, child_name = self._extract_names_from_history(conversation_history or [])
+            if not user_name:
+                # Try to extract from current query
+                name_match = re.search(r"my\s+name\s+is\s+(\w+)", lowered)
+                if name_match:
+                    user_name = name_match.group(1).title()
+            
+            # Give personalized greeting with time awareness
+            time_period = self.get_time_period()
+            if lang == "tl" or lang == "akl":
+                if time_period == "morning":
+                    base_greeting = f"Good morning, {user_name}!" if user_name else "Good morning!"
+                elif time_period == "afternoon": 
+                    base_greeting = f"Good afternoon, {user_name}!" if user_name else "Good afternoon!"
+                elif time_period == "evening":
+                    base_greeting = f"Good evening, {user_name}!" if user_name else "Good evening!"
+                else:
+                    base_greeting = f"Hello, {user_name}!" if user_name else "Hello!"
+                
+                return f"{base_greeting} 😊 Ako si Tomas, ang inyong school assistant! Ano ang maitutulong ko sa inyo ngayon?"
+            else:
+                if time_period == "morning":
+                    base_greeting = f"Good morning, {user_name}!" if user_name else "Good morning!"
+                elif time_period == "afternoon":
+                    base_greeting = f"Good afternoon, {user_name}!" if user_name else "Good afternoon!" 
+                elif time_period == "evening":
+                    base_greeting = f"Good evening, {user_name}!" if user_name else "Good evening!"
+                else:
+                    base_greeting = f"Hello, {user_name}!" if user_name else "Hello!"
+                
+                return f"{base_greeting} ☀️ I'm Tomas, your friendly school assistant! What can I help you with today?"
         
         # Only treat as greeting if it's ONLY a greeting (no additional content)
         is_greeting_only = False
