@@ -4,6 +4,7 @@ import logging
 import httpx
 import langid
 import random
+from typing import List, Dict
 from supabase import create_client, Client
 # Remove unused import: from utils import fetch_summarized_text  
 from fallback import FallbackHandler
@@ -635,6 +636,67 @@ class ChatBot:
         
         return ""
     
+    def _extract_child_name(self, conversation_history: List[Dict]) -> str:
+        """Extract child's name from conversation history."""
+        if not conversation_history:
+            return ""
+        
+        import re
+        
+        # Child name patterns
+        child_patterns = [
+            r"my\s+son['\s]*s?\s+name\s+is\s+(\w+)",      # "my son's name is Lucio"
+            r"my\s+daughter['\s]*s?\s+name\s+is\s+(\w+)",  # "my daughter's name is Maria"
+            r"my\s+child['\s]*s?\s+name\s+is\s+(\w+)",     # "my child's name is Alex"
+            r"his\s+name\s+is\s+(\w+)",                    # "his name is Lucio"
+            r"her\s+name\s+is\s+(\w+)",                    # "her name is Maria"
+            r"their\s+name\s+is\s+(\w+)",                  # "their name is Alex"
+        ]
+        
+        # Check conversation from most recent to oldest
+        for message in reversed(conversation_history):
+            if message.get("role") == "user":
+                content = message.get("content", "").lower().strip()
+                
+                for pattern in child_patterns:
+                    match = re.search(pattern, content)
+                    if match:
+                        name = match.group(1).strip()
+                        if name and len(name) > 1:
+                            return name.capitalize()
+        
+        return ""
+    
+    def _get_personalized_enrollment_response(self, user_name: str, child_name: str, lang: str) -> str:
+        """Generate personalized enrollment response based on extracted names."""
+        
+        # Build personalized greeting
+        greeting_parts = []
+        if user_name:
+            greeting_parts.append(user_name)
+        if child_name:
+            if user_name:
+                greeting_parts.append(f"and {child_name}")
+            else:
+                greeting_parts.append(child_name)
+        
+        if greeting_parts:
+            names_str = ", ".join(greeting_parts)
+            if lang == "en":
+                return f"Hi {names_str}! 😊 Ready to join our school family? 🎒 For enrollment information and all the details you need, please visit the school office during regular hours. They'll guide you through everything!"
+            elif lang == "tl":
+                return f"Hi {names_str}! 😊 Ready na ba kayong sumali sa pamilya namin? 🎒 Para sa enrollment information at lahat ng kailangan ninyong detalye, pumunta sa school office sa regular hours. Gabayan nila kayo sa lahat!"
+            else:
+                return f"Hi {names_str}! For enrollment information, please visit the school office during regular hours."
+        else:
+            # Fallback to generic response if no names extracted
+            if lang == "en":
+                return "Ready to join our school family? 🎒 Head to the office for all the enrollment info - they'll guide you through everything!"
+            elif lang == "tl":
+                return "Ready na ba kayong sumali sa pamilya namin? 🎒 Punta sa office para sa enrollment info - gabayan nila kayo sa lahat!"
+            else:
+                return "For enrollment information, please visit the school office."
+
     def _get_unknown_person_response(self, lang: str = "en") -> str:
         """Generate a helpful response for unknown person queries without listing all staff."""
         
@@ -1247,9 +1309,13 @@ class ChatBot:
         # 🛡️ Apply validation even to emergency responses
         return self._validate_response_against_facts(response, query, lang)
 
-    async def _keyword_matching_response(self, query: str, lang: str) -> str:
-        """Enhanced keyword matching - zero token usage alternative."""
+    async def _keyword_matching_response(self, query: str, lang: str, conversation_history: List[Dict] = None) -> str:
+        """Enhanced keyword matching - zero token usage alternative with conversation context."""
         query_lower = query.lower()
+        
+        # Extract names from conversation for personalization
+        user_name = self._extract_user_name(conversation_history or [])
+        child_name = self._extract_child_name(conversation_history or [])
         
         # Expanded keyword database with conversational, playful responses
         keyword_responses = {
@@ -1316,11 +1382,7 @@ class ChatBot:
             },
             
             # Academic Information - MOVED BEFORE LANGUAGE TO PRIORITIZE
-            ("enrollment", "admission", "register", "help", "can you help"): {
-                "en": "Ready to join our school family? 🎒 Head to the office for all the enrollment info - they'll guide you through everything!",
-                "tl": "Ready na ba kayong sumali sa pamilya namin? 🎒 Punta sa office para sa enrollment info - gabayan nila kayo sa lahat!",
-                "default": "For enrollment information, please visit the school office."
-            },
+            ("enrollment", "admission", "register", "help", "can you help"): "PERSONALIZED_ENROLLMENT",  # Special marker
             ("tuition", "fee", "payment"): "For tuition and fee information, please visit the school office.",
             ("curriculum", "subjects", "classes"): "For curriculum information, please visit the school office.",
             ("grade", "level"): "For grade level information, please visit the school office.",
@@ -1350,6 +1412,11 @@ class ChatBot:
         
         if best_match and max_matches > 0:
             logger.info(f"🎯 Keyword match found ({max_matches} matches)")
+            
+            # Special handling for enrollment queries - generate personalized response
+            if best_response == "PERSONALIZED_ENROLLMENT":
+                logger.info("🎯 Generating personalized enrollment response")
+                return self._get_personalized_enrollment_response(user_name, child_name, lang)
             
             # Handle new dictionary format with language-specific responses
             if isinstance(best_response, dict):
@@ -2024,8 +2091,26 @@ class ChatBot:
         family_enrollment_patterns = [
             "my son", "my daughter", "my child", "his name", "her name", 
             "child's name", "son's name", "daughter's name", "child is",
-            "son is", "daughter is", "years old", "grade", "enroll"
+            "son is", "daughter is", "years old", "grade"
+            # Removed "enroll" from here - let it be handled by enrollment check below
         ]
+        
+        # --- Early check for enrollment queries (MOVED BEFORE FAMILY CHECK) ---
+        enrollment_patterns = [
+            "enroll", "enrollment", "admission", "register", "want to enroll", 
+            "i want to enroll", "enroll my", "register my", "admission for",
+            "apply", "application", "join the school", "join your school",
+            "would like to register", "can you help with admission",
+            "help with enrollment", "help with admission", "enrollment information",
+            "admission information", "can you help me with enrollment",
+            "help me with enrollment", "assist with enrollment"
+        ]
+        
+        if any(pattern in lowered for pattern in enrollment_patterns):
+            logger.info("🏫 Enrollment query detected - using keyword response")
+            keyword_response = await self._keyword_matching_response(query, lang, conversation_history)
+            if keyword_response:  # Use any enrollment response
+                return self._validate_response_against_facts(keyword_response, query, lang)
         
         if any(pattern in lowered for pattern in family_enrollment_patterns):
             logger.info("👨‍👩‍👧‍👦 Family/enrollment context detected - avoiding generic database search")
@@ -2043,21 +2128,6 @@ class ChatBot:
             # Force AI processing with conversation history but minimal context
             logger.info("🤖 Processing family context with AI and conversation history")
             return await self.ask_groq(query, minimal_context, lang, conversation_history)
-
-        # --- Early check for enrollment queries ---
-        enrollment_patterns = [
-            "enroll", "enrollment", "admission", "register", "want to enroll", 
-            "i want to enroll", "enroll my", "register my", "admission for",
-            "apply", "application", "join the school", "join your school",
-            "would like to register", "can you help with admission",
-            "help with enrollment", "help with admission"
-        ]
-        
-        if any(pattern in lowered for pattern in enrollment_patterns):
-            logger.info("🏫 Enrollment query detected - using keyword response")
-            keyword_response = await self._keyword_matching_response(query, lang)
-            if keyword_response:  # Use any enrollment response
-                return self._validate_response_against_facts(keyword_response, query, lang)
 
         # --- Early check for teacher/staff queries to prevent AI hallucination ---
         teacher_patterns = [
@@ -2134,7 +2204,7 @@ class ChatBot:
         
         if is_language_question:
             logger.info("🗣️ Language capability question detected - using keyword response")
-            keyword_response = await self._keyword_matching_response(query, lang)
+            keyword_response = await self._keyword_matching_response(query, lang, conversation_history)
             if keyword_response and "office" not in keyword_response:  # Avoid generic responses
                 # 🛡️ Apply validation even to keyword responses
                 return self._validate_response_against_facts(keyword_response, query, lang)
