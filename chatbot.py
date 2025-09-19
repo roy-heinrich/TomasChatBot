@@ -1342,10 +1342,10 @@ class ChatBot:
         return text
 
     def _validate_response_against_facts(self, response: str, query: str, lang: str) -> str:
-        """🛡️ Validate AI response against known facts to prevent hallucination."""
+        """🛡️ Enhanced validation to prevent inappropriate responses and ensure school-appropriate language."""
         
         # DEBUG: Log validation entry
-        logger.info(f"🛡️ VALIDATION: Checking response for hallucinations")
+        logger.info(f"🛡️ VALIDATION: Checking response for hallucinations and inappropriate content")
         logger.info(f"📝 Response excerpt: {response[:100]}...")
         
         # Known staff members (ONLY these exist)
@@ -1371,6 +1371,7 @@ class ChatBot:
             "principal martinez", "martinez", "mrs martinez", "ms martinez"
             # Removed "mrs. santos", "santos" - we have real staff member "Nelda B. Delos Santos"
             # Removed "tomas sm. bautista", "tomas bautista", "mr. bautista" - this is the school's actual name!
+            # NOTE: "santos" alone removed to avoid blocking real staff "Nelda B. Delos Santos"
         }
         
         # School facts to validate
@@ -1383,7 +1384,105 @@ class ChatBot:
         response_lower = response.lower()
         current_hour = datetime.now().hour
         
-        # 🕐 CHECK FOR INAPPROPRIATE TIME GREETINGS
+        # 🚨 NEW: CHECK FOR INAPPROPRIATE TAGALOG/AKLANON VOCABULARY
+        # These words are inappropriate or nonsensical in a school context
+        inappropriate_tagalog_words = {
+            # Physical/inappropriate contexts
+            "nakatali": "tied up/bound - inappropriate for school context",
+            "nakagapos": "bound/chained - inappropriate for school context", 
+            "nakakulong": "imprisoned/locked up - inappropriate for school context",
+            "nakapiit": "confined/trapped - inappropriate for school context",
+            "nakabilanggo": "jailed - inappropriate for school context",
+            
+            # Violent/harsh contexts
+            "namatay": "died - too harsh for school context",
+            "patay": "dead/death - inappropriate for school context",
+            "nasaktan": "hurt/injured - concerning for school context",
+            "nauntog": "hit head - concerning medical context",
+            "nasugatan": "wounded - inappropriate for school context",
+            
+            # Romantic/adult contexts
+            "nagmamahal": "loving romantically - inappropriate for school assistant",
+            "nakipagrelasyon": "in a relationship - inappropriate context",
+            "naging syota": "became boyfriend/girlfriend - inappropriate",
+            "nagkakapit": "embracing intimately - inappropriate context",
+            
+            # Nonsensical school descriptions
+            "nagiging masarap": "becoming delicious - weird for school description",
+            "nalulunod": "drowning - alarming for school context",
+            "nasusunog": "burning - alarming for school context",
+            "nasisirang": "breaking/getting damaged - negative school image",
+            
+            # Inappropriate slang
+            "ang galing": "amazing/cool - too casual for formal school responses",
+            "astig": "cool/awesome - slang inappropriate for formal responses",
+            "ang sarap": "so good/delicious - inappropriate context for school info",
+            "grabe": "extreme/wow - too casual for professional responses"
+        }
+        
+        # � NEW: CHECK FOR INAPPROPRIATE AKLANON VOCABULARY  
+        inappropriate_aklanon_words = {
+            "nakatali": "tied up - inappropriate for school context",
+            "nakakulong": "imprisoned - inappropriate for school context",
+            "namatay": "died - too harsh for school context", 
+            "patay": "dead - inappropriate for school context",
+            "nasaktan": "hurt - concerning for school context",
+            "masarap": "delicious - weird descriptor for school",
+            "grabe": "extreme - too casual for professional responses"
+        }
+        
+        # Check for inappropriate words based on language
+        inappropriate_words = {}
+        if lang == "tl":
+            inappropriate_words = inappropriate_tagalog_words
+        elif lang == "akl":
+            inappropriate_words = inappropriate_aklanon_words
+        
+        # Scan for inappropriate vocabulary
+        for inappropriate_word, reason in inappropriate_words.items():
+            if inappropriate_word in response_lower:
+                logger.warning(f"🚨 INAPPROPRIATE LANGUAGE: Found '{inappropriate_word}' - {reason}")
+                logger.info(f"📍 Inappropriate word context: {response_lower}")
+                return self._get_safe_school_appropriate_response(query, lang)
+        
+        # 🚨 NEW: CHECK FOR NONSENSICAL TRANSLATIONS
+        # Detect when AI is using words that don't make sense in school context
+        nonsensical_patterns = {
+            # School being described with inappropriate verbs
+            "school.*na.*nakatali": "school being described as 'tied up'",
+            "paaralan.*na.*nakatali": "school being described as 'tied up'", 
+            "eskwelahan.*na.*nakatali": "school being described as 'tied up'",
+            
+            # Buildings/facilities with inappropriate descriptions
+            "building.*na.*nakatali": "building described inappropriately",
+            "office.*na.*nakatali": "office described inappropriately",
+            "classroom.*na.*nakatali": "classroom described inappropriately",
+            
+            # Time/schedule with inappropriate descriptions
+            "oras.*na.*nakatali": "time described as 'tied up'",
+            "schedule.*na.*nakatali": "schedule described inappropriately"
+        }
+        
+        import re
+        for pattern, description in nonsensical_patterns.items():
+            if re.search(pattern, response_lower):
+                logger.warning(f"🚨 NONSENSICAL TRANSLATION: {description}")
+                logger.info(f"📍 Nonsensical pattern: {pattern} in {response_lower}")
+                return self._get_safe_school_appropriate_response(query, lang)
+        
+        # 🚨 NEW: CULTURAL APPROPRIATENESS CHECK
+        # Ensure responses maintain professional, educational tone
+        overly_casual_patterns = [
+            "ay naku", "hay nako", "sus", "aba", "ay ewan", "basta", "eh ano ngayon",
+            "pakialamerang", "walang kwenta", "ang galing talaga", "sobrang astig"
+        ]
+        
+        for casual_phrase in overly_casual_patterns:
+            if casual_phrase in response_lower:
+                logger.warning(f"🚨 OVERLY CASUAL LANGUAGE: Found '{casual_phrase}' - too informal for school assistant")
+                return self._get_safe_school_appropriate_response(query, lang)
+        
+        # �🕐 CHECK FOR INAPPROPRIATE TIME GREETINGS
         if current_hour >= 22 or current_hour < 5:  # Night time (10 PM - 5 AM)
             inappropriate_greetings = ["good morning", "good afternoon", "magandang umaga", "magandang hapon"]
             if any(greeting in response_lower for greeting in inappropriate_greetings):
@@ -1455,6 +1554,21 @@ class ChatBot:
                 guidance_office_ok = True
                 logger.info("✅ Guidance office location mention is allowed")
         
+        # ENHANCED: Check for guidance counselor claims more strictly
+        counselor_claims = [
+            "may guidance counselor", "we have a guidance counselor", "our guidance counselor",
+            "guidance counselor ang", "guidance counselor na", "meron kaming guidance counselor",
+            "ang guidance counselor", "si guidance counselor", "may counselor"
+        ]
+        
+        for claim in counselor_claims:
+            if claim in response_lower:
+                logger.warning(f"🚨 GUIDANCE COUNSELOR CLAIM DETECTED: '{claim}'")
+                if "teacher" in query.lower() or "staff" in query.lower() or "guro" in query.lower() or "maestra" in query.lower():
+                    return self._get_known_staff_list(lang)
+                else:
+                    return self._get_safe_response_for_unknown_person(lang)
+        
         # Only check for fictional staff if it's not an allowed guidance office mention
         if not guidance_office_ok and any(pattern in response_lower for pattern in fictional_staff_patterns):
             logger.warning(f"🚨 HALLUCINATION DETECTED: Mentioned non-existent staff role")
@@ -1479,6 +1593,7 @@ class ChatBot:
                     logger.warning(f"🚨 HALLUCINATION DETECTED: Unknown staff member '{mentioned_name}'")
                     return self._get_safe_response_for_unknown_person(lang)
         
+        logger.info("✅ Response passed all validation checks")
         return response
     
     def _get_safe_response_for_unknown_person(self, lang: str) -> str:
@@ -1487,6 +1602,53 @@ class ChatBot:
             return "Hindi ko kilala ang taong iyon. Para sa impormasyon tungkol sa aming staff, makakausap ninyo ang school office."
         else:
             return "I don't have information about that person. For staff information, please contact the school office."
+    
+    def _get_safe_school_appropriate_response(self, query: str, lang: str) -> str:
+        """Generate safe, contextually appropriate response for school setting."""
+        query_lower = query.lower()
+        
+        # Determine the type of query to provide appropriate fallback
+        if any(word in query_lower for word in ["location", "address", "saan", "diin", "nasa", "where"]):
+            # Location queries
+            if lang == "tl" or lang == "akl":
+                return "Ang Tomas SM. Bautista Elementary School ay matatagpuan sa Fatima, New Washington, Aklan. Para sa mas detalyadong direksyon, tumawag sa (036) 269-6345."
+            else:
+                return "Tomas SM. Bautista Elementary School is located in Fatima, New Washington, Aklan. For detailed directions, please call (036) 269-6345."
+        
+        elif any(word in query_lower for word in ["teacher", "staff", "guro", "maestra", "maestro", "faculty"]):
+            # Staff queries
+            if lang == "tl" or lang == "akl":
+                return "Para sa impormasyon tungkol sa aming mga guro at staff, makipag-ugnayan sa school office sa (036) 269-6345 o bumisita sa school premises."
+            else:
+                return "For information about our teachers and staff, please contact the school office at (036) 269-6345 or visit the school premises."
+        
+        elif any(word in query_lower for word in ["enrollment", "enroll", "register", "admission", "mag-enroll", "pag-enroll"]):
+            # Enrollment queries
+            if lang == "tl" or lang == "akl":
+                return "Para sa enrollment information at requirements, pumunta sa school office sa regular na oras. Tutulungan kayo ng staff sa lahat ng kailangan."
+            else:
+                return "For enrollment information and requirements, please visit the school office during regular hours. Our staff will assist you with everything you need."
+        
+        elif any(word in query_lower for word in ["schedule", "time", "hours", "oras", "edulye", "iskedyul"]):
+            # Schedule/timing queries
+            if lang == "tl" or lang == "akl":
+                return "Para sa mga schedule at oras ng klase, makipag-ugnayan sa school office sa (036) 269-6345."
+            else:
+                return "For class schedules and timing information, please contact the school office at (036) 269-6345."
+        
+        elif any(word in query_lower for word in ["facility", "facilities", "pasilidad", "building", "gusali", "room", "silid"]):
+            # Facilities queries
+            if lang == "tl" or lang == "akl":
+                return "Para sa impormasyon tungkol sa mga facilities ng paaralan, makipag-ugnayan sa school office o bumisita sa school premises."
+            else:
+                return "For information about school facilities, please contact the school office or visit the school premises."
+        
+        else:
+            # General fallback
+            if lang == "tl" or lang == "akl":
+                return "Para sa lahat ng mga katanungan tungkol sa paaralan, makipag-ugnayan sa Tomas SM. Bautista Elementary School office sa (036) 269-6345."
+            else:
+                return "For all school-related inquiries, please contact Tomas SM. Bautista Elementary School office at (036) 269-6345."
     
     def _get_safe_historical_response(self, lang: str) -> str:
         """Safe response for historical queries."""
