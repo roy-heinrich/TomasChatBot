@@ -86,54 +86,54 @@ class ChatBot:
             "greeting": {
                 "en": {
                     "morning": [
-                        "Good morning! ☀️ I'm Tomas, your friendly school assistant! What can I help you with today?",
-                        "Good morning! 😊 Welcome to Tomas SM. Bautista Elementary School! How can I assist you?",
-                        "Morning! Great to see you here bright and early! What would you like to know about our school?",
-                        "Good morning! 🏫 I'm here to help with any questions about our lovely school. What's on your mind?"
+                        "Good morning! ☀️ I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! What can I help you with today?",
+                        "Good morning! 😊 I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! How can I assist you?",
+                        "Morning! I'm TOMAS! What would you like to know about our school?",
+                        "Good morning! 🏫 I'm TOMAS, your chatbot assistant at Tomas SM. Bautista Elementary School! How may I help you?"
                     ],
                     "afternoon": [
-                        "Good afternoon! ☀️ I'm Tomas, your friendly school assistant! What can I help you with today?",
-                        "Good afternoon! � Welcome to Tomas SM. Bautista Elementary School! How can I assist you?",
-                        "Afternoon! Great to see you here! What would you like to know about our school?",
-                        "Good afternoon! 🏫 I'm here to help with any questions about our lovely school. What's on your mind?"
+                        "Good afternoon! ☀️ I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! What can I help you with today?",
+                        "Good afternoon! 😊 I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! How can I assist you?",
+                        "Afternoon! I'm TOMAS! What would you like to know about our school?",
+                        "Good afternoon! 🏫 I'm TOMAS, your chatbot assistant at Tomas SM. Bautista Elementary School! How may I help you?"
                     ],
                     "evening": [
-                        "Good evening! 🌙 I'm Tomas, your friendly school assistant! What can I help you with today?",
-                        "Good evening! 😊 Welcome to Tomas SM. Bautista Elementary School! How can I assist you?",
-                        "Evening! Nice to see you here! What would you like to know about our school?",
-                        "Good evening! 🏫 I'm here to help with any questions about our lovely school. What's on your mind?"
+                        "Good evening! 🌙 I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! What can I help you with today?",
+                        "Good evening! 😊 I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! How can I assist you?",
+                        "Evening! I'm TOMAS! What would you like to know about our school?",
+                        "Good evening! 🏫 I'm TOMAS, your chatbot assistant at Tomas SM. Bautista Elementary School! How may I help you?"
                     ],
                     "default": [
-                        "Hello there! �👋 I'm Tomas, your friendly school assistant! What can I help you with today?",
-                        "Hi! 😊 Welcome to Tomas SM. Bautista Elementary School! How can I assist you?",
-                        "Hey! Great to see you here! What would you like to know about our school?",
-                        "Hello! 🏫 I'm here to help with any questions about our lovely school. What's on your mind?"
+                        "Hello there! 👋 I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! What can I help you with today?",
+                        "Hi! 😊 I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! How can I assist you?",
+                        "Hey! I'm TOMAS! What would you like to know about our school?",
+                        "Hello! 🏫 I'm TOMAS, your chatbot assistant at Tomas SM. Bautista Elementary School! How may I help you?"
                     ]
                 },
                 "tl": {
                     "morning": [
-                        "Magandang umaga! ☀️ Ako si Tomas, ang inyong kaibigan dito sa paaralan! Paano ko kayo matutulungan ngayon?",
-                        "Magandang umaga! 😊 Maligayang pagdating sa Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
-                        "Umaga! Masaya akong makita kayo dito nang maaga! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
-                        "Magandang umaga po! 🏫 Nandito ako para tumulong sa inyong mga tanong. Ano ang nasa isip ninyo?"
+                        "Magandang umaga! ☀️ Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulungan ngayon?",
+                        "Magandang umaga! 😊 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
+                        "Umaga! Ako si TOMAS! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
+                        "Magandang umaga po! 🏫 Ako si TOMAS ang inyong chatbot assistant dito sa Tomas SM. Bautista Elementary School! Paano ko kayo matutulong?"
                     ],
                     "afternoon": [
-                        "Magandang hapon! ☀️ Ako si Tomas, ang inyong kaibigan dito sa paaralan! Paano ko kayo matutulungan ngayon?",
-                        "Magandang hapon! 😊 Maligayang pagdating sa Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
-                        "Hapon! Masaya akong makausap kayo! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
-                        "Magandang hapon po! 🏫 Nandito ako para tumulong sa inyong mga tanong. Ano ang nasa isip ninyo?"
+                        "Magandang hapon! ☀️ Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulungan ngayon?",
+                        "Magandang hapon! 😊 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
+                        "Hapon! Ako si TOMAS! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
+                        "Magandang hapon po! 🏫 Ako si TOMAS ang inyong chatbot assistant dito sa Tomas SM. Bautista Elementary School! Paano ko kayo matutulong?"
                     ],
                     "evening": [
-                        "Magandang gabi! 🌙 Ako si Tomas, ang inyong kaibigan dito sa paaralan! Paano ko kayo matutulungan ngayon?",
-                        "Magandang gabi! 😊 Maligayang pagdating sa Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
-                        "Gabi! Masaya akong makausap kayo ngayong gabi! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
-                        "Magandang gabi po! 🏫 Nandito ako para tumulong sa inyong mga tanong. Ano ang nasa isip ninyo?"
+                        "Magandang gabi! 🌙 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulungan ngayon?",
+                        "Magandang gabi! 😊 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
+                        "Gabi! Ako si TOMAS! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
+                        "Magandang gabi po! 🏫 Ako si TOMAS ang inyong chatbot assistant dito sa Tomas SM. Bautista Elementary School! Paano ko kayo matutulong?"
                     ],
                     "default": [
-                        "Magandang araw! 👋 Ako si Tomas, ang inyong kaibigan dito sa paaralan! Paano ko kayo matutulungan ngayon?",
-                        "Kamusta! 😊 Maligayang pagdating sa Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
-                        "Uy, kumusta! Masaya akong makausap kayo! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
-                        "Hello po! 🏫 Nandito ako para tumulong sa inyong mga tanong. Ano ang nasa isip ninyo?"
+                        "Magandang araw! 👋 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulungan ngayon?",
+                        "Kamusta! 😊 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
+                        "Uy, kumusta! Ako si TOMAS! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
+                        "Hello po! 🏫 Ako si TOMAS ang inyong chatbot assistant dito sa Tomas SM. Bautista Elementary School! Paano ko kayo matutulong?"
                     ]
                 }
             },
@@ -922,7 +922,7 @@ class ChatBot:
             else:
                 base_greeting = f"Hello, {user_name}!" if user_name else "Hello!"
             
-            return f"{base_greeting} 😊 Ako si Tomas, ang inyong school assistant! Ano ang maitutulong ko sa inyo ngayon?"
+            return f"{base_greeting} 😊 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Ano ang maitutulong ko sa inyo ngayon?"
         else:
             if time_period == "morning":
                 base_greeting = f"Good morning, {user_name}!" if user_name else "Good morning!"
@@ -933,14 +933,14 @@ class ChatBot:
             else:
                 base_greeting = f"Hello, {user_name}!" if user_name else "Hello!"
             
-            return f"{base_greeting} ☀️ I'm Tomas, your friendly school assistant! What can I help you with today?"
+            return f"{base_greeting} ☀️ I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! What can I help you with today?"
     
     def _handle_name_introduction(self, user_name: str, lang: str) -> str:
         """Handle when user introduces their name"""
         if lang == "tl" or lang == "akl":
-            return f"Salamat, {user_name}! 😊 Natutuwa akong makilala kayo. Ako si Tomas, ang school assistant. Paano ko kayo matutulungan?"
+            return f"Salamat, {user_name}! 😊 Natutuwa akong makilala kayo. Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School. Paano ko kayo matutulungan?"
         else:
-            return f"Nice to meet you, {user_name}! 😊 I'm Tomas, your school assistant. How can I help you today?"
+            return f"Nice to meet you, {user_name}! 😊 I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School. How can I help you today?"
     
     def _handle_child_introduction(self, user_name: str, child_name: str, lang: str) -> str:
         """Handle when user introduces their child"""
@@ -2862,7 +2862,7 @@ class ChatBot:
                 else:
                     base_greeting = f"Hello, {user_name}!" if user_name else "Hello!"
                 
-                return f"{base_greeting} 😊 Ako si Tomas, ang inyong school assistant! Ano ang maitutulong ko sa inyo ngayon?"
+                return f"{base_greeting} 😊 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Ano ang maitutulong ko sa inyo ngayon?"
             else:
                 if time_period == "morning":
                     base_greeting = f"Good morning, {user_name}!" if user_name else "Good morning!"
