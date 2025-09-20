@@ -88,25 +88,25 @@ class ChatBot:
                     "morning": [
                         "Good morning! ☀️ I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! What can I help you with today?",
                         "Good morning! 😊 I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! How can I assist you?",
-                        "Morning! I'm TOMAS! What would you like to know about our school?",
+                        "Good morning! I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! What would you like to know about our school?",
                         "Good morning! 🏫 I'm TOMAS, your chatbot assistant at Tomas SM. Bautista Elementary School! How may I help you?"
                     ],
                     "afternoon": [
                         "Good afternoon! ☀️ I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! What can I help you with today?",
                         "Good afternoon! 😊 I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! How can I assist you?",
-                        "Afternoon! I'm TOMAS! What would you like to know about our school?",
+                        "Good afternoon! I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! What would you like to know about our school?",
                         "Good afternoon! 🏫 I'm TOMAS, your chatbot assistant at Tomas SM. Bautista Elementary School! How may I help you?"
                     ],
                     "evening": [
                         "Good evening! 🌙 I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! What can I help you with today?",
                         "Good evening! 😊 I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! How can I assist you?",
-                        "Evening! I'm TOMAS! What would you like to know about our school?",
+                        "Good evening! I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! What would you like to know about our school?",
                         "Good evening! 🏫 I'm TOMAS, your chatbot assistant at Tomas SM. Bautista Elementary School! How may I help you?"
                     ],
                     "default": [
                         "Hello there! 👋 I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! What can I help you with today?",
                         "Hi! 😊 I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! How can I assist you?",
-                        "Hey! I'm TOMAS! What would you like to know about our school?",
+                        "Hello! I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! What would you like to know about our school?",
                         "Hello! 🏫 I'm TOMAS, your chatbot assistant at Tomas SM. Bautista Elementary School! How may I help you?"
                     ]
                 },
@@ -114,26 +114,26 @@ class ChatBot:
                     "morning": [
                         "Magandang umaga! ☀️ Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulungan ngayon?",
                         "Magandang umaga! 😊 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
-                        "Umaga! Ako si TOMAS! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
-                        "Magandang umaga po! 🏫 Ako si TOMAS ang inyong chatbot assistant dito sa Tomas SM. Bautista Elementary School! Paano ko kayo matutulong?"
+                        "Magandang umaga po! Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulungan?",
+                        "Magandang umaga po! 🏫 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulong?"
                     ],
                     "afternoon": [
                         "Magandang hapon! ☀️ Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulungan ngayon?",
                         "Magandang hapon! 😊 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
-                        "Hapon! Ako si TOMAS! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
-                        "Magandang hapon po! 🏫 Ako si TOMAS ang inyong chatbot assistant dito sa Tomas SM. Bautista Elementary School! Paano ko kayo matutulong?"
+                        "Magandang hapon po! Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulungan?",
+                        "Magandang hapon po! 🏫 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulong?"
                     ],
                     "evening": [
                         "Magandang gabi! 🌙 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulungan ngayon?",
                         "Magandang gabi! 😊 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
-                        "Gabi! Ako si TOMAS! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
-                        "Magandang gabi po! 🏫 Ako si TOMAS ang inyong chatbot assistant dito sa Tomas SM. Bautista Elementary School! Paano ko kayo matutulong?"
+                        "Magandang gabi po! Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulungan?",
+                        "Magandang gabi po! 🏫 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulong?"
                     ],
                     "default": [
                         "Magandang araw! 👋 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulungan ngayon?",
                         "Kamusta! 😊 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Ano ang maitutulong ko?",
-                        "Uy, kumusta! Ako si TOMAS! Ano ang gusto ninyong malaman tungkol sa aming paaralan?",
-                        "Hello po! 🏫 Ako si TOMAS ang inyong chatbot assistant dito sa Tomas SM. Bautista Elementary School! Paano ko kayo matutulong?"
+                        "Kumusta po! Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulungan?",
+                        "Hello po! 🏫 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Paano ko kayo matutulong?"
                     ]
                 }
             },
@@ -232,7 +232,9 @@ class ChatBot:
         
         # Create language-specific system prompts
         if lang == "tl":
-            return f"Ikaw si TOMAS, ang digital assistant ng Tomas SM. Bautista Elementary School. {time_context} Magbigay ng tumpak at kapaki-pakinabang na impormasyon tungkol sa paaralan. Huwag mag-imbento ng mga detalye na hindi mo alam. Kung hindi mo alam ang sagot, sabihin na makakausap nila ang school office para sa kumpletong impormasyon. Gamitin ang context na ibinigay para sa mga sagot sa TAGALOG."
+            # Add name context for Tagalog as well
+            name_context = f" Ang kausap mo ay si {user_name}." if user_name else ""
+            return f"Ikaw si TOMAS, ang digital assistant ng Tomas SM. Bautista Elementary School. {time_context}{name_context} Magbigay ng tumpak at kapaki-pakinabang na impormasyon tungkol sa paaralan. Huwag mag-imbento ng mga detalye na hindi mo alam. Kung hindi mo alam ang sagot, sabihin na makakausap nila ang school office para sa kumpletong impormasyon. Gamitin ang context na ibinigay para sa mga sagot sa TAGALOG. Tandaan ang mga pangalan mula sa conversation history kapag tinanong."
         else:  # Default to English
             # Add name context if available
             name_context = f" The person you're talking to is named {user_name}." if user_name else ""
@@ -240,6 +242,10 @@ class ChatBot:
 
     def get_greeting(self, lang: str = "en", user_timezone: str = None) -> str:
         time_period = self.get_time_period(user_timezone)
+        
+        # Handle Aklanon by using Tagalog greetings
+        if lang == "akl":
+            lang = "tl"
         
         # Get time-aware greetings
         greetings_dict = self.messages["greeting"].get(lang, self.messages["greeting"]["en"])
@@ -381,7 +387,8 @@ class ChatBot:
                 "eon", "baga", "man", "hay", "sang", "sa", "kag", "kay", 
                 "amo", "ini", "ina", "siin", "diin", "pila", "ano", "sin-o", 
                 "kan-o", "ham-an", "gani", "guid", "gid", "lang", "man", 
-                "bisan", "hasta", "para", "kon", "kung", "pero", "kundi"
+                "bisan", "hasta", "para", "kon", "kung", "pero", "kundi",
+                "maayong", "aga", "hapon", "gab-i", "adlaw"  # Aklanon greetings and time words
             ]
             
             # Filipino/Tagalog markers for better detection  
@@ -642,6 +649,42 @@ class ChatBot:
             print(f"Error in NLU entity extraction: {e}")
             return {}
 
+    def _extract_name_from_query(self, query: str) -> str:
+        """Extract user's name from the current query using regex patterns."""
+        import re
+        
+        if not query:
+            return ""
+            
+        query_lower = query.lower()
+        
+        name_patterns = [
+            r"hi[,\s]*i['\s]*m\s+(\w+)",           # "Hi, I'm John" 
+            r"hi[,\s]+i\s+am\s+(\w+)",             # "Hi, I am John"
+            r"hello[,\s]*i['\s]*m\s+(\w+)",        # "Hello, I'm John"
+            r"hello[,\s]+i\s+am\s+(\w+)",          # "Hello, I am John"
+            r"my\s+name\s+is\s+(\w+)",             # "my name is John"
+            r"i['\s]*m\s+(\w+)",                   # "I'm John"
+            r"i\s+am\s+(\w+)",                     # "I am John"
+            r"call\s+me\s+(\w+)",                  # "call me John"
+            r"this\s+is\s+(\w+)",                  # "this is John"
+            r"ako\s+si\s+(\w+)",                   # "ako si John" (Tagalog)
+            r"ako\s+ay\s+(\w+)",                   # "ako ay John" (Tagalog)
+            r"kumusta[,\s]+ako\s+si\s+(\w+)",      # "kumusta ako si John" (Aklanon)
+            r"kamusta[,\s]+ako\s+si\s+(\w+)",      # "kamusta ako si John" (Aklanon)
+            r"maayong[,\s]+ako\s+si\s+(\w+)",      # "maayong ako si John" (Aklanon greeting)
+        ]
+        
+        for pattern in name_patterns:
+            match = re.search(pattern, query_lower, re.IGNORECASE)
+            if match:
+                name = match.group(1).strip().title()
+                # Filter out common non-names
+                if name.lower() not in ['not', 'from', 'here', 'good', 'fine', 'okay', 'yes', 'no']:
+                    return name
+        
+        return ""
+
     async def _extract_user_name_async(self, conversation_history: list) -> str:
         """Extract user's name from conversation history - async version with NLU first."""
         if not conversation_history:
@@ -832,6 +875,10 @@ class ChatBot:
         user_name = self._extract_user_name(conversation_history or [])
         child_name = self._extract_child_name(conversation_history or [])
         
+        # Extract names from current query if not found in conversation history
+        if not user_name:
+            user_name = self._extract_name_from_query(query)
+        
         # Extract names from current entities
         for entity in entities:
             if entity.type == "person_name" and not user_name:
@@ -899,7 +946,7 @@ class ChatBot:
             return None
             
         elif intent == Intent.APPRECIATION:
-            return self._handle_appreciation(lang)
+            return self._handle_appreciation(lang, user_name)
             
         elif intent == Intent.CONFIRMATION:
             return self._handle_confirmation(lang, conversation_history)
@@ -914,15 +961,15 @@ class ChatBot:
         
         if lang == "tl" or lang == "akl":
             if time_period == "morning":
-                base_greeting = f"Good morning, {user_name}!" if user_name else "Good morning!"
+                base_greeting = f"Magandang umaga, {user_name}!" if user_name else "Magandang umaga!"
             elif time_period == "afternoon": 
-                base_greeting = f"Good afternoon, {user_name}!" if user_name else "Good afternoon!"
+                base_greeting = f"Magandang hapon, {user_name}!" if user_name else "Magandang hapon!"
             elif time_period == "evening":
-                base_greeting = f"Good evening, {user_name}!" if user_name else "Good evening!"
+                base_greeting = f"Magandang gabi, {user_name}!" if user_name else "Magandang gabi!"
             else:
                 base_greeting = f"Hello, {user_name}!" if user_name else "Hello!"
             
-            return f"{base_greeting} 😊 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Ano ang maitutulong ko sa inyo ngayon?"
+            return f"{base_greeting} Natutuwa akong makilala kayo! Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School! Ano ang maitutulong ko sa inyo ngayon?"
         else:
             if time_period == "morning":
                 base_greeting = f"Good morning, {user_name}!" if user_name else "Good morning!"
@@ -933,7 +980,7 @@ class ChatBot:
             else:
                 base_greeting = f"Hello, {user_name}!" if user_name else "Hello!"
             
-            return f"{base_greeting} ☀️ I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! What can I help you with today?"
+            return f"{base_greeting} Nice to meet you! I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School! What can I help you with today?"
     
     def _handle_name_introduction(self, user_name: str, lang: str) -> str:
         """Handle when user introduces their name"""
@@ -1118,12 +1165,18 @@ class ChatBot:
         else:
             return "I'm here to help! 😊 You can ask me about enrollment, school programs, facilities, or any school-related information."
     
-    def _handle_appreciation(self, lang: str) -> str:
-        """Handle thank you messages"""
-        if lang == "tl" or lang == "akl":
-            return "Walang anuman! 😊 Masaya akong makatulong. May iba pa bang kailangan ninyo?"
+    def _handle_appreciation(self, lang: str, user_name: str = "") -> str:
+        """Handle thank you messages with personalized response"""
+        if user_name:
+            if lang == "tl" or lang == "akl":
+                return f"Walang anuman, {user_name}! 😊 Masaya akong makatulong. May iba pa bang kailangan ninyo?"
+            else:
+                return f"You're welcome, {user_name}! 😊 I'm happy to help. Is there anything else you need?"
         else:
-            return "You're welcome! 😊 I'm happy to help. Is there anything else you need?"
+            if lang == "tl" or lang == "akl":
+                return "Walang anuman! 😊 Masaya akong makatulong. May iba pa bang kailangan ninyo?"
+            else:
+                return "You're welcome! 😊 I'm happy to help. Is there anything else you need?"
     
     def _handle_confirmation(self, lang: str, conversation_history: list = None) -> str:
         """Handle yes/confirmation responses with context awareness"""
@@ -2808,6 +2861,11 @@ class ChatBot:
         ]
         if any(k in lowered for k in goodbye_keywords):
             logger.info("👋 User ended the conversation.")
+            
+            # Extract user name for personalized goodbye
+            user_name = self._extract_user_name(conversation_history or [])
+            if not user_name:
+                user_name = self._extract_name_from_query(query)
 
             # Language overrides for more natural goodbye
             if "wala na" in lowered or "wa eun" in lowered or "waay na" in lowered:
@@ -2817,7 +2875,14 @@ class ChatBot:
             elif any(k in lowered for k in ["done", "finished", "none", "no more", "that's all", "nope"]):
                 lang = "en"
 
-            return self.get_goodbye(lang)
+            # Return personalized goodbye if name is available
+            if user_name:
+                if lang == "tl" or lang == "akl":
+                    return f"Salamat sa pakikipag-usap, {user_name}! Paalam! 👋"
+                else:
+                    return f"Thank you for chatting, {user_name}! Goodbye! 👋"
+            else:
+                return self.get_goodbye(lang)
 
         # --- Removed early keyword matching - only use when tokens are at limit ---
 

@@ -110,14 +110,14 @@ class NLUEngine:
             return NLUResult(Intent.CLARIFICATION, 0.8, [])
         
         # Priority 2: Greetings with names
-        if any(greet in user_lower for greet in ["hi", "hello", "hey", "kamusta", "kumusta"]):
-            if "my name is" in user_lower or "i am" in user_lower or "i'm" in user_lower:
+        if any(greet in user_lower for greet in ["hi", "hello", "hey", "kamusta", "kumusta", "maayong"]):
+            if "my name is" in user_lower or "i am" in user_lower or "i'm" in user_lower or "im " in user_lower or "ako si" in user_lower:
                 return NLUResult(Intent.GREETING_WITH_NAME, 0.9, [])
             else:
                 return NLUResult(Intent.GREETING_SIMPLE, 0.8, [])
         
         # Priority 3: Time-based greetings
-        if any(greet in user_lower for greet in ["good morning", "good afternoon", "good evening", "magandang umaga", "magandang hapon"]):
+        if any(greet in user_lower for greet in ["good morning", "good afternoon", "good evening", "magandang umaga", "magandang hapon", "maayong aga", "maayong hapon", "maayong gab-i"]):
             return NLUResult(Intent.GREETING_SIMPLE, 0.9, [])
         
         # Priority 4: Name queries - asking about their own name
