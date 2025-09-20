@@ -4,7 +4,7 @@ import logging
 import httpx
 import langid
 import random
-from typing import List, Dict
+from typing import List, Dict, Optional
 from supabase import create_client, Client
 # Remove unused import: from utils import fetch_summarized_text  
 from fallback import FallbackHandler
@@ -12,6 +12,8 @@ from nlu_engine import NLUEngine, Intent, NLUResult
 from dynamic_greetings import DynamicGreetingGenerator, GreetingContext
 from entity_extractor import AdvancedEntityExtractor, ExtractedEntity
 from conversation_memory import ConversationMemory, UserProfile, ConversationContext
+from response_generator import ResponseGenerationEngine, ResponseContext, ResponseTone
+from sentiment_analyzer import sentiment_analyzer, SentimentResult
 import time
 from datetime import datetime
 from rapidfuzz import fuzz, process
@@ -86,6 +88,10 @@ class ChatBot:
         # Initialize Conversation Memory System
         self.conversation_memory = ConversationMemory(max_history_length=50)
         logger.info("💭 Conversation memory system initialized")
+        
+        # Initialize Response Generation Intelligence
+        self.response_generator = ResponseGenerationEngine()
+        logger.info("🎯 Response Generation Intelligence initialized")
         
         # Initialize Dynamic Greeting Generator with optional groq client
         groq_client = None
@@ -2940,6 +2946,22 @@ class ChatBot:
         # Generate user ID from conversation or use provided session ID
         user_id = session_id if session_id else self._generate_user_id(conversation_history)
         
+        # --- SENTIMENT ANALYSIS & TONE DETECTION ---
+        sentiment_result = sentiment_analyzer.analyze_sentiment(query, {
+            'conversation_history': conversation_history,
+            'user_id': user_id,
+            'language': lang
+        })
+        
+        logger.info(f"🎭 Sentiment: {sentiment_result.sentiment.value} (confidence: {sentiment_result.confidence:.2f})")
+        if sentiment_result.emotion:
+            logger.info(f"😊 Emotion: {sentiment_result.emotion.value}")
+        logger.info(f"📈 Urgency: {sentiment_result.urgency_level}/5")
+        logger.info(f"🎯 Recommended tone: {sentiment_result.recommended_tone}")
+        
+        # Get tone adjustment suggestions for response personalization
+        tone_adjustments = sentiment_analyzer.get_tone_adjustment_suggestions(sentiment_result)
+        
         # --- CONVERSATION MEMORY: Get context for personalized responses ---
         memory_context = self.conversation_memory.generate_context_summary(user_id)
         should_use_context = self.conversation_memory.should_provide_context_response(user_id, "general")
@@ -2965,7 +2987,35 @@ class ChatBot:
             nlu_result = await self.nlu_engine.analyze_intent(query, conversation_history)
             logger.info(f"🧠 NLU Intent: {nlu_result.intent.value} (confidence: {nlu_result.confidence:.2f})")
             
-            # Try to handle with intelligent NLU-based routing
+            # --- NEW: Try Intelligent Response Generation First ---
+            extracted_entities = await self._extract_entities_with_nlu(query)
+            entity_list = extracted_entities.get('entities', [])
+            
+            # Convert entities to dict format for response generator
+            entities_for_generator = []
+            for entity in entity_list:
+                entities_for_generator.append({
+                    'entity_type': entity.entity_type,
+                    'value': entity.value,
+                    'confidence': entity.confidence
+                })
+            
+            # Try intelligent response generation
+            intelligent_response = self._generate_intelligent_response(
+                intent=nlu_result.intent.value,
+                user_id=user_id,
+                query=query,
+                extracted_entities=entities_for_generator,
+                conversation_history=conversation_history,
+                sentiment_result=sentiment_result
+            )
+            
+            if intelligent_response:
+                logger.info("🎯 Using intelligent response generation")
+                await self._store_conversation_turn(user_id, query, intelligent_response, lang, conversation_history)
+                return intelligent_response
+            
+            # Try to handle with intelligent NLU-based routing (fallback)
             nlu_response = await self._handle_intent_based_response(nlu_result, query, lang, conversation_history, user_timezone)
             if nlu_response:
                 return nlu_response
@@ -3446,6 +3496,85 @@ class ChatBot:
             
         except Exception as e:
             logger.warning(f"Failed to store conversation turn: {e}")
+    
+    def _generate_intelligent_response(self, 
+                                     intent: str, 
+                                     user_id: str, 
+                                     query: str,
+                                     extracted_entities: List[Dict] = None,
+                                     conversation_history: List[Dict] = None,
+                                     sentiment_result: SentimentResult = None) -> Optional[str]:
+        """Generate intelligent response using Response Generation Engine with sentiment awareness"""
+        try:
+            # Get user profile and conversation context
+            user_profile = self.conversation_memory.get_user_profile(user_id)
+            conversation_context = self.conversation_memory.get_conversation_context(user_id)
+            
+            # Apply sentiment-based tone adjustment if available
+            adjusted_tone = ResponseTone.FRIENDLY  # default
+            if sentiment_result:
+                if sentiment_result.emotion:
+                    # Map emotions to response tones
+                    emotion_to_tone = {
+                        "frustrated": ResponseTone.APOLOGETIC,
+                        "anxious": ResponseTone.REASSURING,
+                        "confused": ResponseTone.PATIENT,
+                        "disappointed": ResponseTone.EMPATHETIC,
+                        "excited": ResponseTone.ENTHUSIASTIC,
+                        "satisfied": ResponseTone.WARM,
+                        "curious": ResponseTone.INFORMATIVE,
+                        "happy": ResponseTone.FRIENDLY
+                    }
+                    adjusted_tone = emotion_to_tone.get(sentiment_result.emotion.value, ResponseTone.FRIENDLY)
+                
+                # Update user mood in conversation context based on sentiment
+                conversation_context.user_mood = sentiment_result.emotion.value if sentiment_result.emotion else "neutral"
+            
+            # Build response context with sentiment awareness
+            response_context = ResponseContext(
+                user_name=user_profile.name,
+                child_name=user_profile.child_name,
+                child_age=user_profile.child_age,
+                child_grade=user_profile.child_grade,
+                user_language=user_profile.preferred_language,
+                conversation_stage=conversation_context.conversation_stage,
+                previous_topics=user_profile.previous_topics,
+                user_mood=conversation_context.user_mood,
+                communication_style=user_profile.communication_style,
+                follow_up_needed=conversation_context.follow_up_needed,
+                is_returning_user=len(self.conversation_memory.get_conversation_history(user_id)) > 0,
+                preferred_tone=adjusted_tone  # Apply sentiment-based tone
+            )
+            
+            # Generate intelligent response with sentiment-aware tone
+            response_data = self.response_generator.generate_response(
+                intent=intent,
+                context=response_context,
+                extracted_entities=extracted_entities or [],
+                conversation_history=conversation_history or []
+            )
+            
+            # Build complete response with follow-up if appropriate
+            response_text = response_data["response"]
+            
+            # Apply urgency-based adjustments if high urgency detected
+            if sentiment_result and sentiment_result.urgency_level >= 4:
+                # Add priority handling for urgent requests
+                response_text = f"I understand this is urgent. {response_text}"
+                logger.info(f"🚨 High urgency detected ({sentiment_result.urgency_level}/5) - priority response")
+            
+            if response_data.get("follow_up") and response_context.follow_up_needed:
+                response_text += f"\n\n{response_data['follow_up']}"
+            
+            # Log sentiment-aware response generation
+            sentiment_info = f" (sentiment: {sentiment_result.sentiment.value})" if sentiment_result else ""
+            logger.info(f"🎯 Generated intelligent response using template '{response_data.get('template_id')}' with tone '{response_data.get('tone')}'{sentiment_info}")
+            
+            return response_text
+            
+        except Exception as e:
+            logger.warning(f"Intelligent response generation failed: {e}")
+            return None
 
 if __name__ == "__main__":
     import asyncio
