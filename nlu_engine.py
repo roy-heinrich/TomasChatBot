@@ -163,10 +163,14 @@ class NLUEngine:
         school_words = [
             "curriculum", "program", "subjects", "classes", "school hours",
             "looking for", "we need information", "help me understand",
-            "available programs", "what programs", "what classes", "school offers"
+            "available programs", "what programs", "what classes", "school offers",
+            # School name and identification queries
+            "school called", "school name", "name of school", "what is your school",
+            "whats your school", "what's your school", "school's name", "name of your school",
+            "what is the school", "what school", "which school"
         ]
         if any(word in user_lower for word in school_words):
-            return NLUResult(Intent.SCHOOL_INFO, 0.7, [])
+            return NLUResult(Intent.SCHOOL_INFO, 0.8, [])
         
         # Priority 10.5: Financial inquiries (moved up before facilities for "scholarship available")
         financial_patterns = [
@@ -235,7 +239,7 @@ class NLUEngine:
         if any(pattern in user_lower for pattern in appreciation_patterns):
             return NLUResult(Intent.APPRECIATION, 0.7, [])
         
-        # Priority 16: Confirmation responses - Enhanced for multilingual
+        # Priority 16: Confirmation responses - Enhanced for multilingual but more specific
         confirmation_patterns = [
             "yes", "yeah", "yep", "yup", "correct", "right", "exactly", "oo", 
             "tama", "yes please", "that's right", "ganun nga", "ok", "okay",
@@ -244,11 +248,11 @@ class NLUEngine:
             # Enhanced Aklanon patterns - be careful not to include location words
             "huo", "sakto man", "tama man", "oo man"
         ]
-        # Special handling: avoid classifying location words as confirmation
+        # Special handling: avoid classifying location words or questions as confirmation
         if any(pattern in user_lower for pattern in confirmation_patterns):
-            # But NOT if it contains location indicators
-            location_indicators = ["diin", "lokasyon", "paaralan", "eskwelahan", "sang"]
-            if not any(loc in user_lower for loc in location_indicators):
+            # But NOT if it contains question indicators
+            question_indicators = ["what", "whats", "what's", "called", "name", "school", "where", "diin", "lokasyon", "paaralan", "eskwelahan", "sang"]
+            if not any(exc in user_lower for exc in question_indicators):
                 return NLUResult(Intent.CONFIRMATION, 0.7, [])
         
         # Priority 17: Contact information - Enhanced for multilingual

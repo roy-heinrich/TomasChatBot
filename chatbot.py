@@ -902,7 +902,7 @@ class ChatBot:
             return self._handle_appreciation(lang)
             
         elif intent == Intent.CONFIRMATION:
-            return self._handle_confirmation(lang)
+            return self._handle_confirmation(lang, conversation_history)
             
         else:
             # For unknown or general intents, fall back to AI processing
@@ -1125,12 +1125,36 @@ class ChatBot:
         else:
             return "You're welcome! 😊 I'm happy to help. Is there anything else you need?"
     
-    def _handle_confirmation(self, lang: str) -> str:
-        """Handle yes/confirmation responses"""
-        if lang == "tl" or lang == "akl":
-            return "Salamat sa confirmation! 😊 Ano ang susunod na maitutulong ko sa inyo?"
+    def _handle_confirmation(self, lang: str, conversation_history: list = None) -> str:
+        """Handle yes/confirmation responses with context awareness"""
+        
+        # Check if there's recent context that would make "yes" meaningful
+        has_context = False
+        if conversation_history and len(conversation_history) > 0:
+            # Look at the last few messages to see if there was a question or proposal
+            recent_messages = conversation_history[-3:]  # Last 3 messages
+            for msg in recent_messages:
+                content = msg.get('content', '').lower()
+                # Check if the assistant asked a question or made a proposal
+                if any(indicator in content for indicator in [
+                    '?', 'would you like', 'do you want', 'are you', 'is that', 
+                    'correct', 'right', 'gusto mo', 'nais mo', 'tama ba'
+                ]):
+                    has_context = True
+                    break
+        
+        if has_context:
+            # There's context - respond as confirmation
+            if lang == "tl" or lang == "akl":
+                return "Salamat sa confirmation! Ano ang susunod na maitutulong ko sa inyo?"
+            else:
+                return "Thank you for confirming! What can I help you with next?"
         else:
-            return "Thank you for confirming! 😊 What can I help you with next?"
+            # No clear context - ask for clarification
+            if lang == "tl" or lang == "akl":
+                return "Oo? Ano pong ibig ninyong sabihin? Paano ko kayo matutulungan ngayon?"
+            else:
+                return "Yes? I'm not sure what you're referring to. How can I help you today?"
 
     def _get_personalized_name_response(self, user_name: str, child_name: str, lang: str) -> str:
         """Generate warm, personalized response when user asks about their own name."""
