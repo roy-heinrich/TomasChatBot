@@ -174,7 +174,7 @@ class ResponseGenerationEngine:
                 template_id="staff_inquiry_response",
                 response_type=ResponseType.INFORMATION,
                 intent_pattern="staff.*",
-                base_template="Here's information about our dedicated school staff{context_addition}:",
+                base_template="I'll get you information about our school staff{context_addition}. Let me check our records for you.",
                 personalization_slots=["context_addition"],
                 follow_up_questions=[
                     "Would you like to know about a specific teacher?",
@@ -182,10 +182,10 @@ class ResponseGenerationEngine:
                     "Do you have questions about our teaching approach?"
                 ],
                 tone_variants={
-                    ResponseTone.PROFESSIONAL: "I can provide you with information about our qualified educational staff{context_addition}.",
-                    ResponseTone.ENTHUSIASTIC: "We have an amazing team of educators{context_addition}! Let me tell you about them!"
+                    ResponseTone.PROFESSIONAL: "I'll provide you with information about our qualified educational staff{context_addition}.",
+                    ResponseTone.ENTHUSIASTIC: "Let me get you information about our amazing team of educators{context_addition}!"
                 },
-                conditions={}
+                conditions={"requires_database_lookup": True}  # Flag to indicate database lookup needed
             ),
             
             ResponseTemplate(

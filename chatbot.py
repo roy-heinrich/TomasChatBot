@@ -2496,6 +2496,30 @@ class ChatBot:
             if not search_words:
                 return ""
             
+            # 🎯 STAFF QUERY PRIORITY: Check if this is a staff-related query
+            staff_keywords = ["head", "teacher", "principal", "guidance", "nurse", "secretary", "director", "admin"]
+            is_staff_query = any(word in staff_keywords for word in search_words)
+            
+            if is_staff_query:
+                logger.info("🎯 Detected staff query - prioritizing exact staff matches")
+                
+                # For staff queries, prioritize exact matches in keywords field first
+                staff_terms = ["head teacher", "principal", "guidance", "nurse", "secretary"]
+                for staff_term in staff_terms:
+                    try:
+                        result = self.supabase.table("chatbot_prompts") \
+                            .select("keywords, response") \
+                            .ilike("keywords", f"%{staff_term}%") \
+                            .execute()
+                        
+                        if result.data:
+                            logger.info(f"✅ Found staff-specific match for '{staff_term}'")
+                            best_match = result.data[0]
+                            formatted_result = f"Q: {best_match['keywords']}\nA: {best_match['response']}"
+                            return formatted_result
+                    except Exception as e:
+                        logger.warning(f"Staff search failed for '{staff_term}': {e}")
+            
             # Try searching individual meaningful words first (simpler approach)
             for word in search_words:
                 logger.info(f"🔍 Full-text search for: '{word}'")
@@ -2506,6 +2530,21 @@ class ChatBot:
                         .select("keywords, response") \
                         .ilike("keywords", f"%{word}%") \
                         .execute()
+                    
+                    # For staff queries, prioritize exact staff information over general school info
+                    if is_staff_query and result.data:
+                        # Filter out general school information for staff queries
+                        filtered_results = []
+                        for item in result.data:
+                            keywords_lower = item['keywords'].lower()
+                            # Skip general school descriptions when looking for staff
+                            if not any(general in keywords_lower for general in ["what is tomas", "school is", "elementary school"]):
+                                filtered_results.append(item)
+                        
+                        if filtered_results:
+                            best_match = filtered_results[0]
+                            formatted_result = f"Q: {best_match['keywords']}\nA: {best_match['response']}"
+                            return formatted_result
                     
                     # If no results in keywords, try response field
                     if not result.data:
@@ -3203,19 +3242,43 @@ class ChatBot:
         
         # Check original query
         if any(pattern in lowered for pattern in teacher_patterns):
-            logger.info("👩‍🏫 Teacher query detected - using staff list to prevent hallucination")
-            response = self._get_known_staff_list(lang)
-            # 🛡️ Apply validation even to direct responses
-            return self._validate_response_against_facts(response, query, lang)
+            logger.info("👩‍🏫 Teacher query detected - searching database for staff information")
+            # Try database search for staff information first
+            staff_result = await self.fetch_prompts_from_supabase("head teacher")
+            if not staff_result:
+                staff_result = await self.fetch_prompts_from_supabase("teacher")
+            if not staff_result:
+                staff_result = await self.fetch_prompts_from_supabase("staff")
+            
+            if staff_result:
+                logger.info("✅ Found staff information in database")
+                return self._validate_response_against_facts(staff_result, query, lang)
+            else:
+                # Fallback to hardcoded list if database has no results
+                logger.info("⚠️ No staff info in database - using fallback staff list")
+                response = self._get_known_staff_list(lang)
+                return self._validate_response_against_facts(response, query, lang)
         
         # For Aklanon queries, also check the translated version
         if lang == "akl":
             translated_query = self.translate_aklanon_query_keywords(query)
             if any(pattern in translated_query.lower() for pattern in teacher_patterns):
-                logger.info("👩‍🏫 Aklanon teacher query detected via translation - using staff list")
-                response = self._get_known_staff_list(lang)
-                # 🛡️ Apply validation even to direct responses
-                return self._validate_response_against_facts(response, query, lang)
+                logger.info("👩‍🏫 Aklanon teacher query detected via translation - searching database")
+                # Try database search for Aklanon staff queries too
+                staff_result = await self.fetch_prompts_from_supabase("head teacher")
+                if not staff_result:
+                    staff_result = await self.fetch_prompts_from_supabase("teacher")
+                if not staff_result:
+                    staff_result = await self.fetch_prompts_from_supabase("staff")
+                
+                if staff_result:
+                    logger.info("✅ Found staff information in database for Aklanon query")
+                    return self._validate_response_against_facts(staff_result, query, lang)
+                else:
+                    # Fallback to hardcoded list if database has no results
+                    logger.info("⚠️ No staff info in database for Aklanon - using fallback staff list")
+                    response = self._get_known_staff_list(lang)
+                    return self._validate_response_against_facts(response, query, lang)
 
         # --- Check for personalized queries BEFORE memory detection ---
         personalized_patterns = [
@@ -3506,6 +3569,11 @@ class ChatBot:
                                      sentiment_result: SentimentResult = None) -> Optional[str]:
         """Generate intelligent response using Response Generation Engine with sentiment awareness"""
         try:
+            # Special handling for intents that require database lookup
+            if intent == "staff_inquiry":
+                logger.info("🗄️ Staff inquiry detected - using database lookup instead of template")
+                return None  # Let it fall through to database search
+            
             # Get user profile and conversation context
             user_profile = self.conversation_memory.get_user_profile(user_id)
             conversation_context = self.conversation_memory.get_conversation_context(user_id)

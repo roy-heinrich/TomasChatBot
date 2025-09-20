@@ -66,6 +66,7 @@ class AdvancedEntityExtractor:
         entities.extend(self._extract_contact_info(text, text_lower))
         entities.extend(self._extract_school_terms(text, text_lower))
         entities.extend(self._extract_ages(text, text_lower))
+        entities.extend(self._extract_staff_roles(text, text_lower))
         
         # Sort by confidence and remove overlaps
         entities = self._resolve_entity_conflicts(entities)
@@ -344,6 +345,76 @@ class AdvancedEntityExtractor:
                         start_pos=match.start(),
                         end_pos=match.end(),
                         context=text[max(0, match.start()-15):match.end()+15]
+                    )
+                    entities.append(entity)
+        
+        return entities
+    
+    def _extract_staff_roles(self, text: str, text_lower: str) -> List[ExtractedEntity]:
+        """Extract staff roles and administrative positions"""
+        entities = []
+        
+        # Staff role patterns with English and Filipino terms
+        staff_role_patterns = {
+            "principal": {
+                "patterns": [
+                    r"(?:school\s+)?(?:head|principal|director)",
+                    r"(?:head\s+)?(?:principal|headmaster|headmistress)",
+                    r"(?:school\s+)?(?:administrator|administration)",
+                    r"(?:punong\s+)?(?:guro|teacher)",
+                    r"(?:head\s+)?(?:ng\s+paaralan|sa\s+paaralan)",
+                    r"(?:principal|direktor|administrador)",
+                    r"in\s+charge(?:\s+of)?",
+                    r"(?:who\s+)?(?:runs|manages)\s+(?:the\s+)?school"
+                ],
+                "confidence": 0.95
+            },
+            "teacher": {
+                "patterns": [
+                    r"(?:class\s+)?(?:teacher|instructor|educator)",
+                    r"(?:guro|maestro|maestra)",
+                    r"(?:grade\s+\d+\s+)?teacher",
+                    r"(?:subject\s+)?teacher"
+                ],
+                "confidence": 0.90
+            },
+            "guidance": {
+                "patterns": [
+                    r"(?:guidance\s+)?(?:counselor|counsellor)",
+                    r"guidance\s+(?:office|teacher)",
+                    r"school\s+psychologist"
+                ],
+                "confidence": 0.85
+            },
+            "nurse": {
+                "patterns": [
+                    r"(?:school\s+)?nurse",
+                    r"clinic\s+(?:staff|nurse)",
+                    r"health\s+(?:officer|personnel)"
+                ],
+                "confidence": 0.85
+            },
+            "secretary": {
+                "patterns": [
+                    r"(?:school\s+)?(?:secretary|clerk)",
+                    r"(?:administrative\s+)?(?:assistant|staff)",
+                    r"office\s+(?:staff|personnel)"
+                ],
+                "confidence": 0.80
+            }
+        }
+        
+        for role_type, role_info in staff_role_patterns.items():
+            for pattern in role_info["patterns"]:
+                matches = re.finditer(pattern, text_lower)
+                for match in matches:
+                    entity = ExtractedEntity(
+                        entity_type="staff_role",
+                        value=role_type,
+                        confidence=role_info["confidence"],
+                        start_pos=match.start(),
+                        end_pos=match.end(),
+                        context=text[max(0, match.start()-10):match.end()+10]
                     )
                     entities.append(entity)
         

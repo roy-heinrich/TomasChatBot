@@ -197,7 +197,7 @@ class NLUEngine:
             return NLUResult(Intent.SCHEDULE_INQUIRY, 0.7, [])
         
         # Priority 8: Staff inquiries
-        staff_words = ["teacher", "teachers", "staff", "principal", "head teacher", "guro", "maestro", "faculty"]
+        staff_words = ["teacher", "teachers", "staff", "principal", "head teacher", "school head", "head", "director", "administrator", "guro", "maestro", "faculty", "guidance", "counselor"]
         if any(word in user_lower for word in staff_words):
             return NLUResult(Intent.STAFF_INQUIRY, 0.7, [])
         
@@ -471,16 +471,26 @@ class NLUEngine:
         """Calculate confidence score for staff inquiry intent"""
         confidence = 0.0
         
-        # Staff roles and titles
-        staff_keywords = ["teacher", "principal", "staff", "guro", "maestro", "principal", "head teacher"]
+        # Staff roles and titles - expanded for better detection
+        staff_keywords = [
+            "teacher", "principal", "staff", "guro", "maestro", "head teacher", 
+            "school head", "head", "director", "administrator", "guidance", 
+            "counselor", "faculty", "nurse", "secretary"
+        ]
         for keyword in staff_keywords:
             if keyword in user_lower:
                 confidence += 0.4
         
         # Question words about people
-        people_questions = ["who", "sino", "sin-o"]
+        people_questions = ["who", "sino", "sin-o", "who is", "sino ang", "sin-o ang"]
         for question in people_questions:
             if question in user_lower:
+                confidence += 0.3
+        
+        # Administrative inquiry patterns
+        admin_patterns = ["head is", "head of", "in charge", "administrator", "director"]
+        for pattern in admin_patterns:
+            if pattern in user_lower:
                 confidence += 0.3
         
         # Known staff names (partial matching)
