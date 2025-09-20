@@ -1,0 +1,471 @@
+"""
+Advanced Entity Extraction System for TOMAS Chatbot
+==================================================
+
+This module provides sophisticated NLP-based entity extraction capabilities
+to identify and extract meaningful information from user queries including:
+- Person names (parents, children, staff)
+- Grade levels and academic terms
+- Subjects and curriculum topics  
+- Dates and time expressions
+- School-specific terminology
+- Contact information
+"""
+
+import re
+import logging
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import calendar
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class ExtractedEntity:
+    """Represents an entity extracted from user input"""
+    entity_type: str  # person_name, grade_level, subject, date, etc.
+    value: str        # The actual extracted value
+    confidence: float # Confidence score 0.0-1.0
+    start_pos: int = 0
+    end_pos: int = 0
+    context: str = ""  # Surrounding context for disambiguation
+
+class AdvancedEntityExtractor:
+    """
+    Advanced entity extraction using NLP techniques and domain-specific patterns
+    """
+    
+    def __init__(self):
+        self.grade_patterns = self._build_grade_patterns()
+        self.subject_patterns = self._build_subject_patterns()
+        self.name_patterns = self._build_name_patterns()
+        self.date_patterns = self._build_date_patterns()
+        self.contact_patterns = self._build_contact_patterns()
+        self.school_terms = self._build_school_terminology()
+        
+    def extract_entities(self, text: str, intent_context: str = None) -> List[ExtractedEntity]:
+        """
+        Extract all entities from the given text
+        
+        Args:
+            text: Input text to analyze
+            intent_context: The detected intent to help with disambiguation
+            
+        Returns:
+            List of extracted entities with confidence scores
+        """
+        entities = []
+        text_lower = text.lower()
+        
+        # Extract different entity types
+        entities.extend(self._extract_person_names(text, text_lower))
+        entities.extend(self._extract_grade_levels(text, text_lower))
+        entities.extend(self._extract_subjects(text, text_lower))
+        entities.extend(self._extract_dates(text, text_lower))
+        entities.extend(self._extract_contact_info(text, text_lower))
+        entities.extend(self._extract_school_terms(text, text_lower))
+        entities.extend(self._extract_ages(text, text_lower))
+        
+        # Sort by confidence and remove overlaps
+        entities = self._resolve_entity_conflicts(entities)
+        
+        logger.info(f"🔍 Extracted {len(entities)} entities from: '{text[:50]}...'")
+        for entity in entities:
+            logger.info(f"   📍 {entity.entity_type}: '{entity.value}' (confidence: {entity.confidence:.2f})")
+        
+        return entities
+    
+    def _build_grade_patterns(self) -> Dict[str, List[str]]:
+        """Build patterns for grade level detection"""
+        return {
+            "numeric": [
+                r"grade\s*(\d+)", r"(\d+)(?:st|nd|rd|th)?\s*grade",
+                r"level\s*(\d+)", r"year\s*(\d+)"
+            ],
+            "written": [
+                r"(kindergarten|kinder|prep)", r"(first|second|third|fourth|fifth|sixth)\s*grade",
+                r"grade\s*(one|two|three|four|five|six|seven|eight|nine|ten)"
+            ],
+            "filipino": [
+                r"(unang|ikalawang|ikatlong|ikaapat|ikalimang|ikaanim)\s*baitang",
+                r"baitang\s*(isa|dalawa|tatlo|apat|lima|anim)"
+            ]
+        }
+    
+    def _build_subject_patterns(self) -> List[str]:
+        """Build patterns for subject/curriculum detection"""
+        return [
+            # Core subjects
+            "mathematics", "math", "matematika", "science", "agham", "english", "ingles",
+            "filipino", "reading", "writing", "social studies", "araling panlipunan",
+            "physical education", "pe", "music", "art", "computer", "technology",
+            
+            # Elementary specific
+            "mother tongue", "mother tongue based multilingual education", "mtb-mle",
+            "values education", "edukasyong pagpapakatao", "health", "nutrition",
+            
+            # Skills and activities
+            "spelling", "composition", "grammar", "arithmetic", "geometry",
+            "science experiments", "sports", "drawing", "singing"
+        ]
+    
+    def _build_name_patterns(self) -> List[str]:
+        """Build patterns for name extraction"""
+        return [
+            # English patterns - more specific to avoid false positives
+            r"my name is ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+and|\s*,|\s*$|\s+who|\s+but)",
+            r"i['\s]*m ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+and|\s*,|\s*$|\s+who|\s+but)",
+            r"call me ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+and|\s*,|\s*$)",
+            r"this is ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+and|\s*,|\s*$)",
+            
+            # Child/family patterns - more specific
+            r"my (?:son|daughter|child) (?:is\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+who|\s+and|\s*,|\s*$)",
+            r"(?:son|daughter|child) named ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+who|\s+and|\s*,|\s*$)",
+            r"her name is ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+and|\s*,|\s*$)",
+            r"his name is ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+and|\s*,|\s*$)",
+            r"daughter ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+who|\s+and|\s*,|\s*$)",
+            
+            # Filipino patterns
+            r"ako si ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+at|\s*,|\s*$)",
+            r"anak ko si ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+at|\s*,|\s*$)",
+            r"pangalan (?:niya|niya) ay ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+at|\s*,|\s*$)"
+        ]
+    
+    def _build_date_patterns(self) -> List[str]:
+        """Build patterns for date/time extraction"""
+        return [
+            # Enrollment dates
+            r"(\d{1,2}\/\d{1,2}\/\d{4})", r"(\d{1,2}-\d{1,2}-\d{4})",
+            r"(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})",
+            r"(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december)",
+            
+            # Filipino months
+            r"(enero|pebrero|marso|abril|mayo|hunyo|hulyo|agosto|setyembre|oktubre|nobyembre|disyembre)\s+(\d{1,2})",
+            
+            # Relative dates
+            r"(next week|next month|tomorrow|today|yesterday)",
+            r"(sa susunod na linggo|bukas|ngayon|kahapon)"
+        ]
+    
+    def _build_contact_patterns(self) -> List[str]:
+        """Build patterns for contact information"""
+        return [
+            # Phone numbers
+            r"(\+63\d{10})", r"(09\d{9})", r"(\d{3}-\d{3}-\d{4})",
+            r"(\d{4}-\d{3}-\d{4})", r"(\(\d{3}\)\s*\d{3}-\d{4})",
+            
+            # Email addresses
+            r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})"
+        ]
+    
+    def _build_school_terminology(self) -> List[str]:
+        """Build school-specific terminology patterns"""
+        return [
+            # School facilities
+            "library", "cafeteria", "gym", "gymnasium", "playground", "computer lab",
+            "science lab", "clinic", "principal's office", "teacher's lounge",
+            
+            # School activities  
+            "enrollment", "registration", "orientation", "graduation", "field trip",
+            "parent-teacher conference", "school fair", "sports day",
+            
+            # Academic terms
+            "semester", "quarter", "grading period", "report card", "transcript",
+            "curriculum", "lesson plan", "homework", "assignment", "project"
+        ]
+    
+    def _extract_person_names(self, text: str, text_lower: str) -> List[ExtractedEntity]:
+        """Extract person names with context awareness"""
+        entities = []
+        
+        for pattern in self.name_patterns:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for match in matches:
+                name = match.group(1).strip()
+                
+                # Validate name (exclude common false positives)
+                if self._is_valid_name(name):
+                    # Determine name type based on context
+                    name_type = self._classify_name_type(text_lower, name.lower())
+                    
+                    entity = ExtractedEntity(
+                        entity_type=name_type,
+                        value=name.title(),
+                        confidence=self._calculate_name_confidence(name, text_lower),
+                        start_pos=match.start(1),
+                        end_pos=match.end(1),
+                        context=text[max(0, match.start()-20):match.end()+20]
+                    )
+                    entities.append(entity)
+        
+        return entities
+    
+    def _extract_grade_levels(self, text: str, text_lower: str) -> List[ExtractedEntity]:
+        """Extract grade level information"""
+        entities = []
+        
+        # Numeric grades
+        for pattern in self.grade_patterns["numeric"]:
+            matches = re.finditer(pattern, text_lower)
+            for match in matches:
+                grade_num = match.group(1)
+                if grade_num.isdigit() and 1 <= int(grade_num) <= 12:
+                    entity = ExtractedEntity(
+                        entity_type="grade_level",
+                        value=f"Grade {grade_num}",
+                        confidence=0.9,
+                        start_pos=match.start(),
+                        end_pos=match.end(),
+                        context=text[max(0, match.start()-15):match.end()+15]
+                    )
+                    entities.append(entity)
+        
+        # Written grades (kindergarten, first grade, etc.)
+        for pattern in self.grade_patterns["written"]:
+            matches = re.finditer(pattern, text_lower)
+            for match in matches:
+                grade_text = match.group(1)
+                normalized_grade = self._normalize_grade_level(grade_text)
+                if normalized_grade:
+                    entity = ExtractedEntity(
+                        entity_type="grade_level",
+                        value=normalized_grade,
+                        confidence=0.85,
+                        start_pos=match.start(),
+                        end_pos=match.end(),
+                        context=text[max(0, match.start()-15):match.end()+15]
+                    )
+                    entities.append(entity)
+        
+        return entities
+    
+    def _extract_subjects(self, text: str, text_lower: str) -> List[ExtractedEntity]:
+        """Extract academic subjects"""
+        entities = []
+        
+        for subject in self.subject_patterns:
+            if subject in text_lower:
+                start_pos = text_lower.find(subject)
+                entity = ExtractedEntity(
+                    entity_type="academic_subject",
+                    value=subject.title(),
+                    confidence=0.8,
+                    start_pos=start_pos,
+                    end_pos=start_pos + len(subject),
+                    context=text[max(0, start_pos-15):start_pos+len(subject)+15]
+                )
+                entities.append(entity)
+        
+        return entities
+    
+    def _extract_dates(self, text: str, text_lower: str) -> List[ExtractedEntity]:
+        """Extract date and time information"""
+        entities = []
+        
+        for pattern in self.date_patterns:
+            matches = re.finditer(pattern, text_lower)
+            for match in matches:
+                date_text = match.group(0)
+                parsed_date = self._parse_date(date_text)
+                
+                if parsed_date:
+                    entity = ExtractedEntity(
+                        entity_type="date",
+                        value=parsed_date,
+                        confidence=0.85,
+                        start_pos=match.start(),
+                        end_pos=match.end(),
+                        context=text[max(0, match.start()-15):match.end()+15]
+                    )
+                    entities.append(entity)
+        
+        return entities
+    
+    def _extract_contact_info(self, text: str, text_lower: str) -> List[ExtractedEntity]:
+        """Extract contact information"""
+        entities = []
+        
+        for pattern in self.contact_patterns:
+            matches = re.finditer(pattern, text)
+            for match in matches:
+                contact_value = match.group(1)
+                contact_type = "phone_number" if any(c.isdigit() for c in contact_value) else "email"
+                
+                entity = ExtractedEntity(
+                    entity_type=contact_type,
+                    value=contact_value,
+                    confidence=0.95,
+                    start_pos=match.start(1),
+                    end_pos=match.end(1),
+                    context=text[max(0, match.start()-10):match.end()+10]
+                )
+                entities.append(entity)
+        
+        return entities
+    
+    def _extract_school_terms(self, text: str, text_lower: str) -> List[ExtractedEntity]:
+        """Extract school-specific terminology"""
+        entities = []
+        
+        for term in self.school_terms:
+            if term in text_lower:
+                start_pos = text_lower.find(term)
+                entity = ExtractedEntity(
+                    entity_type="school_term",
+                    value=term.title(),
+                    confidence=0.7,
+                    start_pos=start_pos,
+                    end_pos=start_pos + len(term),
+                    context=text[max(0, start_pos-15):start_pos+len(term)+15]
+                )
+                entities.append(entity)
+        
+        return entities
+    
+    def _extract_ages(self, text: str, text_lower: str) -> List[ExtractedEntity]:
+        """Extract age information"""
+        entities = []
+        
+        age_patterns = [
+            r"(\d+)\s*years?\s*old", r"age\s*(\d+)", r"(\d+)\s*(?:y/o|yo)",
+            r"(\d+)\s*taon", r"edad\s*(\d+)"
+        ]
+        
+        for pattern in age_patterns:
+            matches = re.finditer(pattern, text_lower)
+            for match in matches:
+                age = match.group(1)
+                if age.isdigit() and 3 <= int(age) <= 18:  # Reasonable age range for students
+                    entity = ExtractedEntity(
+                        entity_type="age",
+                        value=f"{age} years old",
+                        confidence=0.9,
+                        start_pos=match.start(),
+                        end_pos=match.end(),
+                        context=text[max(0, match.start()-15):match.end()+15]
+                    )
+                    entities.append(entity)
+        
+        return entities
+    
+    def _is_valid_name(self, name: str) -> bool:
+        """Validate if extracted text is likely a real name"""
+        if not name or len(name) < 2:
+            return False
+        
+        # Exclude common false positives
+        false_positives = [
+            "super", "excited", "back", "again", "really", "very", "quite",
+            "the", "and", "or", "but", "for", "with", "from", "about",
+            "good", "great", "nice", "fine", "okay", "yes", "no",
+            "interested", "in", "who", "what", "when", "where", "how",
+            "this", "that", "these", "those", "all", "some", "many"
+        ]
+        
+        # Check for name-like characteristics
+        words = name.split()
+        for word in words:
+            if word.lower() in false_positives:
+                return False
+            # Names should be mostly alphabetic
+            if not word.replace("'", "").replace("-", "").isalpha():
+                return False
+            # Should start with capital letter
+            if not word[0].isupper():
+                return False
+        
+        return True
+    
+    def _classify_name_type(self, text_lower: str, name_lower: str) -> str:
+        """Classify the type of name based on context"""
+        
+        # Check for child/family context
+        child_indicators = ["son", "daughter", "child", "kid", "anak"]
+        if any(indicator in text_lower for indicator in child_indicators):
+            return "child_name"
+        
+        # Check for staff context
+        staff_indicators = ["teacher", "principal", "staff", "guro", "maestro"]
+        if any(indicator in text_lower for indicator in staff_indicators):
+            return "staff_name"
+        
+        # Default to person name
+        return "person_name"
+    
+    def _calculate_name_confidence(self, name: str, text_lower: str) -> float:
+        """Calculate confidence score for name extraction"""
+        confidence = 0.8  # Base confidence
+        
+        # Boost confidence for proper introductions
+        if "my name is" in text_lower or "ako si" in text_lower:
+            confidence += 0.15
+        
+        # Boost for family context
+        if any(word in text_lower for word in ["son", "daughter", "child", "anak"]):
+            confidence += 0.1
+        
+        # Reduce confidence for very short names
+        if len(name) <= 3:
+            confidence -= 0.2
+        
+        return min(confidence, 0.95)
+    
+    def _normalize_grade_level(self, grade_text: str) -> Optional[str]:
+        """Normalize grade level text to standard format"""
+        grade_mapping = {
+            "kindergarten": "Kindergarten", "kinder": "Kindergarten", "prep": "Kindergarten",
+            "first": "Grade 1", "second": "Grade 2", "third": "Grade 3",
+            "fourth": "Grade 4", "fifth": "Grade 5", "sixth": "Grade 6",
+            "one": "Grade 1", "two": "Grade 2", "three": "Grade 3",
+            "four": "Grade 4", "five": "Grade 5", "six": "Grade 6"
+        }
+        
+        return grade_mapping.get(grade_text.lower())
+    
+    def _parse_date(self, date_text: str) -> Optional[str]:
+        """Parse and normalize date text"""
+        # This is a simplified implementation
+        # In production, you'd use more sophisticated date parsing
+        
+        # Handle relative dates
+        relative_dates = {
+            "today": datetime.now().strftime("%Y-%m-%d"),
+            "tomorrow": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),
+            "yesterday": (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"),
+            "ngayon": datetime.now().strftime("%Y-%m-%d"),
+            "bukas": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        }
+        
+        if date_text in relative_dates:
+            return relative_dates[date_text]
+        
+        # Return original text for now (could be enhanced with dateutil)
+        return date_text
+    
+    def _resolve_entity_conflicts(self, entities: List[ExtractedEntity]) -> List[ExtractedEntity]:
+        """Resolve overlapping entities by keeping highest confidence"""
+        if not entities:
+            return entities
+        
+        # Sort by start position
+        entities.sort(key=lambda e: e.start_pos)
+        
+        resolved = []
+        for entity in entities:
+            # Check for overlaps with already resolved entities
+            overlaps = False
+            for resolved_entity in resolved:
+                if (entity.start_pos < resolved_entity.end_pos and 
+                    entity.end_pos > resolved_entity.start_pos):
+                    # Overlap detected - keep the one with higher confidence
+                    if entity.confidence > resolved_entity.confidence:
+                        resolved.remove(resolved_entity)
+                        resolved.append(entity)
+                    overlaps = True
+                    break
+            
+            if not overlaps:
+                resolved.append(entity)
+        
+        return sorted(resolved, key=lambda e: e.confidence, reverse=True)

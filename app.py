@@ -68,6 +68,7 @@ class ChatRequest(BaseModel):
     query: str
     conversation_history: list = []
     user_timezone: str = None  # Optional timezone parameter
+    session_id: str = None  # Optional session ID for user tracking
 
 # -----------------------
 # Supabase fetch helper
@@ -116,6 +117,8 @@ async def chat_endpoint(data: ChatRequest):
         logger.info(f"📚 Conversation history received: {len(data.conversation_history)} messages")
         if data.user_timezone:
             logger.info(f"🌍 User timezone: {data.user_timezone}")
+        if data.session_id:
+            logger.info(f"👤 Session ID: {data.session_id}")
         for i, msg in enumerate(data.conversation_history[-3:]):  # Log last 3 messages
             logger.info(f"   Message {i+1}: {msg.get('role', 'unknown')} -> '{msg.get('content', '')[:30]}...'")
         
@@ -129,16 +132,37 @@ async def chat_endpoint(data: ChatRequest):
         supabase_context = await fetch_supabase_context()
         logger.info("📊 Context fetched from Supabase")
 
-        # Ask ChatBot with the context, conversation history, and timezone
+        # Ask ChatBot with the context, conversation history, timezone, and session ID
         answer = await chatbot.answer(
             query, 
             context=supabase_context, 
             conversation_history=data.conversation_history,
-            user_timezone=data.user_timezone
+            user_timezone=data.user_timezone,
+            session_id=data.session_id
         )
+        
+        # 🆕 NEW: Extract entities for frontend feedback
+        try:
+            extracted_entities = await chatbot._extract_entities_with_nlu(query)
+            entities_list = extracted_entities.get('entities', [])
+            # Convert to simple format for frontend
+            entities_for_frontend = []
+            for entity in entities_list:
+                entities_for_frontend.append({
+                    'entity_type': entity.entity_type,
+                    'value': entity.value,
+                    'confidence': entity.confidence
+                })
+        except Exception as e:
+            logger.warning(f"Entity extraction for frontend failed: {e}")
+            entities_for_frontend = []
+        
         logger.info(f"✅ Generated response: {answer[:50]}...")
         
-        return {"response": answer}
+        return {
+            "response": answer,
+            "entities": entities_for_frontend  # 🆕 Include extracted entities
+        }
     
     except Exception as e:
         logger.error(f"❌ Error in chat endpoint: {str(e)}")

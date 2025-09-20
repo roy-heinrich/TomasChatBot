@@ -8,8 +8,15 @@ logger = logging.getLogger(__name__)
 
 class Intent(Enum):
     """Defined intents for the school chatbot"""
+    # Enhanced greeting intents for better personalization
     GREETING_WITH_NAME = "greeting_with_name"
-    GREETING_SIMPLE = "greeting_simple" 
+    GREETING_SIMPLE = "greeting_simple"
+    GREETING_RETURNING_USER = "greeting_returning_user"  # New: returning user greeting
+    GREETING_EXCITED = "greeting_excited"  # New: enthusiastic greeting
+    GREETING_FORMAL = "greeting_formal"  # New: formal/polite greeting
+    GREETING_CASUAL = "greeting_casual"  # New: casual greeting
+    
+    # Existing intents
     ENROLLMENT_INQUIRY = "enrollment_inquiry"
     SCHOOL_INFO = "school_info"
     STAFF_INQUIRY = "staff_inquiry"
@@ -75,21 +82,21 @@ class NLUEngine:
         return rule_result
     
     def _rule_based_classification(self, user_input: str) -> NLUResult:
-        """Enhanced rule-based classification with better multilingual support"""
+        """Enhanced rule-based classification with better multilingual support and confidence scoring"""
         user_lower = user_input.lower().strip()
         
         # PHASE 1: Exact phrase matching (highest priority)
         # This catches complex multilingual phrases before word-by-word analysis
         exact_phrases = {
             # Tagalog location phrases
-            "saan ang lokasyon ng paaralan": (Intent.LOCATION_INQUIRY, 0.9),
+            "saan ang lokasyon ng paaralan": (Intent.LOCATION_INQUIRY, 0.95),
             "saan ang paaralan": (Intent.LOCATION_INQUIRY, 0.9),
-            "ano ang contact number ninyo": (Intent.CONTACT_INFO, 0.9),
+            "ano ang contact number ninyo": (Intent.CONTACT_INFO, 0.95),
             "sabihin mo sa akin ang tungkol sa school programs": (Intent.SCHOOL_INFO, 0.9),
             "sabihin sa akin tungkol sa": (Intent.GENERAL_INFO, 0.8),
             
             # Aklanon location phrases  
-            "diin ang lokasyon sang paaralan": (Intent.LOCATION_INQUIRY, 0.9),
+            "diin ang lokasyon sang paaralan": (Intent.LOCATION_INQUIRY, 0.95),
             "diin ang paaralan": (Intent.LOCATION_INQUIRY, 0.9),
             "diin nga lokasyon": (Intent.LOCATION_INQUIRY, 0.9),
             "ano nga contact number": (Intent.CONTACT_INFO, 0.9),
@@ -100,7 +107,33 @@ class NLUEngine:
                 logger.info(f"🎯 Exact phrase match: '{phrase}' → {intent.value}")
                 return NLUResult(intent, confidence, [])
         
-        # PHASE 2: Pattern-based matching with context awareness
+        # PHASE 2: Enhanced pattern-based matching with weighted confidence scoring
+        confidence_score = 0.0
+        detected_intent = Intent.UNKNOWN
+        evidence_factors = []
+        
+        # Enhanced greeting detection with confidence scoring
+        greeting_indicators = self._analyze_greeting_patterns(user_lower)
+        if greeting_indicators['intent'] != Intent.UNKNOWN:
+            return NLUResult(greeting_indicators['intent'], greeting_indicators['confidence'], [])
+        
+        # Enhanced enrollment detection
+        enrollment_score = self._calculate_enrollment_confidence(user_lower)
+        if enrollment_score > 0.6:
+            return NLUResult(Intent.ENROLLMENT_INQUIRY, enrollment_score, [])
+        
+        # Enhanced location detection
+        location_score = self._calculate_location_confidence(user_lower)
+        if location_score > 0.6:
+            return NLUResult(Intent.LOCATION_INQUIRY, location_score, [])
+        
+        # Enhanced staff inquiry detection
+        staff_score = self._calculate_staff_confidence(user_lower)
+        if staff_score > 0.6:
+            return NLUResult(Intent.STAFF_INQUIRY, staff_score, [])
+        
+        # Continue with existing priority-based classification for other intents
+        return self._legacy_classification_fallback(user_lower)
         
         # Priority 1: Denials and clarifications (check first to avoid false positives)
         if any(phrase in user_lower for phrase in ["not asking", "i am not", "i'm not", "hindi ako", "wala ako"]):
@@ -109,16 +142,25 @@ class NLUEngine:
         if any(phrase in user_lower for phrase in ["i meant", "what i mean", "clarify", "correction"]):
             return NLUResult(Intent.CLARIFICATION, 0.8, [])
         
-        # Priority 2: Greetings with names
-        if any(greet in user_lower for greet in ["hi", "hello", "hey", "kamusta", "kumusta", "maayong"]):
+        # Priority 2: Enhanced greeting classification with mood/style detection
+        greeting_keywords = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", "good afternoon", "good evening", "magandang umaga", "magandang hapon", "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", "evening", "greetings", "hiya", "wassup", "howdy", "sup", "yo"]
+        
+        if any(greet in user_lower for greet in greeting_keywords):
+            # Check for name introduction first
             if "my name is" in user_lower or "i am" in user_lower or "i'm" in user_lower or "im " in user_lower or "ako si" in user_lower:
                 return NLUResult(Intent.GREETING_WITH_NAME, 0.9, [])
+            
+            # Detect greeting style/mood for dynamic personalization
+            elif any(word in user_lower for word in ["awesome", "great", "fantastic", "wonderful", "amazing", "excited", "!!!", "super", "really good"]):
+                return NLUResult(Intent.GREETING_EXCITED, 0.9, [])
+            elif any(word in user_lower for word in ["sir", "ma'am", "please", "good day", "greetings", "salutations", "formal"]):
+                return NLUResult(Intent.GREETING_FORMAL, 0.9, [])
+            elif any(word in user_lower for word in ["sup", "yo", "hiya", "wassup", "howdy", "hey there", "casual"]):
+                return NLUResult(Intent.GREETING_CASUAL, 0.9, [])
+            elif any(word in user_lower for word in ["back", "again", "return", "here again", "returning"]):
+                return NLUResult(Intent.GREETING_RETURNING_USER, 0.9, [])
             else:
                 return NLUResult(Intent.GREETING_SIMPLE, 0.8, [])
-        
-        # Priority 3: Time-based greetings
-        if any(greet in user_lower for greet in ["good morning", "good afternoon", "good evening", "magandang umaga", "magandang hapon", "maayong aga", "maayong hapon", "maayong gab-i"]):
-            return NLUResult(Intent.GREETING_SIMPLE, 0.9, [])
         
         # Priority 4: Name queries - asking about their own name
         name_query_patterns = [
@@ -276,7 +318,7 @@ class NLUEngine:
         # Default: unknown
         return NLUResult(Intent.UNKNOWN, 0.3, [])
     
-    def _create_intent_prompt(self, user_input: str, context: Dict = None) -> str:
+    def _build_intent_classification_prompt(self, user_input: str, context: Dict = None) -> str:
         """Create a prompt for AI intent classification"""
         intents_description = """
         Available intents:
@@ -333,10 +375,140 @@ class NLUEngine:
         
         return prompt
     
-    async def _ai_classify_intent(self, user_input: str, context: Dict = None) -> NLUResult:
+    def _analyze_greeting_patterns(self, user_lower: str) -> dict:
+        """Enhanced greeting analysis with confidence scoring"""
+        confidence = 0.0
+        intent = Intent.UNKNOWN
+        
+        # Enhanced greeting classification with mood/style detection
+        greeting_keywords = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", 
+                           "good afternoon", "good evening", "magandang umaga", "magandang hapon", 
+                           "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", 
+                           "evening", "greetings", "hiya", "wassup", "howdy", "sup", "yo"]
+        
+        if any(greet in user_lower for greet in greeting_keywords):
+            confidence = 0.8  # Base confidence for greeting detection
+            
+            # Check for name introduction first
+            if any(pattern in user_lower for pattern in ["my name is", "i am", "i'm", "im ", "ako si"]):
+                intent = Intent.GREETING_WITH_NAME
+                confidence = 0.95
+            
+            # Detect greeting style/mood for dynamic personalization
+            elif any(word in user_lower for word in ["awesome", "great", "fantastic", "wonderful", "amazing", "excited", "!!!", "super", "really good"]):
+                intent = Intent.GREETING_EXCITED
+                confidence = 0.9
+            elif any(word in user_lower for word in ["sir", "ma'am", "please", "good day", "greetings", "salutations", "formal"]):
+                intent = Intent.GREETING_FORMAL
+                confidence = 0.9
+            elif any(word in user_lower for word in ["sup", "yo", "hiya", "wassup", "howdy", "hey there", "casual"]):
+                intent = Intent.GREETING_CASUAL
+                confidence = 0.9
+            elif any(word in user_lower for word in ["back", "again", "return", "here again", "returning"]):
+                intent = Intent.GREETING_RETURNING_USER
+                confidence = 0.9
+            else:
+                intent = Intent.GREETING_SIMPLE
+                confidence = 0.8
+        
+        return {"intent": intent, "confidence": confidence}
+    
+    def _calculate_enrollment_confidence(self, user_lower: str) -> float:
+        """Calculate confidence score for enrollment intent"""
+        confidence = 0.0
+        
+        # Primary enrollment keywords (high weight)
+        primary_keywords = ["enroll", "enrollment", "register", "registration", "admission", "apply", "application"]
+        for keyword in primary_keywords:
+            if keyword in user_lower:
+                confidence += 0.4
+        
+        # Secondary enrollment keywords (medium weight)
+        secondary_keywords = ["join", "enter", "start school", "new student", "mag-enroll", "pag-enroll", "rehistro"]
+        for keyword in secondary_keywords:
+            if keyword in user_lower:
+                confidence += 0.3
+        
+        # Context boosters (small weight)
+        context_boosters = ["child", "son", "daughter", "kid", "anak", "bata"]
+        for booster in context_boosters:
+            if booster in user_lower:
+                confidence += 0.1
+        
+        # Question indicators (small weight)
+        question_indicators = ["how", "what", "when", "where", "paano", "ano", "kailan", "saan"]
+        for indicator in question_indicators:
+            if indicator in user_lower:
+                confidence += 0.1
+        
+        return min(confidence, 0.95)  # Cap at 95%
+    
+    def _calculate_location_confidence(self, user_lower: str) -> float:
+        """Calculate confidence score for location intent"""
+        confidence = 0.0
+        
+        # Primary location keywords
+        primary_keywords = ["where", "location", "address", "saan", "nasaan", "diin"]
+        for keyword in primary_keywords:
+            if keyword in user_lower:
+                confidence += 0.4
+        
+        # School context
+        school_keywords = ["school", "paaralan", "eskwelahan"]
+        for keyword in school_keywords:
+            if keyword in user_lower:
+                confidence += 0.3
+        
+        # Direction/navigation keywords  
+        nav_keywords = ["directions", "how to get", "find", "paano pumunta", "located"]
+        for keyword in nav_keywords:
+            if keyword in user_lower:
+                confidence += 0.2
+        
+        return min(confidence, 0.95)
+    
+    def _calculate_staff_confidence(self, user_lower: str) -> float:
+        """Calculate confidence score for staff inquiry intent"""
+        confidence = 0.0
+        
+        # Staff roles and titles
+        staff_keywords = ["teacher", "principal", "staff", "guro", "maestro", "principal", "head teacher"]
+        for keyword in staff_keywords:
+            if keyword in user_lower:
+                confidence += 0.4
+        
+        # Question words about people
+        people_questions = ["who", "sino", "sin-o"]
+        for question in people_questions:
+            if question in user_lower:
+                confidence += 0.3
+        
+        # Known staff names (partial matching)
+        known_names = ["meliza", "delgado", "nelda", "annalyn", "lezil", "michelle", "thedy", "jessica", "leny"]
+        for name in known_names:
+            if name in user_lower:
+                confidence += 0.4
+        
+        return min(confidence, 0.95)
+    
+    def _legacy_classification_fallback(self, user_lower: str) -> NLUResult:
+        """Fallback to original classification logic for unhandled cases"""
+        
+        # Priority 1: Denials and clarifications (check first to avoid false positives)
+        if any(phrase in user_lower for phrase in ["not asking", "i am not", "i'm not", "hindi ako", "wala ako"]):
+            return NLUResult(Intent.DENIAL, 0.9, [])
+        
+        if any(phrase in user_lower for phrase in ["i meant", "what i mean", "clarify", "correction"]):
+            return NLUResult(Intent.CLARIFICATION, 0.8, [])
+        
+        # Add other fallback classifications here...
+        # For now, return unknown with low confidence
+        return NLUResult(Intent.UNKNOWN, 0.1, [])
+    
+    async def _ai_intent_classification(self, user_input: str, context: Dict = None) -> NLUResult:
         """Use AI (OpenAI/Groq) for intent classification"""
         
-        prompt = self._create_intent_prompt(user_input, context)
+        prompt = self._build_intent_classification_prompt(user_input, context)
         
         try:
             # Try OpenAI first, then Groq as fallback

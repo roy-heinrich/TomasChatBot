@@ -9,6 +9,9 @@ from supabase import create_client, Client
 # Remove unused import: from utils import fetch_summarized_text  
 from fallback import FallbackHandler
 from nlu_engine import NLUEngine, Intent, NLUResult
+from dynamic_greetings import DynamicGreetingGenerator, GreetingContext
+from entity_extractor import AdvancedEntityExtractor, ExtractedEntity
+from conversation_memory import ConversationMemory, UserProfile, ConversationContext
 import time
 from datetime import datetime
 from rapidfuzz import fuzz, process
@@ -18,6 +21,14 @@ import openai
 import asyncio
 import urllib.parse
 from dotenv import load_dotenv
+
+# Optional Groq import - make it conditional
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    GROQ_AVAILABLE = False
+    Groq = None
 
 # Load environment variables from .env file
 load_dotenv()
@@ -68,6 +79,23 @@ class ChatBot:
         
         # Initialize NLU Engine for intent understanding
         self.nlu_engine = NLUEngine()
+        
+        # Initialize Advanced Entity Extractor
+        self.entity_extractor = AdvancedEntityExtractor()
+        
+        # Initialize Conversation Memory System
+        self.conversation_memory = ConversationMemory(max_history_length=50)
+        logger.info("💭 Conversation memory system initialized")
+        
+        # Initialize Dynamic Greeting Generator with optional groq client
+        groq_client = None
+        if GROQ_AVAILABLE and groq_key:
+            try:
+                groq_client = Groq(api_key=groq_key)
+            except Exception as e:
+                logger.warning(f"Failed to initialize Groq client: {e}")
+        
+        self.dynamic_greetings = DynamicGreetingGenerator(groq_client=groq_client)
         
         # Initialize Supabase client for full-text search
         from supabase import create_client, Client
@@ -240,7 +268,51 @@ class ChatBot:
             name_context = f" The person you're talking to is named {user_name}." if user_name else ""
             return f"You are TOMAS, the digital assistant for Tomas SM. Bautista Elementary School. {time_context}{name_context} Provide accurate and helpful information about the school based only on the context provided. Do not make up details, times, or procedures that you don't know. If you don't have specific information, direct them to contact the school office. Remember names from conversation history when asked. Keep responses professional and factual."
 
-    def get_greeting(self, lang: str = "en", user_timezone: str = None) -> str:
+    async def get_greeting_async(self, lang: str = "en", user_timezone: str = None, intent: Intent = None, user_context: Dict = None) -> str:
+        """Enhanced async greeting generation with dynamic AI-powered personalization"""
+        
+        # Create greeting context for dynamic generation
+        if intent and intent in [Intent.GREETING_EXCITED, Intent.GREETING_FORMAL, Intent.GREETING_CASUAL, Intent.GREETING_RETURNING_USER]:
+            context = GreetingContext(
+                language=lang,
+                time_period=self.get_time_period(user_timezone),
+                user_name=user_context.get("name") if user_context else "",
+                conversation_history=user_context.get("conversation_history", []) if user_context else [],
+                user_mood=user_context.get("mood") if user_context else "",
+                returning_user=(intent == Intent.GREETING_RETURNING_USER),
+                school_context=intent.value.replace("greeting_", "")  # excited, formal, casual, returning_user
+            )
+            
+            try:
+                # Try to generate dynamic greeting (async)
+                dynamic_greeting = await self.dynamic_greetings.generate_greeting(context)
+                if dynamic_greeting and len(dynamic_greeting) > 10:  # Basic validation
+                    logger.info(f"🎨 Using dynamic greeting for {intent.value}")
+                    return dynamic_greeting
+            except Exception as e:
+                logger.warning(f"Dynamic greeting failed: {e}, falling back to static")
+        
+        # Fallback to existing static greeting system
+        return self.get_greeting(lang, user_timezone)
+
+    def get_greeting(self, lang: str = "en", user_timezone: str = None, intent: Intent = None, user_context: Dict = None) -> str:
+        """Enhanced greeting generation with dynamic AI-powered personalization"""
+        
+        # For backwards compatibility, if intent is provided, try to run async version
+        if intent and intent in [Intent.GREETING_EXCITED, Intent.GREETING_FORMAL, Intent.GREETING_CASUAL, Intent.GREETING_RETURNING_USER]:
+            try:
+                # Use asyncio to run the async version
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're already in an async context, we can't use run()
+                    logger.warning("Cannot generate dynamic greeting in sync context within async loop, using static")
+                else:
+                    return asyncio.run(self.get_greeting_async(lang, user_timezone, intent, user_context))
+            except Exception as e:
+                logger.warning(f"Dynamic greeting failed: {e}, falling back to static")
+        
+        # Fallback to existing static greeting system
         time_period = self.get_time_period(user_timezone)
         
         # Handle Aklanon by using Tagalog greetings
@@ -264,6 +336,19 @@ class ChatBot:
             lang = "tl"
         followups = self.messages["follow_up"].get(lang, self.messages["follow_up"]["en"])
         return random.choice(followups) if isinstance(followups, list) else followups
+
+    def _detect_mood_from_query(self, query: str) -> str:
+        """Detect user mood from their greeting message for dynamic personalization"""
+        query_lower = query.lower()
+        
+        if any(word in query_lower for word in ["awesome", "fantastic", "amazing", "great", "wonderful", "excited", "super"]):
+            return "excited"
+        elif any(word in query_lower for word in ["tired", "stressed", "busy", "difficult", "hard"]):
+            return "supportive"
+        elif any(word in query_lower for word in ["help", "need", "question", "confused", "lost"]):
+            return "helpful"
+        else:
+            return "neutral"
 
     def get_goodbye(self, lang: str) -> str:
         messages = {
@@ -641,13 +726,23 @@ class ChatBot:
         return False
     
     async def _extract_entities_with_nlu(self, user_message: str) -> dict:
-        """Extract entities using NLU engine instead of hardcoded patterns"""
+        """Extract entities using both NLU engine and entity extractor"""
         try:
-            result = await self.nlu_engine.analyze_intent(user_message)
-            return result.get('entities', {})
+            # Use the advanced entity extractor directly for better results
+            extracted_entities = self.entity_extractor.extract_entities(user_message)
+            
+            # Get intent from NLU engine
+            nlu_result = await self.nlu_engine.analyze_intent(user_message)
+            
+            # Return entities in a format compatible with the rest of the system
+            return {
+                'entities': extracted_entities,  # List of ExtractedEntity objects
+                'intent': nlu_result.intent.value,
+                'confidence': nlu_result.confidence
+            }
         except Exception as e:
             print(f"Error in NLU entity extraction: {e}")
-            return {}
+            return {'entities': [], 'intent': 'unknown', 'confidence': 0.0}
 
     def _extract_name_from_query(self, query: str) -> str:
         """Extract user's name from the current query using regex patterns."""
@@ -679,9 +774,28 @@ class ChatBot:
             match = re.search(pattern, query_lower, re.IGNORECASE)
             if match:
                 name = match.group(1).strip().title()
-                # Filter out common non-names
-                if name.lower() not in ['not', 'from', 'here', 'good', 'fine', 'okay', 'yes', 'no']:
-                    return name
+                # Enhanced filtering for common non-names, adjectives, and emotional words
+                excluded_words = [
+                    'not', 'from', 'here', 'good', 'fine', 'okay', 'yes', 'no',
+                    'super', 'really', 'very', 'so', 'quite', 'pretty', 'extremely',
+                    'excited', 'happy', 'sad', 'tired', 'busy', 'confused', 'lost',
+                    'interested', 'curious', 'wondering', 'looking', 'asking',
+                    'back', 'again', 'returning', 'new', 'first', 'time',
+                    'the', 'a', 'an', 'this', 'that', 'these', 'those'
+                ]
+                
+                # Also check if the word appears in context that suggests it's not a name
+                if name.lower() not in excluded_words:
+                    # Additional check: if the word is followed by typical adjective contexts
+                    context_check = query_lower.lower()
+                    adjective_contexts = [
+                        f"am {name.lower()} excited", f"am {name.lower()} happy", 
+                        f"am {name.lower()} interested", f"am {name.lower()} curious",
+                        f"am {name.lower()} looking", f"am {name.lower()} asking"
+                    ]
+                    
+                    if not any(context in context_check for context in adjective_contexts):
+                        return name
         
         return ""
 
@@ -892,8 +1006,14 @@ class ChatBot:
         if intent == Intent.GREETING_WITH_NAME:
             return self._handle_greeting_with_name(user_name, child_name, lang, user_timezone)
             
-        elif intent == Intent.GREETING_SIMPLE:
-            return self.get_greeting(lang, user_timezone)
+        elif intent in [Intent.GREETING_SIMPLE, Intent.GREETING_EXCITED, Intent.GREETING_FORMAL, Intent.GREETING_CASUAL, Intent.GREETING_RETURNING_USER]:
+            # Create user context for dynamic greetings
+            user_context = {
+                "name": user_name,
+                "conversation_history": conversation_history or [],  # Use actual conversation history
+                "mood": self._detect_mood_from_query(query) if intent == Intent.GREETING_EXCITED else None
+            }
+            return await self.get_greeting_async(lang, user_timezone, intent, user_context)
             
         elif intent == Intent.ENROLLMENT_INQUIRY:
             return self._get_personalized_enrollment_response(user_name, child_name, lang)
@@ -2813,9 +2933,25 @@ class ChatBot:
         # Default: general query
         return {"intent": "general", "confidence": 0.5}
 
-    async def answer(self, query: str, context: str = None, conversation_history: list = None, user_timezone: str = None) -> str:
+    async def answer(self, query: str, context: str = None, conversation_history: list = None, user_timezone: str = None, session_id: str = None) -> str:
         lang = await self.detect_language(query)
         lowered = query.lower().strip()  # For backward compatibility
+        
+        # Generate user ID from conversation or use provided session ID
+        user_id = session_id if session_id else self._generate_user_id(conversation_history)
+        
+        # --- CONVERSATION MEMORY: Get context for personalized responses ---
+        memory_context = self.conversation_memory.generate_context_summary(user_id)
+        should_use_context = self.conversation_memory.should_provide_context_response(user_id, "general")
+        
+        if should_use_context:
+            logger.info(f"💭 Using conversation memory context for user {user_id[:8]}...")
+        
+        # Check for returning user greeting personalization
+        if any(greeting in lowered for greeting in ["hi", "hello", "hey", "kamusta", "kumusta"]):
+            greeting_context = self.conversation_memory.get_personalized_greeting_context(user_id)
+            if greeting_context.get("is_returning_user") and greeting_context.get("user_name"):
+                logger.info(f"👋 Returning user detected: {greeting_context['user_name']}")
 
         # --- NEW: NLU-Based Intent Analysis ---
         try:
@@ -3245,8 +3381,71 @@ class ChatBot:
         # Regular AI call - no special handling
         response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone)
 
+        # --- CONVERSATION MEMORY: Store this interaction ---
+        await self._store_conversation_turn(user_id, query, response, lang, conversation_history)
+
         # Return the response (no translation needed since it's already in the right language)
         return response
+    
+    def _generate_user_id(self, conversation_history: list = None) -> str:
+        """Generate a user ID from conversation history or create a temporary one"""
+        if not conversation_history:
+            return f"temp_user_{int(time.time())}"
+        
+        # Try to extract a consistent identifier from conversation
+        user_name = self._extract_user_name(conversation_history)
+        if user_name:
+            # Create hash from user name for consistent ID
+            import hashlib
+            return f"user_{hashlib.md5(user_name.lower().encode()).hexdigest()[:8]}"
+        
+        # Use hash of first message for consistency
+        if conversation_history:
+            first_msg = str(conversation_history[0])
+            import hashlib
+            return f"anon_{hashlib.md5(first_msg.encode()).hexdigest()[:8]}"
+        
+        return f"temp_user_{int(time.time())}"
+    
+    async def _store_conversation_turn(self, user_id: str, query: str, response: str, lang: str, conversation_history: list = None) -> None:
+        """Store conversation turn in memory with entity extraction and intent analysis"""
+        try:
+            # Extract entities from the user query
+            extracted_entities = await self._extract_entities_with_nlu(query)
+            entity_list = extracted_entities.get('entities', [])
+            
+            # Convert to format expected by conversation memory
+            entities_for_memory = []
+            for entity in entity_list:
+                entities_for_memory.append({
+                    'entity_type': entity.entity_type,
+                    'value': entity.value,
+                    'confidence': entity.confidence
+                })
+            
+            # Get intent from NLU analysis
+            try:
+                nlu_result = await self.nlu_engine.analyze_intent(query, conversation_history)
+                detected_intent = nlu_result.intent.value
+                confidence_score = nlu_result.confidence
+            except:
+                detected_intent = "general"
+                confidence_score = 0.5
+            
+            # Store in conversation memory
+            self.conversation_memory.add_conversation_turn(
+                user_id=user_id,
+                user_message=query,
+                bot_response=response,
+                detected_intent=detected_intent,
+                extracted_entities=entities_for_memory,
+                confidence_score=confidence_score
+            )
+            
+            logger.info(f"💭 Stored conversation turn for user {user_id[:8]} with {len(entities_for_memory)} entities")
+            
+        except Exception as e:
+            logger.warning(f"Failed to store conversation turn: {e}")
 
 if __name__ == "__main__":
     import asyncio
