@@ -19,5 +19,8 @@ PyPDF2
 openpyxl
 python-pptx
 
+# Timezone Support
+pytz
+
 # Testing
 requests

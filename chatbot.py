@@ -152,7 +152,7 @@ class ChatBot:
                 ]
             }
     }
-    def reset_conversation(self, lang="en"):
+    def reset_conversation(self, lang="en", user_timezone: str = None):
         """Reset chat history with a proper system prompt + greeting."""
         self.messages = [
             {
@@ -167,13 +167,27 @@ class ChatBot:
             },
             {
                 "role": "assistant",
-                "content": self.get_greeting(lang),  # 👈 use your greeting helper
+                "content": self.get_greeting(lang, user_timezone),  # 👈 use your greeting helper
             },
         ]
 
-    def get_time_period(self) -> str:
-        """Determine the time of day based on current hour"""
-        current_hour = datetime.now().hour
+    def get_time_period(self, user_timezone: str = None) -> str:
+        """Determine the time of day based on current hour in user's timezone"""
+        try:
+            if user_timezone:
+                # Use user's timezone if provided
+                import pytz
+                user_tz = pytz.timezone(user_timezone)
+                current_hour = datetime.now(user_tz).hour
+            else:
+                # Fallback to Philippines timezone (server default for local users)
+                import pytz
+                ph_timezone = pytz.timezone('Asia/Manila')
+                current_hour = datetime.now(ph_timezone).hour
+        except Exception as e:
+            # If timezone conversion fails, use server time as fallback
+            logger.warning(f"Timezone conversion failed: {e}, using server time")
+            current_hour = datetime.now().hour
         
         if 1 <= current_hour < 12:  # 1am-11:59am = morning
             return "morning"
@@ -184,9 +198,23 @@ class ChatBot:
         else:
             return "default"
 
-    def get_time_aware_system_prompt(self, lang: str = "en", user_name: str = ""):
+    def get_time_aware_system_prompt(self, lang: str = "en", user_name: str = "", user_timezone: str = None):
         """Generate a time-aware system prompt for Groq API"""
-        current_hour = datetime.now().hour
+        try:
+            import pytz
+            from datetime import datetime
+            
+            # Get current time in user's timezone or default to Philippines
+            if user_timezone:
+                user_tz = pytz.timezone(user_timezone)
+            else:
+                user_tz = pytz.timezone('Asia/Manila')  # Default to Philippines timezone
+            
+            current_time = datetime.now(user_tz)
+            current_hour = current_time.hour
+        except Exception as e:
+            # Fallback to UTC time if timezone conversion fails
+            current_hour = datetime.now().hour
         
         # Determine time context for the AI
         if 1 <= current_hour < 12:  # 1am-11:59am = morning
@@ -210,8 +238,8 @@ class ChatBot:
             name_context = f" The person you're talking to is named {user_name}." if user_name else ""
             return f"You are TOMAS, the digital assistant for Tomas SM. Bautista Elementary School. {time_context}{name_context} Provide accurate and helpful information about the school based only on the context provided. Do not make up details, times, or procedures that you don't know. If you don't have specific information, direct them to contact the school office. Remember names from conversation history when asked. Keep responses professional and factual."
 
-    def get_greeting(self, lang: str = "en") -> str:
-        time_period = self.get_time_period()
+    def get_greeting(self, lang: str = "en", user_timezone: str = None) -> str:
+        time_period = self.get_time_period(user_timezone)
         
         # Get time-aware greetings
         greetings_dict = self.messages["greeting"].get(lang, self.messages["greeting"]["en"])
@@ -310,9 +338,9 @@ class ChatBot:
         """Rough token estimation (1 token ≈ 4 characters for English)."""
         return len(text) // 4
     
-    def _check_token_budget(self, query: str, context: str, lang: str = "en") -> dict:
+    def _check_token_budget(self, query: str, context: str, lang: str = "en", user_timezone: str = None) -> dict:
         """Check if we're within token budget and suggest optimizations."""
-        system_prompt = self.get_time_aware_system_prompt(lang, "")
+        system_prompt = self.get_time_aware_system_prompt(lang, "", user_timezone)
         user_message = f"Context: {context}\nQuestion: {query}"
         
         estimated_input_tokens = self.estimate_tokens(system_prompt + user_message)
@@ -793,7 +821,7 @@ class ChatBot:
             else:
                 return "For enrollment information, please visit the school office."
 
-    async def _handle_intent_based_response(self, nlu_result: NLUResult, query: str, lang: str, conversation_history: List[Dict] = None) -> str:
+    async def _handle_intent_based_response(self, nlu_result: NLUResult, query: str, lang: str, conversation_history: List[Dict] = None, user_timezone: str = None) -> str:
         """
         Handle responses based on NLU intent classification instead of keyword matching
         """
@@ -815,10 +843,10 @@ class ChatBot:
         
         # Handle each intent intelligently
         if intent == Intent.GREETING_WITH_NAME:
-            return self._handle_greeting_with_name(user_name, child_name, lang)
+            return self._handle_greeting_with_name(user_name, child_name, lang, user_timezone)
             
         elif intent == Intent.GREETING_SIMPLE:
-            return self.get_greeting(lang)
+            return self.get_greeting(lang, user_timezone)
             
         elif intent == Intent.ENROLLMENT_INQUIRY:
             return self._get_personalized_enrollment_response(user_name, child_name, lang)
@@ -880,9 +908,9 @@ class ChatBot:
             # For unknown or general intents, fall back to AI processing
             return None  # Will trigger normal AI flow
     
-    def _handle_greeting_with_name(self, user_name: str, child_name: str, lang: str) -> str:
+    def _handle_greeting_with_name(self, user_name: str, child_name: str, lang: str, user_timezone: str = None) -> str:
         """Handle greeting with name introduction"""
-        time_period = self.get_time_period()
+        time_period = self.get_time_period(user_timezone)
         
         if lang == "tl" or lang == "akl":
             if time_period == "morning":
@@ -1815,13 +1843,13 @@ class ChatBot:
         else:
             return "Tomas SM. Bautista Elementary School is located in Fatima, New Washington, Aklan."
 
-    async def ask_groq(self, query: str, context: str, lang: str, conversation_history: list = None) -> str:
+    async def ask_groq(self, query: str, context: str, lang: str, conversation_history: list = None, user_timezone: str = None) -> str:
         """Token-optimized Groq API call with emergency fallbacks."""
         # Extract user name from full conversation history before truncation
         user_name = self._extract_user_name(conversation_history) if conversation_history else ""
         
         # Start with friendly, conversational prompt
-        system_prompt = self.get_time_aware_system_prompt(lang, user_name)
+        system_prompt = self.get_time_aware_system_prompt(lang, user_name, user_timezone)
         
         # Emergency token management
         max_context_length = 1500
@@ -2708,7 +2736,7 @@ class ChatBot:
         # Default: general query
         return {"intent": "general", "confidence": 0.5}
 
-    async def answer(self, query: str, context: str = None, conversation_history: list = None) -> str:
+    async def answer(self, query: str, context: str = None, conversation_history: list = None, user_timezone: str = None) -> str:
         lang = await self.detect_language(query)
         lowered = query.lower().strip()  # For backward compatibility
 
@@ -2725,7 +2753,7 @@ class ChatBot:
             logger.info(f"🧠 NLU Intent: {nlu_result.intent.value} (confidence: {nlu_result.confidence:.2f})")
             
             # Try to handle with intelligent NLU-based routing
-            nlu_response = await self._handle_intent_based_response(nlu_result, query, lang, conversation_history)
+            nlu_response = await self._handle_intent_based_response(nlu_result, query, lang, conversation_history, user_timezone)
             if nlu_response:
                 return nlu_response
                 
@@ -2799,7 +2827,7 @@ class ChatBot:
                     user_name = name_match.group(1).title()
             
             # Give personalized greeting with time awareness
-            time_period = self.get_time_period()
+            time_period = self.get_time_period(user_timezone)
             if lang == "tl" or lang == "akl":
                 if time_period == "morning":
                     base_greeting = f"Good morning, {user_name}!" if user_name else "Good morning!"
@@ -2841,7 +2869,7 @@ class ChatBot:
         
         if is_greeting_only:
             logger.info("👋 User sent a greeting only.")
-            return self.get_greeting(lang)
+            return self.get_greeting(lang, user_timezone)
 
         # --- Early check for family/enrollment context to avoid irrelevant DB searches ---
         family_enrollment_patterns = [
@@ -2883,7 +2911,7 @@ class ChatBot:
             
             # Force AI processing with conversation history but minimal context
             logger.info("🤖 Processing family context with AI and conversation history")
-            return await self.ask_groq(query, minimal_context, lang, conversation_history)
+            return await self.ask_groq(query, minimal_context, lang, conversation_history, user_timezone)
 
         # --- Early check for teacher/staff queries to prevent AI hallucination ---
         teacher_patterns = [
@@ -2953,7 +2981,7 @@ class ChatBot:
             
             # Force AI processing with conversation history
             logger.info("🤖 Processing memory query with AI and conversation history")
-            return await self.ask_groq(query, minimal_context, lang, conversation_history)
+            return await self.ask_groq(query, minimal_context, lang, conversation_history, user_timezone)
 
         # --- Early check for language capability questions ---
         language_question_patterns = [
@@ -3014,7 +3042,7 @@ class ChatBot:
             if full_context.strip():
                 # Get response in target language (Tagalog for Aklanon users)
                 target_lang = "tl" if lang == "akl" else lang
-                response = await self.ask_groq(translated_query, full_context, target_lang, conversation_history)
+                response = await self.ask_groq(translated_query, full_context, target_lang, conversation_history, user_timezone)
                 
                 logger.info(f"✅ Generated response in {target_lang} for Aklanon user")
                 return response
@@ -3069,7 +3097,7 @@ class ChatBot:
 
         # --- Only use keyword matching as last resort when tokens are at limit ---
         if full_context:
-            budget = self._check_token_budget(query, full_context, lang)
+            budget = self._check_token_budget(query, full_context, lang, user_timezone)
             
             # Only use keyword matching if tokens are truly at their limit
             if budget['emergency_mode_needed'] or not budget['within_budget']:
@@ -3126,7 +3154,7 @@ class ChatBot:
         logger.info("🤖 Normal flow: Sending query to Groq with context from summarized_text and Supabase")
         
         # Regular AI call - no special handling
-        response = await self.ask_groq(query, full_context, lang, conversation_history)
+        response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone)
 
         # Return the response (no translation needed since it's already in the right language)
         return response
