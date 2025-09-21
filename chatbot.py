@@ -297,6 +297,7 @@ class ChatBot:
         # 🚀 PERFORMANCE FIX: Add language detection caching
         self.language_cache = {}
         self.language_cache_ttl = 600  # 10-minute cache TTL (increased)
+        self.last_detected_language = "en"  # 🆕 Store last detected language for API access
         
         # Initialize structured response framework
         self.query_classifier = QueryClassifier()
@@ -3800,6 +3801,8 @@ class ChatBot:
             
             # Detect language from query
             detected_language = self.query_classifier.detect_language(query)
+            # 🆕 Store detected language for API access
+            self.last_detected_language = detected_language
             if detected_language != "english":
                 language = detected_language
             

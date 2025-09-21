@@ -161,7 +161,8 @@ async def chat_endpoint(data: ChatRequest):
         
         return {
             "response": answer,
-            "entities": entities_for_frontend  # 🆕 Include extracted entities
+            "entities": entities_for_frontend,  # 🆕 Include extracted entities
+            "detected_language": getattr(chatbot, 'last_detected_language', 'en')  # 🆕 Include detected language
         }
     
     except Exception as e:
