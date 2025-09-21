@@ -73,6 +73,7 @@ class ResponseContext:
     communication_style: str = "neutral"
     follow_up_needed: bool = False
     is_returning_user: bool = False
+    preferred_tone: ResponseTone = None
     
     def __post_init__(self):
         if self.previous_topics is None:
@@ -423,7 +424,11 @@ class ResponseGenerationEngine:
                                conversation_history: List[Dict]) -> ResponseTone:
         """Determine appropriate response tone based on context"""
         
-        # User mood-based tone selection
+        # 🆕 Priority 1: Use preferred tone if specified (from sentiment analysis)
+        if context.preferred_tone is not None:
+            return context.preferred_tone
+        
+        # Priority 2: User mood-based tone selection
         if context.user_mood == "excited":
             return ResponseTone.ENTHUSIASTIC
         elif context.user_mood == "frustrated" or context.user_mood == "confused":
