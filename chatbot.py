@@ -812,9 +812,49 @@ class ChatBot:
         tagalog_quick_patterns = {
             "po": 0.95, "opo": 0.95, "kumusta": 0.9, "sino": 0.8, "saan": 0.8, 
             "hindi": 0.8, "salamat": 0.9, "ako": 0.7, "ikaw": 0.8, "kayo": 0.8,
-            "gusto": 0.8, "mag": 0.6, "ng": 0.5, "sa": 0.4
+            "gusto": 0.8, "mag": 0.6, "ng": 0.5, "sa": 0.4, "si": 0.7,
+            "naman": 0.8, "din": 0.7, "rin": 0.7, "talaga": 0.8
         }
         
+        # Check for strong Tagalog patterns that should override English
+        strong_tagalog_patterns = {
+            "ako si": 1.5,  # "I am" pattern - very Tagalog
+            "ako ay": 1.4,  # "I am" formal pattern
+            "si ako": 1.3,  # Reversed order
+            "salamat po": 1.6,  # Very polite Tagalog
+            "kumusta ka": 1.5,  # Tagalog greeting
+            "gusto ko": 1.4,  # "I want" pattern
+        }
+        
+        # Check for strong Aklanon patterns that should override both English and Tagalog
+        strong_aklanon_patterns = {
+            "sin-o si": 1.8,         # Aklanon "who is" - stronger than Tagalog "sino si"
+            "diin ang": 1.7,         # Aklanon "where is"
+            "wara sang": 1.8,        # "there is no" - very Aklanon
+            "maayong": 1.6,          # Aklanon time greetings
+            "sang information": 1.5,  # Mixed pattern with Aklanon article
+            " eun": 1.7,             # Aspectual marker (completion) - space prefix to avoid subwords
+            " ga ": 1.6,             # Aspectual marker (current state) - spaces to avoid subwords
+            " dun": 1.6,             # Locational marker
+            "eani": 1.7,             # Discourse marker (this)
+            "gani": 1.6,             # Discourse marker (you know)
+            "gali": 1.6,             # Discourse marker (surprise)
+            " aba": 1.6,             # Modal particle (expression)
+            " man ": 1.5,            # Modal particle (emphasis) - spaces to avoid "human", "woman"
+            " ha": 1.4,              # Question marker (at end of sentence)
+        }
+        
+        # Apply strong Aklanon pattern bonuses first (highest priority)
+        for pattern, bonus in strong_aklanon_patterns.items():
+            if pattern in text_lower:
+                scores["akl"] += bonus
+                logger.debug(f"🏝️ Strong Aklanon pattern '{pattern}' found (+{bonus})")
+        
+        # Apply strong pattern bonuses
+        for pattern, bonus in strong_tagalog_patterns.items():
+            if pattern in text_lower:
+                scores["tl"] += bonus
+                
         for pattern, confidence in tagalog_quick_patterns.items():
             if pattern in text_lower:
                 scores["tl"] += confidence
@@ -837,10 +877,39 @@ class ChatBot:
         best_language = max(normalized_scores, key=normalized_scores.get)
         best_confidence = normalized_scores[best_language]
         
-        # If no clear winner or low confidence, use full detection
+        # If no clear winner or low confidence, use advanced NLP analysis
         if best_confidence < 0.6:
-            full_result = await self._detect_language_full_with_confidence(text)
-            result = full_result
+            # Try NLP-enhanced detection first
+            nlp_analysis = await self._analyze_language_with_nlp(text_lower)
+            
+            if nlp_analysis["confidence"] > 0.7:
+                # Use NLP results if confident
+                if nlp_analysis["aklanon_grammar"] and not nlp_analysis["tagalog_grammar"] and not nlp_analysis["english_grammar"]:
+                    result = {
+                        "language": "akl",
+                        "confidence": nlp_analysis["confidence"],
+                        "scores": {"en": 0.1, "tl": 0.1, "akl": nlp_analysis["confidence"]}
+                    }
+                elif nlp_analysis["tagalog_grammar"] and not nlp_analysis["english_grammar"] and not nlp_analysis["aklanon_grammar"]:
+                    result = {
+                        "language": "tl",
+                        "confidence": nlp_analysis["confidence"],
+                        "scores": {"en": 0.2, "tl": nlp_analysis["confidence"], "akl": 0.0}
+                    }
+                elif nlp_analysis["english_grammar"] and not nlp_analysis["tagalog_grammar"] and not nlp_analysis["aklanon_grammar"]:
+                    result = {
+                        "language": "en", 
+                        "confidence": nlp_analysis["confidence"],
+                        "scores": {"en": nlp_analysis["confidence"], "tl": 0.2, "akl": 0.0}
+                    }
+                else:
+                    # Mixed patterns detected, fallback to comprehensive analysis
+                    full_result = await self._detect_language_full_with_confidence(text)
+                    result = full_result
+            else:
+                # Fallback to comprehensive analysis
+                full_result = await self._detect_language_full_with_confidence(text)
+                result = full_result
         else:
             result = {
                 "language": best_language,
@@ -1162,10 +1231,49 @@ class ChatBot:
                 if pattern in text_lower:
                     aklanon_score += weight
             
-            # Calculate total and normalize
+            # Calculate total and normalize with mixed-language awareness
             total_score = english_score + tagalog_score + aklanon_score
             if total_score == 0:
                 total_score = 1  # Avoid division by zero
+            
+            # Special handling for mixed-language text using NLP/NLU analysis
+            # If we have multiple languages detected, use advanced linguistic analysis
+            if (english_score > 0 and tagalog_score > 0) or (english_score > 0 and aklanon_score > 0) or (tagalog_score > 0 and aklanon_score > 0):
+                # Use NLU-based grammatical analysis instead of simple pattern matching
+                nlp_language_analysis = await self._analyze_language_with_nlp(text_lower)
+                
+                # Fallback patterns for each language
+                tagalog_grammar_indicators = ["ako si", "ako ay", "gusto ko", "salamat po", "kumusta ka"]
+                english_grammar_indicators = ["i am", "i want", "thank you", "how are"]
+                aklanon_grammar_indicators = ["sin-o si", "diin ang", "wara sang", "maayong adlaw"]
+                
+                has_tagalog_grammar = nlp_language_analysis.get("tagalog_grammar", False) or any(pattern in text_lower for pattern in tagalog_grammar_indicators)
+                has_english_grammar = nlp_language_analysis.get("english_grammar", False) or any(pattern in text_lower for pattern in english_grammar_indicators)
+                has_aklanon_grammar = nlp_language_analysis.get("aklanon_grammar", False) or any(pattern in text_lower for pattern in aklanon_grammar_indicators)
+                
+                # Apply grammar-based score boosting
+                if has_aklanon_grammar and not has_tagalog_grammar and not has_english_grammar:
+                    # Boost Aklanon score when clear Aklanon grammar is present
+                    aklanon_score *= 1.6
+                    logger.info(f"🏝️ Aklanon grammar pattern detected, boosting Aklanon score")
+                elif has_tagalog_grammar and not has_english_grammar and not has_aklanon_grammar:
+                    # Boost Tagalog score when Tagalog grammar is present
+                    tagalog_score *= 1.5
+                    logger.info(f"🇵🇭 Tagalog grammar pattern detected, boosting Tagalog score")
+                elif has_english_grammar and not has_tagalog_grammar and not has_aklanon_grammar:
+                    # Boost English score when English grammar is present
+                    english_score *= 1.2
+                    logger.info(f"🇺🇸 English grammar pattern detected, boosting English score")
+                elif has_aklanon_grammar and has_tagalog_grammar:
+                    # Mixed Aklanon-Tagalog: favor Aklanon slightly as it's more specific
+                    aklanon_score *= 1.3
+                    tagalog_score *= 1.1
+                    logger.info(f"🔀 Mixed Aklanon-Tagalog patterns detected")
+            
+            # Recalculate total after adjustments
+            total_score = english_score + tagalog_score + aklanon_score
+            if total_score == 0:
+                total_score = 1
             
             # Normalize scores to 0-1 range
             scores["en"] = min(english_score / total_score, 1.0)
@@ -1176,30 +1284,327 @@ class ChatBot:
             best_language = max(scores, key=scores.get)
             best_confidence = scores[best_language]
             
-            # If the detected language doesn't match the highest score, trust the original logic
-            # but adjust confidence based on our scoring
-            if result != best_language and best_confidence > 0.6:
-                logger.info(f"🔎 Confidence scoring suggests {best_language} ({best_confidence:.2f}) over detected {result}")
-                final_language = best_language
-                final_confidence = best_confidence
-            else:
-                final_language = result
-                final_confidence = scores.get(result, 0.5)
+            logger.info(f"📊 Language Detection Scores: EN={scores['en']:.3f}, TL={scores['tl']:.3f}, AKL={scores['akl']:.3f}")
+            logger.info(f"🎯 Best match: {best_language} with confidence {best_confidence:.3f}")
             
             return {
-                "language": final_language,
-                "confidence": final_confidence,
-                "scores": scores,
-                "raw_scores": {
-                    "english": english_score,
-                    "tagalog": tagalog_score, 
-                    "aklanon": aklanon_score
-                }
+                "language": best_language,
+                "confidence": best_confidence,
+                "scores": scores
             }
             
         except Exception as e:
-            logger.warning(f"Language detection with confidence failed: {e}")
-            return {"language": "en", "confidence": 0.5, "scores": {"en": 0.5, "tl": 0.0, "akl": 0.0}}
+            logger.error(f"❌ Error in language detection: {e}")
+            return {
+                "language": "en",
+                "confidence": 0.5,
+                "scores": {"en": 0.5, "tl": 0.0, "akl": 0.0}
+            }
+    
+    async def _analyze_language_with_nlp(self, text: str) -> dict:
+        """Advanced NLP-based language analysis for mixed-language detection."""
+        try:
+            # Use NLU engine for grammatical analysis
+            analysis_result = {"tagalog_grammar": False, "english_grammar": False, "aklanon_grammar": False, "confidence": 0.0}
+            
+            # Extract entities and analyze grammatical patterns
+            if hasattr(self, 'nlu_engine') and self.nlu_engine:
+                try:
+                    # Use NLU engine to analyze the text structure
+                    async with self.nlu_semaphore:
+                        nlu_result = await asyncio.wait_for(
+                            self.nlu_engine.analyze_text(text),
+                            timeout=2.0
+                        )
+                    
+                    # Analyze grammatical structures using NLU results
+                    if nlu_result:
+                        # Check for Tagalog grammatical patterns in entities/intents
+                        entities = nlu_result.entities if hasattr(nlu_result, 'entities') else []
+                        intent = nlu_result.intent if hasattr(nlu_result, 'intent') else None
+                        
+                        # Look for Tagalog pronoun-verb patterns (ako + verb)
+                        tagalog_pronouns = ["ako", "ikaw", "siya", "kami", "kayo", "sila"]
+                        tagalog_particles = ["si", "ay", "po", "opo", "naman", "nga"]
+                        
+                        # Advanced pattern detection using entity relationships
+                        text_tokens = text.lower().split()
+                        
+                        # Detect Tagalog syntax patterns
+                        for i, token in enumerate(text_tokens):
+                            if token in tagalog_pronouns:
+                                # Check for Tagalog syntax: "ako si [name]", "ako ay [adjective]"
+                                if i + 1 < len(text_tokens) and text_tokens[i + 1] in ["si", "ay"]:
+                                    analysis_result["tagalog_grammar"] = True
+                                    analysis_result["confidence"] = 0.9
+                                    break
+                            elif token in tagalog_particles:
+                                # Particles like "po", "opo" are strong Tagalog indicators
+                                if token in ["po", "opo"]:
+                                    analysis_result["tagalog_grammar"] = True
+                                    analysis_result["confidence"] = 0.95
+                                    break
+                        
+                        # Detect Aklanon syntax patterns
+                        aklanon_pronouns = ["ako'ng", "imong", "iya", "aton", "inyo", "ila", "akon"]
+                        aklanon_particles = ["gid", "nga", "ro", "eon", "sang", "it"]
+                        aklanon_verbs = ["naga", "gina", "gin", "mag-", "nag-"]
+                        aklanon_unique_words = ["wara", "mayo", "maayong", "diin", "sin-o"]
+                        
+                        # Enhanced Aklanon grammatical markers with semantic context
+                        aklanon_grammatical_markers = {
+                            # Aspectual markers (completed/ongoing actions)
+                            "eun": 0.95,    # Completed state marker (like Tagalog "na")
+                            "ga": 0.9,      # Continuous action marker (like English "-ing")
+                            
+                            # Locational/directional markers
+                            "dun": 0.9,     # Locational marker ("there", like Tagalog "doon")
+                            
+                            # Discourse markers (emphasis, contrast, surprise)
+                            "eani": 0.95,   # Contrastive marker ("just", "only", "it turns out")
+                            "gani": 0.9,    # Emphasis marker (agreement, proving point, like Tagalog "nga")
+                            "gali": 0.9,    # Surprise/realization marker ("it turns out", like Tagalog "pala")
+                            
+                            # Modal/additive particles
+                            "man": 0.85,    # Additive marker ("also", "too", "as well")
+                            "aba": 0.9,     # Surprise/astonishment particle ("wow")
+                            
+                            # Question markers
+                            "ha": 0.8,      # Yes/no question marker (sentence-final)
+                        }
+                        
+                        for i, token in enumerate(text_tokens):
+                            # Check for Aklanon pronoun patterns
+                            if token in aklanon_pronouns:
+                                analysis_result["aklanon_grammar"] = True
+                                analysis_result["confidence"] = 0.9
+                                break
+                            # Check for Aklanon grammatical markers (highest priority)
+                            elif token in aklanon_grammatical_markers:
+                                confidence = aklanon_grammatical_markers[token]
+                                analysis_result["aklanon_grammar"] = True
+                                analysis_result["confidence"] = confidence
+                                logger.debug(f"🏝️ Aklanon grammatical marker '{token}' detected (confidence: {confidence})")
+                                break
+                            # Check for Aklanon particles (very distinctive)
+                            elif token in aklanon_particles:
+                                if token in ["gid", "sang"]:  # Strong Aklanon indicators
+                                    analysis_result["aklanon_grammar"] = True
+                                    analysis_result["confidence"] = 0.95
+                                    break
+                                elif token == "nga" and i > 0:  # "nga" as emphasis particle
+                                    # Check context to distinguish from Tagalog "nga"
+                                    if any(akl_word in text_tokens for akl_word in aklanon_unique_words):
+                                        analysis_result["aklanon_grammar"] = True
+                                        analysis_result["confidence"] = 0.8
+                                        break
+                            # Check for Aklanon verb patterns
+                            elif any(token.startswith(prefix) for prefix in aklanon_verbs):
+                                analysis_result["aklanon_grammar"] = True
+                                analysis_result["confidence"] = 0.85
+                                break
+                            # Check for unique Aklanon words
+                            elif token in aklanon_unique_words:
+                                analysis_result["aklanon_grammar"] = True
+                                analysis_result["confidence"] = 0.9
+                                break
+                        
+                        # Additional Aklanon pattern analysis - sentence structure
+                        # Look for Aklanon-specific sentence patterns
+                        full_text = " ".join(text_tokens)
+                        
+                        # Pattern: "nag[verb] eun" (completed action)
+                        if "eun" in text_tokens and any(token.startswith("nag") for token in text_tokens):
+                            analysis_result["aklanon_grammar"] = True
+                            analysis_result["confidence"] = 0.95
+                            logger.debug("🏝️ Aklanon completed action pattern detected: 'nag[verb] eun'")
+                        
+                        # Pattern: "naga[verb] ga" (ongoing action)
+                        elif "ga" in text_tokens and any(token.startswith("naga") for token in text_tokens):
+                            analysis_result["aklanon_grammar"] = True
+                            analysis_result["confidence"] = 0.9
+                            logger.debug("🏝️ Aklanon ongoing action pattern detected: 'naga[verb] ga'")
+                        
+                        # Pattern: Question with "ha" at the end
+                        elif full_text.endswith(" ha") or full_text.endswith(" ha?"):
+                            analysis_result["aklanon_grammar"] = True
+                            analysis_result["confidence"] = 0.85
+                            logger.debug("🏝️ Aklanon question pattern detected: ending with 'ha'")
+                        
+                        # Pattern: Surprise expressions with "aba" or "gali"
+                        elif any(marker in text_tokens for marker in ["aba", "gali"]):
+                            analysis_result["aklanon_grammar"] = True
+                            analysis_result["confidence"] = 0.9
+                            logger.debug("🏝️ Aklanon discourse marker detected: 'aba'/'gali'")
+                        
+                        # Detect English syntax patterns
+                        english_patterns = [
+                            ("i", "am"), ("how", "are"), ("what", "is"), 
+                            ("where", "is"), ("thank", "you"), ("good", "morning")
+                        ]
+                        
+                        for pattern in english_patterns:
+                            if len(pattern) == 2:
+                                pattern_text = f"{pattern[0]} {pattern[1]}"
+                                if pattern_text in text.lower():
+                                    analysis_result["english_grammar"] = True
+                                    if not analysis_result["tagalog_grammar"]:  # Only if no Tagalog found
+                                        analysis_result["confidence"] = 0.8
+                                    break
+                
+                except asyncio.TimeoutError:
+                    logger.warning("🕐 NLU language analysis timed out, using fallback")
+                except Exception as e:
+                    logger.warning(f"⚠️ NLU language analysis failed: {e}")
+            
+            # Enhanced fallback using linguistic analysis
+            if analysis_result["confidence"] < 0.5:
+                # Use word order and morphological analysis
+                analysis_result.update(self._analyze_word_order_patterns(text))
+            
+            logger.debug(f"🔬 NLP Language Analysis: {analysis_result}")
+            return analysis_result
+            
+        except Exception as e:
+            logger.error(f"❌ NLP language analysis failed: {e}")
+            return {"tagalog_grammar": False, "english_grammar": False, "aklanon_grammar": False, "confidence": 0.0}
+    
+    def _analyze_word_order_patterns(self, text: str) -> dict:
+        """Analyze word order patterns to detect language syntax."""
+        text_lower = text.lower().strip()
+        tokens = text_lower.split()
+        
+        analysis = {"tagalog_grammar": False, "english_grammar": False, "aklanon_grammar": False, "confidence": 0.0}
+        
+        # Tagalog has flexible word order but common patterns:
+        # VSO (Verb-Subject-Object): "Kumain si Maria ng mansanas"
+        # VOS (Verb-Object-Subject): "Kumain ng mansanas si Maria"
+        # Predicate-first: "Guro si Maria" (Teacher is Maria)
+        
+        # Check for Tagalog predicate-first patterns
+        tagalog_predicates = ["guro", "estudyante", "doktor", "abogado", "taga"]
+        tagalog_markers = ["si", "ang", "ay"]
+        
+        # Aklanon has similar but distinct patterns:
+        # Question patterns: "Sin-o si [name]?" (Who is [name]?)
+        # Location patterns: "Diin ang [place]?" (Where is [place]?)
+        aklanon_question_words = ["sin-o", "diin", "san-o", "ngaa", "paano-o"]
+        aklanon_markers = ["si", "ang", "sang", "it"]
+        aklanon_predicates = ["guro", "maestra", "estudyante", "taga"]
+        
+        for i, token in enumerate(tokens):
+            # Check for Aklanon question patterns first (more specific)
+            if token in aklanon_question_words:
+                # Look for Aklanon question structure: "sin-o si [name]", "diin ang [place]"
+                if i + 1 < len(tokens) and tokens[i + 1] in aklanon_markers:
+                    analysis["aklanon_grammar"] = True
+                    analysis["confidence"] = 0.9
+                    break
+            # Check for Aklanon predicate patterns
+            elif token in aklanon_predicates:
+                # Look for "si" or "ang" after predicate (but distinguish from Tagalog)
+                if i + 1 < len(tokens) and tokens[i + 1] in aklanon_markers:
+                    # Additional context clues for Aklanon vs Tagalog
+                    if any(akl_word in tokens for akl_word in ["sang", "gid", "wara", "mayo"]):
+                        analysis["aklanon_grammar"] = True
+                        analysis["confidence"] = 0.8
+                        break
+            # Check for Tagalog patterns (if no Aklanon found)
+            elif token in tagalog_predicates and not analysis["aklanon_grammar"]:
+                # Look for "si" or "ang" after predicate
+                if i + 1 < len(tokens) and tokens[i + 1] in tagalog_markers:
+                    analysis["tagalog_grammar"] = True
+                    analysis["confidence"] = 0.8
+                    break
+            elif token == "ako" and i + 1 < len(tokens) and not analysis["aklanon_grammar"]:
+                # "ako si [name]" or "ako ay [predicate]" patterns (Tagalog)
+                if tokens[i + 1] in ["si", "ay"]:
+                    analysis["tagalog_grammar"] = True
+                    analysis["confidence"] = 0.9
+                    break
+        
+        # English typically follows SVO (Subject-Verb-Object) order
+        # Check for common English sentence starters (only if no local language found)
+        if not analysis["tagalog_grammar"] and not analysis["aklanon_grammar"]:
+            english_starters = ["i", "you", "he", "she", "we", "they", "this", "that", "what", "where", "how"]
+            english_verbs = ["am", "is", "are", "was", "were", "have", "has", "do", "does", "can", "will"]
+            
+            if len(tokens) >= 2:
+                if tokens[0] in english_starters and tokens[1] in english_verbs:
+                    analysis["english_grammar"] = True
+                    analysis["confidence"] = 0.7
+        
+        return analysis
+    
+    async def _detect_language_using_entities(self, text: str) -> dict:
+        """Use entity extraction to help determine language based on named entities and linguistic patterns."""
+        try:
+            # Extract entities using the advanced entity extractor
+            if hasattr(self, 'entity_extractor') and self.entity_extractor:
+                entities = await self.entity_extractor.extract_entities(text)
+                
+                # Analyze entity types and their linguistic context
+                language_indicators = {"en": 0.0, "tl": 0.0, "akl": 0.0}
+                
+                # Check for Filipino/Tagalog names and places
+                filipino_name_patterns = [
+                    "maria", "jose", "juan", "ana", "miguel", "ricardo", "elizabeth", 
+                    "antonio", "carmen", "manuel", "rosa", "francisco", "teresa"
+                ]
+                
+                # Check for location entities that might indicate language
+                location_indicators = {
+                    "philippines": "tl", "manila": "tl", "cebu": "tl", "davao": "tl",
+                    "aklan": "akl", "kalibo": "akl", "boracay": "akl", "ibajay": "akl"
+                }
+                
+                text_lower = text.lower()
+                
+                # Analyze extracted entities
+                for entity in entities:
+                    entity_text = entity.get('text', '').lower()
+                    entity_type = entity.get('type', '')
+                    
+                    # Location-based language detection
+                    if entity_type in ['LOCATION', 'GPE'] and entity_text in location_indicators:
+                        lang = location_indicators[entity_text]
+                        language_indicators[lang] += 0.8
+                    
+                    # Name-based language detection
+                    elif entity_type in ['PERSON', 'PER']:
+                        if any(name in entity_text for name in filipino_name_patterns):
+                            language_indicators["tl"] += 0.3
+                        elif entity_text in ["john", "mary", "robert", "jennifer", "michael"]:
+                            language_indicators["en"] += 0.3
+                
+                # Linguistic pattern analysis using entity context
+                # Check for language-specific grammatical particles around entities
+                words = text_lower.split()
+                for i, word in enumerate(words):
+                    # Check context around potential names/entities
+                    if word == "si" and i + 1 < len(words):  # Tagalog name marker
+                        language_indicators["tl"] += 0.6
+                    elif word == "ang" and i + 1 < len(words):  # Tagalog definite article
+                        language_indicators["tl"] += 0.4
+                    elif word in ["the", "a", "an"] and i + 1 < len(words):  # English articles
+                        language_indicators["en"] += 0.3
+                
+                # Determine best language from entity analysis
+                if max(language_indicators.values()) > 0.5:
+                    best_lang = max(language_indicators, key=language_indicators.get)
+                    confidence = min(language_indicators[best_lang], 1.0)
+                    
+                    return {
+                        "language": best_lang,
+                        "confidence": confidence,
+                        "scores": language_indicators,
+                        "method": "entity_based"
+                    }
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Entity-based language detection failed: {e}")
+        
+        return {"language": None, "confidence": 0.0, "scores": {}, "method": "entity_failed"}
     
     def _word_boundary_match(self, word: str, text: str) -> bool:
         """Check if word appears with proper word boundaries in text."""
