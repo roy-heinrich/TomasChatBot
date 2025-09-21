@@ -829,6 +829,7 @@ class ChatBot:
         # Check for strong Aklanon patterns that should override both English and Tagalog
         strong_aklanon_patterns = {
             "sin-o si": 1.8,         # Aklanon "who is" - stronger than Tagalog "sino si"
+            "siin du": 1.8,          # Aklanon "where is" - very distinctive 
             "diin ang": 1.7,         # Aklanon "where is"
             "wara sang": 1.8,        # "there is no" - very Aklanon
             "maayong": 1.6,          # Aklanon time greetings
@@ -1369,8 +1370,9 @@ class ChatBot:
                             "man": 0.85,    # Additive marker ("also", "too", "as well")
                             "aba": 0.9,     # Surprise/astonishment particle ("wow")
                             
-                            # Question markers
+                            # Question markers and words
                             "ha": 0.8,      # Yes/no question marker (sentence-final)
+                            "siin": 0.9,    # Question word "where" (very Aklanon-specific)
                         }
                         
                         for i, token in enumerate(text_tokens):
@@ -5274,10 +5276,21 @@ class ChatBot:
                                      sentiment_result: SentimentResult = None) -> Optional[str]:
         """Generate intelligent response using Response Generation Engine with sentiment awareness"""
         try:
-            # Special handling for intents that require database lookup
-            if intent == "staff_inquiry":
-                logger.info("🗄️ Staff inquiry detected - using database lookup instead of template")
-                return None  # Let it fall through to database search
+            # Special handling for intents that require database lookup - bypass templates
+            information_intents = [
+                "staff_inquiry", 
+                "location_inquiry", 
+                "school_info", 
+                "facilities_inquiry",
+                "financial_inquiry",
+                "general_info",
+                "schedule_inquiry",
+                "contact_info"
+            ]
+            
+            if intent in information_intents:
+                logger.info(f"📚 {intent} detected - bypassing templates, using AI with database + bucket context")
+                return None  # Let it fall through to normal AI flow with full context
             
             # Get user profile and conversation context
             user_profile = self.conversation_memory.get_user_profile(user_id)

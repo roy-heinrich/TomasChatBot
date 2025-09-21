@@ -191,43 +191,11 @@ class ResponseGenerationEngine:
             )
         ]
         
-        # Information response templates
+        # Keep only interaction pattern templates - information queries handled by AI with context
         info_templates = [
-            ResponseTemplate(
-                template_id="staff_inquiry_response",
-                response_type=ResponseType.INFORMATION,
-                intent_pattern="staff.*",
-                base_template="I'll get you information about our school staff{context_addition}. Let me check our records for you.",
-                personalization_slots=["context_addition"],
-                follow_up_questions=[
-                    "Would you like to know about a specific teacher?",
-                    "Are you interested in meeting our staff?",
-                    "Do you have questions about our teaching approach?"
-                ],
-                tone_variants={
-                    ResponseTone.PROFESSIONAL: "I'll provide you with information about our qualified educational staff{context_addition}.",
-                    ResponseTone.ENTHUSIASTIC: "Let me get you information about our amazing team of educators{context_addition}!"
-                },
-                conditions={"requires_database_lookup": True}  # Flag to indicate database lookup needed
-            ),
-            
-            ResponseTemplate(
-                template_id="facilities_inquiry_response",
-                response_type=ResponseType.INFORMATION,
-                intent_pattern="facilities.*",
-                base_template="Our school has wonderful facilities to support your child's learning{child_reference}! Here's what we offer:",
-                personalization_slots=["child_reference"],
-                follow_up_questions=[
-                    "Would you like to schedule a school tour?",
-                    "Are you interested in our specific learning areas?",
-                    "Do you have questions about accessibility features?"
-                ],
-                tone_variants={
-                    ResponseTone.ENTHUSIASTIC: "You'll love our amazing facilities{child_reference}! 🏫",
-                    ResponseTone.HELPFUL: "Let me show you all the great learning spaces we have{child_reference}."
-                },
-                conditions={}
-            )
+            # NOTE: Removed all information retrieval templates - AI handles these with database + bucket context
+            # This includes: staff_inquiry, location_inquiry, facilities_inquiry, school_info, etc.
+            # Templates now only for specific interaction patterns like greetings, confirmations
         ]
         
         # Store templates by response type
