@@ -463,7 +463,7 @@ class ChatBot:
             },
         ]
 
-    async def _run_with_timeout(self, coro_or_func, timeout_seconds: float = 3.0, operation_name: str = "database operation"):
+    async def _run_with_timeout(self, coro_or_func, timeout_seconds: float = 10.0, operation_name: str = "database operation"):
         """Run an async operation or sync function with timeout protection"""
         import asyncio
         import concurrent.futures
@@ -486,7 +486,7 @@ class ChatBot:
             logger.error(f"❌ {operation_name} failed: {e}")
             return None
 
-    async def _execute_supabase_query(self, query_func, timeout_seconds: float = 3.0, operation_name: str = "supabase query"):
+    async def _execute_supabase_query(self, query_func, timeout_seconds: float = 10.0, operation_name: str = "supabase query"):
         """Execute a Supabase query with timeout protection, connection pooling, and concurrency control"""
         connection = None
         try:
@@ -1814,7 +1814,7 @@ class ChatBot:
                         'confidence': nlu_result.confidence
                     }
             
-            result = await self._run_with_timeout(extract_entities(), 3.0, "entity extraction")
+            result = await self._run_with_timeout(extract_entities(), 8.0, "entity extraction")
             
             if result:
                 return result
@@ -4219,10 +4219,28 @@ class ChatBot:
         
         return total_similarity >= threshold
 
+    def _get_quick_name_response(self, conversation_history: list) -> str:
+        """Quick memory-based name response to avoid heavy processing"""
+        if not conversation_history:
+            return "I don't see any previous conversation where you told me your name. What's your name?"
+        
+        # Extract name from conversation history quickly
+        user_name = self._extract_user_name(conversation_history)
+        if user_name:
+            return f"Yes, I remember! Your name is {user_name}. 😊"
+        else:
+            return "I don't see where you've told me your name in our conversation. What's your name?"
+
     async def answer(self, query: str, context: str = None, conversation_history: list = None, user_timezone: str = None, session_id: str = None) -> str:
         """
         Main answer method with critical performance optimizations and concurrent request management.
         """
+        # Quick memory-based responses for simple questions (bypass heavy processing)
+        query_lower = query.lower().strip()
+        if "remember my name" in query_lower or "do you remember my name" in query_lower or query_lower == "my name":
+            quick_response = self._get_quick_name_response(conversation_history)
+            return quick_response
+        
         start_time = time.time()
         
         try:
