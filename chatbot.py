@@ -4231,6 +4231,29 @@ class ChatBot:
         else:
             return "I don't see where you've told me your name in our conversation. What's your name?"
 
+    def _get_previous_question_response(self, conversation_history: list) -> str:
+        """Extract and respond about the previous question from conversation history"""
+        if not conversation_history or len(conversation_history) < 2:
+            return "I don't see any previous questions in our conversation."
+        
+        # Look for the user's previous question (skip the most recent question)
+        previous_questions = []
+        for i in range(len(conversation_history) - 2, -1, -1):  # Go backwards, skip current
+            message = conversation_history[i]
+            if message.get('role') == 'user':
+                content = message.get('content', '').strip()
+                if content and not any(skip in content.lower() for skip in ['what am i asking', 'what did i ask', 'what was my question']):
+                    previous_questions.append(content)
+                    if len(previous_questions) >= 2:  # Get up to 2 previous questions
+                        break
+        
+        if not previous_questions:
+            return "I don't see any previous questions in our conversation."
+        elif len(previous_questions) == 1:
+            return f"Your previous question was: \"{previous_questions[0]}\""
+        else:
+            return f"Your previous questions were: \"{previous_questions[1]}\" and \"{previous_questions[0]}\""
+
     async def answer(self, query: str, context: str = None, conversation_history: list = None, user_timezone: str = None, session_id: str = None) -> str:
         """
         Main answer method with critical performance optimizations and concurrent request management.
@@ -4239,6 +4262,9 @@ class ChatBot:
         query_lower = query.lower().strip()
         if "remember my name" in query_lower or "do you remember my name" in query_lower or query_lower == "my name":
             quick_response = self._get_quick_name_response(conversation_history)
+            return quick_response
+        elif any(phrase in query_lower for phrase in ["what am i asking", "what did i ask", "what was my question", "what am i asking earlier"]):
+            quick_response = self._get_previous_question_response(conversation_history)
             return quick_response
         
         start_time = time.time()
