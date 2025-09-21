@@ -4,16 +4,25 @@ import logging
 import httpx
 import langid
 import random
-from typing import List, Dict, Optional
+import asyncio
+import time
+from typing import List, Dict, Optional, Any
 from supabase import create_client, Client
+import threading
+from collections import deque
+import weakref
+import hashlib
 # Remove unused import: from utils import fetch_summarized_text  
-from fallback import FallbackHandler
+from enhanced_fallback import EnhancedFallbackHandler
 from nlu_engine import NLUEngine, Intent, NLUResult
 from dynamic_greetings import DynamicGreetingGenerator, GreetingContext
 from entity_extractor import AdvancedEntityExtractor, ExtractedEntity
 from conversation_memory import ConversationMemory, UserProfile, ConversationContext
 from response_generator import ResponseGenerationEngine, ResponseContext, ResponseTone
 from sentiment_analyzer import sentiment_analyzer, SentimentResult
+from structured_response import StructuredResponseBuilder, ResponseType
+from query_classifier import QueryClassifier, QueryClassification
+from response_templates import ResponseTemplates
 import time
 from datetime import datetime
 from rapidfuzz import fuzz, process
@@ -68,9 +77,237 @@ except Exception as e:
     logger.warning(f"Could not load Aklanon dictionary: {e}")
     aklanon_dict = {}
 
+class ConcurrentRequestManager:
+    """Manages concurrent requests with connection pooling and queue management"""
+    
+    def __init__(self, max_concurrent_requests: int = 12, max_queue_size: int = 50):
+        self.max_concurrent_requests = max_concurrent_requests
+        self.max_queue_size = max_queue_size
+        self.active_requests = 0
+        self.request_queue = deque()
+        self.lock = threading.Lock()
+        self.semaphore = asyncio.Semaphore(max_concurrent_requests)
+        self.request_history = deque(maxlen=100)  # Track recent requests for monitoring
+        
+    async def execute_request(self, request_func, *args, **kwargs):
+        """Execute a request with concurrency control"""
+        request_id = id(asyncio.current_task())
+        start_time = time.time()
+        
+        # Check if we're at capacity
+        if self.active_requests >= self.max_concurrent_requests:
+            if len(self.request_queue) >= self.max_queue_size:
+                raise Exception("System overloaded - too many concurrent requests")
+                
+        async with self.semaphore:
+            try:
+                with self.lock:
+                    self.active_requests += 1
+                
+                result = await request_func(*args, **kwargs)
+                
+                # Log performance metrics
+                execution_time = time.time() - start_time
+                self.request_history.append({
+                    'request_id': request_id,
+                    'execution_time': execution_time,
+                    'timestamp': time.time()
+                })
+                
+                return result
+                
+            finally:
+                with self.lock:
+                    self.active_requests -= 1
+    
+    def get_performance_stats(self):
+        """Get current performance statistics"""
+        if not self.request_history:
+            return {'active_requests': 0, 'avg_response_time': 0, 'request_count': 0}
+            
+        recent_times = [req['execution_time'] for req in self.request_history]
+        return {
+            'active_requests': self.active_requests,
+            'avg_response_time': sum(recent_times) / len(recent_times),
+            'request_count': len(self.request_history)
+        }
+
+class DatabaseConnectionPool:
+    """Manages multiple Supabase connections for better concurrent performance"""
+    
+    def __init__(self, pool_size: int = 12):  # 🚀 INCREASED for better performance
+        self.pool_size = pool_size
+        self.connections = []
+        self.available_connections = deque()
+        self.lock = threading.Lock()
+        self.initialized = False
+        
+    def initialize_pool(self, supabase_url: str, supabase_key: str):
+        """Initialize the connection pool"""
+        if self.initialized:
+            return
+            
+        try:
+            for i in range(self.pool_size):
+                conn = create_client(supabase_url, supabase_key)
+                self.connections.append(conn)
+                self.available_connections.append(conn)
+            self.initialized = True
+            logger.info(f"🔗 Database connection pool initialized with {self.pool_size} connections")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize connection pool: {e}")
+            # Fallback to single connection
+            self.pool_size = 1
+            conn = create_client(supabase_url, supabase_key)
+            self.connections = [conn]
+            self.available_connections = deque([conn])
+            self.initialized = True
+    
+    async def get_connection(self):
+        """Get an available connection from the pool"""
+        if not self.initialized:
+            raise Exception("Connection pool not initialized")
+            
+        # Try to get a connection (non-blocking)
+        with self.lock:
+            if self.available_connections:
+                return self.available_connections.popleft()
+        
+        # If no connections available, wait a short time and try again
+        await asyncio.sleep(0.01)
+        with self.lock:
+            if self.available_connections:
+                return self.available_connections.popleft()
+            else:
+                # Return the first connection as fallback (will be shared)
+                return self.connections[0]
+    
+    def return_connection(self, connection):
+        """Return a connection to the pool"""
+        with self.lock:
+            if len(self.available_connections) < self.pool_size:
+                self.available_connections.append(connection)
+
+class ResponseCache:
+    """Thread-safe response cache with TTL and size limits."""
+    
+    def __init__(self, max_size=1000, default_ttl=300):  # 5 minutes default TTL
+        self.max_size = max_size
+        self.default_ttl = default_ttl
+        self.cache = {}
+        self.access_times = {}
+        self.lock = threading.Lock()
+        
+    def _generate_key(self, query, context=None):
+        """Generate a cache key from query and context."""
+        # Normalize query
+        normalized_query = re.sub(r'\s+', ' ', query.lower().strip())
+        
+        # Include relevant context
+        context_str = ""
+        if context:
+            context_str = f"|ctx:{context.get('language', '')}|tone:{context.get('tone', '')}"
+        
+        # Create hash
+        key_string = f"{normalized_query}{context_str}"
+        return hashlib.md5(key_string.encode()).hexdigest()
+    
+    def get(self, query, context=None):
+        """Get cached response if available and not expired."""
+        key = self._generate_key(query, context)
+        
+        with self.lock:
+            if key in self.cache:
+                cached_data = self.cache[key]
+                current_time = time.time()
+                
+                # Check if expired
+                if current_time - cached_data['timestamp'] > cached_data['ttl']:
+                    del self.cache[key]
+                    if key in self.access_times:
+                        del self.access_times[key]
+                    return None
+                
+                # Update access time for LRU
+                self.access_times[key] = current_time
+                return cached_data['response']
+            
+        return None
+    
+    def set(self, query, response, context=None, ttl=None):
+        """Cache a response with optional TTL."""
+        if ttl is None:
+            ttl = self.default_ttl
+            
+        key = self._generate_key(query, context)
+        current_time = time.time()
+        
+        with self.lock:
+            # Clean cache if at capacity
+            if len(self.cache) >= self.max_size and key not in self.cache:
+                self._evict_lru()
+            
+            self.cache[key] = {
+                'response': response,
+                'timestamp': current_time,
+                'ttl': ttl
+            }
+            self.access_times[key] = current_time
+    
+    def _evict_lru(self):
+        """Evict least recently used item."""
+        if not self.access_times:
+            return
+            
+        lru_key = min(self.access_times.keys(), key=lambda k: self.access_times[k])
+        del self.cache[lru_key]
+        del self.access_times[lru_key]
+    
+    def clear(self):
+        """Clear all cached responses."""
+        with self.lock:
+            self.cache.clear()
+            self.access_times.clear()
+    
+    def get_stats(self):
+        """Get cache statistics."""
+        with self.lock:
+            current_time = time.time()
+            expired_count = 0
+            
+            for key, data in self.cache.items():
+                if current_time - data['timestamp'] > data['ttl']:
+                    expired_count += 1
+            
+            return {
+                'total_entries': len(self.cache),
+                'expired_entries': expired_count,
+                'cache_size_mb': sum(len(str(v)) for v in self.cache.values()) / 1024 / 1024
+            }
+
 class ChatBot:
     def __init__(self, groq_key: str, enable_keyword_fallback: bool = True, aggressive_token_saving: bool = False):
-        self.fallback_handler = FallbackHandler()
+        # 🚀 PERFORMANCE FIX: Increased concurrent request limits
+        self.request_manager = ConcurrentRequestManager(max_concurrent_requests=25, max_queue_size=200)
+        self.db_pool = DatabaseConnectionPool(pool_size=12)  # Increased pool size
+        
+        # 🚀 PERFORMANCE FIX: Enhanced response caching
+        self.response_cache = ResponseCache(max_size=2000, default_ttl=600)  # 10-minute cache, larger size
+        
+        # 🚀 PERFORMANCE FIX: Add language detection caching
+        self.language_cache = {}
+        self.language_cache_ttl = 600  # 10-minute cache TTL (increased)
+        
+        # Initialize structured response framework
+        self.query_classifier = QueryClassifier()
+        self.response_templates = ResponseTemplates()
+        
+        self.fallback_handler = EnhancedFallbackHandler(
+            session=self.session if hasattr(self, 'session') else {},
+            nlu_engine=None,  # Will be set after NLU initialization
+            entity_extractor=None,  # Will be set after entity extractor initialization
+            sentiment_analyzer=None  # Will be set after sentiment analyzer initialization
+        )
         self.groq_key = groq_key  
         self._cached_summary = None
         self._last_fetched = 0
@@ -93,6 +330,13 @@ class ChatBot:
         self.response_generator = ResponseGenerationEngine()
         logger.info("🎯 Response Generation Intelligence initialized")
         
+        # Link NLP components to enhanced fallback handler (after all components are initialized)
+        if hasattr(self, 'fallback_handler') and hasattr(self.fallback_handler, 'nlu_engine'):
+            self.fallback_handler.nlu_engine = self.nlu_engine
+            self.fallback_handler.entity_extractor = self.entity_extractor
+            self.fallback_handler.sentiment_analyzer = sentiment_analyzer
+            logger.info("🔗 NLP components linked to enhanced fallback handler")
+        
         # Initialize Dynamic Greeting Generator with optional groq client
         groq_client = None
         if GROQ_AVAILABLE and groq_key:
@@ -106,14 +350,26 @@ class ChatBot:
         # Initialize Supabase client for full-text search
         from supabase import create_client, Client
         import os
-        self.supabase: Client = create_client(
-            os.environ.get("SUPABASE_URL"), 
-            os.environ.get("SUPABASE_KEY")
-        )
+        
+        # Initialize connection pool for better concurrent performance
+        supabase_url = os.environ.get("SUPABASE_URL")
+        supabase_key = os.environ.get("SUPABASE_KEY")
+        self.db_pool.initialize_pool(supabase_url, supabase_key)
+        
+        # Keep a primary connection for backwards compatibility
+        self.supabase: Client = create_client(supabase_url, supabase_key)
         
         # Token management settings
         self.enable_keyword_fallback = enable_keyword_fallback
         self.aggressive_token_saving = aggressive_token_saving
+        
+        # Cache max size setting (ResponseCache already initialized above)
+        self.cache_max_size = 100  # Limit cache size
+        
+        # Concurrency controls for different operations
+        self.db_semaphore = asyncio.Semaphore(6)  # Limit concurrent DB operations
+        self.nlu_semaphore = asyncio.Semaphore(4)  # Limit concurrent NLU operations
+        self.translation_semaphore = asyncio.Semaphore(8)  # Limit concurrent translations
 
         # ✅ Centralized greetings + followups with time-aware variants
         self.messages = {
@@ -204,6 +460,63 @@ class ChatBot:
                 "content": self.get_greeting(lang, user_timezone),  # 👈 use your greeting helper
             },
         ]
+
+    async def _run_with_timeout(self, coro_or_func, timeout_seconds: float = 3.0, operation_name: str = "database operation"):
+        """Run an async operation or sync function with timeout protection"""
+        import asyncio
+        import concurrent.futures
+        
+        try:
+            if asyncio.iscoroutine(coro_or_func) or asyncio.iscoroutinefunction(coro_or_func):
+                # Handle async operation
+                result = await asyncio.wait_for(coro_or_func, timeout=timeout_seconds)
+            else:
+                # Handle sync operation by running in thread pool
+                loop = asyncio.get_event_loop()
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = loop.run_in_executor(executor, coro_or_func)
+                    result = await asyncio.wait_for(future, timeout=timeout_seconds)
+            return result
+        except asyncio.TimeoutError:
+            logger.warning(f"⚠️ {operation_name} timed out after {timeout_seconds}s")
+            return None
+        except Exception as e:
+            logger.error(f"❌ {operation_name} failed: {e}")
+            return None
+
+    async def _execute_supabase_query(self, query_func, timeout_seconds: float = 3.0, operation_name: str = "supabase query"):
+        """Execute a Supabase query with timeout protection, connection pooling, and concurrency control"""
+        connection = None
+        try:
+            # Use semaphore to limit concurrent database operations
+            async with self.db_semaphore:
+                # Get a connection from the pool
+                connection = await self.db_pool.get_connection()
+                
+                # Create a wrapped query function that uses the pooled connection
+                async def pooled_query():
+                    return query_func(connection)
+                
+                result = await self._run_with_timeout(pooled_query(), timeout_seconds, operation_name)
+                return result
+        finally:
+            # Return connection to pool
+            if connection:
+                self.db_pool.return_connection(connection)
+
+    def _update_cache(self, cache_key: str, response: str):
+        """Update response cache using ResponseCache object"""
+        self.response_cache.set(cache_key, response)
+        logger.debug(f"🎯 Added to cache: '{cache_key[:30]}...'")
+
+    def _is_personal_query(self, query: str) -> bool:
+        """Check if query contains personal information that shouldn't be cached"""
+        personal_indicators = [
+            "my name", "i am", "i'm", "my child", "my daughter", "my son", 
+            "my phone", "my email", "my address", "i live", "my grade"
+        ]
+        query_lower = query.lower()
+        return any(indicator in query_lower for indicator in personal_indicators)
 
     def get_time_period(self, user_timezone: str = None) -> str:
         """Determine the time of day based on current hour in user's timezone"""
@@ -460,7 +773,68 @@ class ChatBot:
         return status
 
     async def detect_language(self, text: str) -> str:
-        """Detect language with Aklanon markers triggering special handling."""
+        """Enhanced language detection with improved Aklanon/Tagalog recognition and caching."""
+        # 🚀 PERFORMANCE FIX: Check cache first
+        cache_key = hash(text.lower().strip())
+        current_time = time.time()
+        
+        if cache_key in self.language_cache:
+            cached_result, timestamp = self.language_cache[cache_key]
+            if current_time - timestamp < self.language_cache_ttl:
+                logger.debug(f"🚀 Language cache hit: {cached_result}")
+                return cached_result
+        
+        # Fast-path detection for common patterns (performance optimization)
+        text_lower = text.lower().strip()
+        
+        # Quick English detection (most common)
+        english_quick_patterns = ["hello", "hi", "good morning", "good afternoon", "thank you", "where", "what", "how"]
+        if any(pattern in text_lower for pattern in english_quick_patterns):
+            result = "en"
+            self.language_cache[cache_key] = (result, current_time)
+            logger.debug(f"🚀 Fast-path English detection: {result}")
+            return result
+        
+        # Quick Aklanon detection
+        aklanon_quick_patterns = ["it", "nga", "ro", "eon", "gid", "sang", "wara", "mayo", "maayong"]
+        if any(pattern in text_lower for pattern in aklanon_quick_patterns):
+            result = "akl"
+            self.language_cache[cache_key] = (result, current_time)
+            logger.debug(f"🚀 Fast-path Aklanon detection: {result}")
+            return result
+        
+        # Quick Tagalog detection  
+        tagalog_quick_patterns = ["po", "opo", "kumusta", "sino", "saan", "hindi", "salamat"]
+        if any(pattern in text_lower for pattern in tagalog_quick_patterns):
+            result = "tl"
+            self.language_cache[cache_key] = (result, current_time)
+            logger.debug(f"🚀 Fast-path Tagalog detection: {result}")
+            return result
+        
+        # Fall back to full detection for complex cases
+        result = await self._detect_language_full(text)
+        
+        # Cache the result
+        self.language_cache[cache_key] = (result, current_time)
+        
+        # Clean cache periodically
+        if len(self.language_cache) > 1000:
+            self._clean_language_cache(current_time)
+        
+        return result
+    
+    def _clean_language_cache(self, current_time: float):
+        """Clean expired entries from language cache"""
+        expired_keys = [
+            key for key, (_, timestamp) in self.language_cache.items()
+            if current_time - timestamp > self.language_cache_ttl
+        ]
+        for key in expired_keys:
+            del self.language_cache[key]
+        logger.debug(f"🧹 Cleaned {len(expired_keys)} expired language cache entries")
+    
+    async def _detect_language_full(self, text: str) -> str:
+        """Full language detection with comprehensive analysis (fallback for complex cases)."""
         try:
             # Explicit English markers for common words
             english_markers = [
@@ -469,87 +843,242 @@ class ChatBot:
                 "class", "grade", "program", "office", "information", "contact",
                 "phone", "email", "time", "schedule", "hours", "enrollment",
                 "good morning", "good afternoon", "good evening", "hello", "hi",
-                "thanks", "thank you", "please", "sorry", "excuse me"
+                "thanks", "thank you", "please", "sorry", "excuse me", "yes", "no"
             ]
             
-            # Aklanon markers that trigger Aklanon detection
-            aklanon_markers = [
-                "di", "du", "eun", "tanan", "dun", "don", "it", "nga", "ro", 
-                "eon", "baga", "man", "hay", "sang", "sa", "kag", "kay", 
-                "amo", "ini", "ina", "siin", "diin", "pila", "ano", "sin-o", 
-                "kan-o", "ham-an", "gani", "guid", "gid", "lang", "man", 
-                "bisan", "hasta", "para", "kon", "kung", "pero", "kundi",
-                "maayong", "aga", "hapon", "gab-i", "adlaw"  # Aklanon greetings and time words
-            ]
+            # Enhanced Aklanon markers with authentic Aklanon phrases
+            aklanon_markers = {
+                # Core Aklanon particles and function words (unique to Aklanon)
+                "high_confidence": [
+                    "it", "nga", "ro", "eon", "eot", "baga", "gani", "guid", "gid", 
+                    "sing", "tuga", "owa", "uwa", "daw", "baw", "abi", "diri", "wara",
+                    "mayo", "uyon", "permi", "dason", "pati", "man-o", "kada",
+                    "sang", "anay", "ron", "aq", "ako'ng", "imong"  # Key Aklanon words
+                ],
+                
+                # Authentic Aklanon greetings and expressions
+                "greetings_expressions": [
+                    "hay", "mayad", "saeamat", "pasensya", "pasensyahe", 
+                    "agahon", "gabi-i", "pagkatueog", "mauna", "buligi"
+                ],
+                
+                # Aklanon-specific question words
+                "question_words": [
+                    "sin-o", "diin", "siin", "san-o", "ngaa", "paano-o", "pila-a",
+                    "amon-o", "kamusta-o", "ano-o", "hain", "kay-ano", "antigo"
+                ],
+                
+                # Aklanon greetings and time expressions
+                "greetings_time": [
+                    "maayong", "aga", "udto", "hapon", "gab-i", "adlaw",
+                    "dumadaw", "padulong", "pabalik", "pag-abot", "agahon"
+                ],
+                
+                # Aklanon pronouns and demonstratives
+                "pronouns": [
+                    "imo", "iya", "aton", "inyo", "ila", "akon", 
+                    "ini", "ina", "ito", "iri", "ara", "adto", "ako'ng", "imong"
+                ],
+                
+                # Authentic Aklanon verbs and words
+                "verbs_words": [
+                    "naga", "gina", "gin", "mag-", "nag-", "pa-",
+                    "maayo", "dako", "gamay", "taas", "ubos", "bag-o", "daan",
+                    "maghambae", "kasayod", "kabaeo", "ngaean", "eskuelahan"
+                ],
+                
+                # Aklanon yes/no and basic responses
+                "responses": [
+                    "hu-o", "ho-o", "indi", "basi", "mayad"
+                ]
+            }
             
-            # Filipino/Tagalog markers for better detection  
-            tagalog_markers = [
-                "sino", "saan", "ano", "kailan", "bakit", "paano", "ilan", 
-                "ang", "ng", "sa", "si", "ni", "kay", "para", "para sa",
-                "mga", "na", "ay", "po", "opo", "hindi", "oo", "wala",
-                "meron", "may", "yung", "yun", "ito", "iyan", "iyon",
-                "ako", "ikaw", "siya", "kami", "kayo", "sila", "tayo",
-                "kumusta", "kamusta", "magandang", "salamat", "pasensya"
-            ]
+            # Enhanced Tagalog markers with disambiguation from Aklanon
+            tagalog_markers = {
+                # Unique Tagalog particles not found in Aklanon
+                "high_confidence": [
+                    "po", "opo", "ho", "naman", "din", "rin", "kasi", "eh",
+                    "talaga", "nga", "naman", "kaya", "sige", "yung", "yun",
+                    "ganyan", "ganun", "ganito", "kailangan", "gusto"
+                ],
+                
+                # Tagalog-specific question words  
+                "question_words": [
+                    "sino", "saan", "kailan", "bakit", "paano", "ilan",
+                    "alin", "nasaan", "saang", "anong", "sinong"
+                ],
+                
+                # Tagalog greetings and expressions
+                "greetings": [
+                    "kumusta", "kamusta", "magandang", "salamat", "pasensya",
+                    "pakisuyo", "makakagawa", "pwede", "puwede"
+                ],
+                
+                # Tagalog pronouns and articles unique from Aklanon
+                "pronouns_articles": [
+                    "ako", "ikaw", "siya", "kami", "kayo", "sila", "tayo",
+                    "ang", "ng", "sa", "si", "ni", "kay", "para sa"
+                ],
+                
+                # Common Tagalog words not found in Aklanon
+                "common_words": [
+                    "hindi", "oo", "wala", "meron", "may", "maging", "dapat",
+                    "bigla", "lagi", "minsan", "palagi", "sobra", "masaya"
+                ]
+            }
             
             text_lower = text.lower()
             
-            # Check for explicit English phrases first (highest priority)
-            english_phrases = ["good morning", "good afternoon", "good evening", "hello", "hi there"]
+            # Priority 1: Check for explicit English phrases first
+            english_phrases = ["good morning", "good afternoon", "good evening", "hello", "hi there", "thank you", "excuse me"]
             for phrase in english_phrases:
                 if phrase in text_lower:
                     logger.info(f"🔎 English phrase detected ('{phrase}') → en")
                     return "en"
             
-            # Check for explicit English markers (word boundaries for better matching)
-            english_count = 0
-            for marker in english_markers:
-                if len(marker.split()) > 1:  # Skip phrases (already checked above)
-                    continue
-                # Use word boundaries to avoid substring matches
-                if f" {marker} " in f" {text_lower} " or text_lower.startswith(f"{marker} ") or text_lower.endswith(f" {marker}"):
-                    english_count += 1
+            # Priority 1.5: Check for specific mixed-language patterns that should override English
+            # Handle mixed greetings with more local language content
+            mixed_patterns = {
+                "kumusta": "tl",  # Even if followed by English, Kumusta is distinctly Filipino
+            }
             
-            # Count other language markers with word boundaries
-            aklanon_count = 0
-            for marker in aklanon_markers:
-                if f" {marker} " in f" {text_lower} " or text_lower.startswith(f"{marker} ") or text_lower.endswith(f" {marker}"):
-                    aklanon_count += 1
+            for pattern, lang in mixed_patterns.items():
+                if pattern in text_lower:
+                    # Count the rest of the text to see if it's mixed
+                    remaining_text = text_lower.replace(pattern, "")
+                    english_words_in_remaining = sum(1 for marker in english_markers if marker in remaining_text)
                     
-            tagalog_count = 0  
-            for marker in tagalog_markers:
-                if len(marker.split()) > 1:  # Multi-word markers
-                    if marker in text_lower:
-                        tagalog_count += 1
-                else:  # Single word markers with word boundaries
-                    if f" {marker} " in f" {text_lower} " or text_lower.startswith(f"{marker} ") or text_lower.endswith(f" {marker}"):
-                        tagalog_count += 1
+                    # If the mixed pattern is prominent and there's limited English, prefer local language
+                    if english_words_in_remaining <= 2:  # Allow some English but not dominant
+                        logger.info(f"🔎 Mixed-language pattern '{pattern}' with limited English → {lang}")
+                        return lang
             
-            # If English markers dominate, it's English
-            if english_count > 0 and english_count >= aklanon_count and english_count >= tagalog_count:
-                logger.info(f"🔎 English markers detected ({english_count}) → en")
+            # Priority 2: Count language markers with confidence weighting
+            english_score = 0
+            aklanon_score = 0
+            tagalog_score = 0
+            
+            # Count English markers with word boundaries (but be more conservative)
+            for marker in english_markers:
+                if len(marker.split()) > 1:  # Skip phrases already checked
+                    continue
+                if self._word_boundary_match(marker, text_lower):
+                    # Give lower weight to common words that might appear in borrowed contexts
+                    if marker in ["school", "office", "teacher", "principal", "phone", "email"]:
+                        english_score += 0.5  # Reduced weight for borrowed words
+                    else:
+                        english_score += 1
+            
+            # Count Aklanon markers with confidence weighting
+            for category, markers in aklanon_markers.items():
+                weight = {
+                    "high_confidence": 3, 
+                    "greetings_expressions": 2.5,  # High weight for authentic greetings
+                    "question_words": 2.5, 
+                    "greetings_time": 2, 
+                    "pronouns": 1.5, 
+                    "verbs_words": 1.5,  # New category for authentic Aklanon verbs
+                    "responses": 2  # New category for yes/no responses
+                }.get(category, 1)
+                
+                for marker in markers:
+                    if self._word_boundary_match(marker, text_lower):
+                        aklanon_score += weight
+                        logger.debug(f"Aklanon marker '{marker}' found (category: {category}, weight: {weight})")
+            
+            # Count Tagalog markers with confidence weighting  
+            for category, markers in tagalog_markers.items():
+                weight = {"high_confidence": 3, "question_words": 2.5, "greetings": 2,
+                         "pronouns_articles": 1.5, "common_words": 1}.get(category, 1)
+                
+                for marker in markers:
+                    if self._word_boundary_match(marker, text_lower):
+                        tagalog_score += weight
+                        logger.debug(f"Tagalog marker '{marker}' found (category: {category}, weight: {weight})")
+            
+            # Priority 3: Apply disambiguation rules with adjusted thresholds
+            
+            # Check for specific Aklanon patterns that should override other detection
+            aklanon_override_patterns = ["sang information", "sang"]
+            for pattern in aklanon_override_patterns:
+                if pattern in text_lower:
+                    # If we have "sang" + reasonable Aklanon context, it's likely Aklanon
+                    if aklanon_score >= 1 or any(word in text_lower for word in ["pwede", "ako", "makakuha"]):
+                        logger.info(f"🔎 Aklanon override pattern '{pattern}' detected → akl")
+                        return "akl"
+            
+            # Strong English indicators - need higher threshold due to borrowed words
+            if english_score >= 2 and english_score > (aklanon_score + tagalog_score):
+                logger.info(f"🔎 Strong English dominance (en: {english_score} vs akl: {aklanon_score}, tl: {tagalog_score}) → en")
                 return "en"
             
-            # Check for Aklanon markers
-            if aklanon_count > 0:
-                logger.info(f"🔎 Aklanon markers detected ({aklanon_count}) → akl")
+            # Strong Aklanon indicators (keep moderate threshold)
+            if aklanon_score >= 2:
+                logger.info(f"🔎 Strong Aklanon markers detected (score: {aklanon_score}) → akl")
                 return "akl"
             
-            # Check for Tagalog markers
-            if tagalog_count > 0:
-                logger.info(f"🔎 Tagalog markers detected ({tagalog_count}) → tl")
+            # Strong Tagalog indicators  
+            if tagalog_score >= 2:
+                logger.info(f"🔎 Strong Tagalog markers detected (score: {tagalog_score}) → tl")
                 return "tl"
             
-            # Use langid for other languages
-            lang, prob = langid.classify(text)
-            if lang.startswith("tl"):
-                return "tl"
-            if lang.startswith("en"):
+            # Disambiguation between Aklanon and Tagalog for lower scores
+            if aklanon_score > 0 or tagalog_score > 0:
+                if aklanon_score > tagalog_score and aklanon_score >= 1:
+                    logger.info(f"🔎 Aklanon preferred (akl: {aklanon_score} vs tl: {tagalog_score}) → akl")
+                    return "akl"
+                elif tagalog_score > aklanon_score and tagalog_score >= 1:
+                    logger.info(f"🔎 Tagalog preferred (tl: {tagalog_score} vs akl: {aklanon_score}) → tl")
+                    return "tl"
+                elif aklanon_score == tagalog_score and aklanon_score > 0:
+                    # Tie-breaker: Check for specific distinguishing patterns
+                    aklanon_tie_breakers = ["sin-o", "diin", "san-o", "maayong", "gid", "nga", "wara", "mayo", "sang"]
+                    tagalog_tie_breakers = ["sino", "saan", "kailan", "kumusta", "po", "opo", "hindi", "may"]
+                    
+                    aklanon_tie_score = sum(1 for pattern in aklanon_tie_breakers if pattern in text_lower)
+                    tagalog_tie_score = sum(1 for pattern in tagalog_tie_breakers if pattern in text_lower)
+                    
+                    if aklanon_tie_score > tagalog_tie_score:
+                        logger.info(f"🔎 Aklanon tie-breaker patterns detected → akl")
+                        return "akl"
+                    elif tagalog_tie_score > aklanon_tie_score:
+                        logger.info(f"🔎 Tagalog tie-breaker patterns detected → tl")
+                        return "tl"
+            
+            # If we have any English score and no clear local language dominance
+            if english_score > 0 and aklanon_score == 0 and tagalog_score == 0:
+                logger.info(f"🔎 English markers only (score: {english_score}) → en")
                 return "en"
-            return "en"  # fallback to English for all others
+            
+            # Priority 4: Fallback to langid for unrecognized text
+            try:
+                lang, confidence = langid.classify(text)
+                if lang == "tl" and confidence > 0.7:
+                    logger.info(f"🔎 langid detected Tagalog (confidence: {confidence:.2f}) → tl")
+                    return "tl"
+                elif lang == "en" and confidence > 0.7:
+                    logger.info(f"🔎 langid detected English (confidence: {confidence:.2f}) → en")
+                    return "en"
+            except Exception as e:
+                logger.debug(f"langid classification failed: {e}")
+            
+            # Final fallback
+            logger.info(f"🔎 No clear language detected (scores - en:{english_score}, akl:{aklanon_score}, tl:{tagalog_score}) → defaulting to en")
+            return "en"
+            
         except Exception as e:
             logger.warning(f"Language detection failed: {e}")
             return "en"  # safe fallback
+    
+    def _word_boundary_match(self, word: str, text: str) -> bool:
+        """Check if word appears with proper word boundaries in text."""
+        import re
+        # Handle multi-word patterns
+        if " " in word:
+            return word in text
+        # Single word with boundaries
+        pattern = r'\b' + re.escape(word) + r'\b'
+        return bool(re.search(pattern, text, re.IGNORECASE))
     
     def translate_aklanon_query_keywords(self, query: str) -> str:
         """Translate Aklanon words in query to English for better search matching."""
@@ -619,54 +1148,52 @@ class ChatBot:
             "sino": "sin-o",    # sino → sin-o (who)
         }
         
-        logger.info(f"🔍 Translating words: {words}")
+        # Process words without excessive logging
+        translations_made = []
         
         for word in words:
             clean_word = word.lower().strip('.,!?-')
-            logger.info(f"🔍 Checking word: '{clean_word}'")
             
             # Check for Aklanon particles first
             if clean_word in aklanon_particles:
                 particle_translation = aklanon_particles[clean_word]
                 if particle_translation:  # Only add if not empty string
                     translated_words.append(particle_translation)
-                    logger.info(f"🔄 Particle translation: '{clean_word}' → '{particle_translation}'")
-                else:
-                    logger.info(f"🔄 Particle removed: '{clean_word}' (emphasis/marker only)")
+                    translations_made.append(f"'{clean_word}' → '{particle_translation}'")
             # Check for spelling variations first
             elif clean_word in aklanon_variations:
                 canonical_word = aklanon_variations[clean_word]
                 if canonical_word in aklanon_dict:
                     english_meaning = aklanon_dict[canonical_word]
                     translated_words.append(english_meaning)
-                    logger.info(f"🔄 Variation translated: '{clean_word}' → '{canonical_word}' → '{english_meaning}'")
+                    translations_made.append(f"'{clean_word}' → '{english_meaning}'")
                 else:
                     translated_words.append(word)
-                    logger.info(f"🔍 Variation found but no translation for '{canonical_word}'")
             # Check for exact match in main dictionary
             elif clean_word in aklanon_dict:
                 english_meaning = aklanon_dict[clean_word]
                 translated_words.append(english_meaning)
-                logger.info(f"🔄 Translated '{clean_word}' → '{english_meaning}'")
+                translations_made.append(f"'{clean_word}' → '{english_meaning}'")
             # Check for word with hyphen (like "sin-o")
             elif f"{clean_word}-" in aklanon_dict:
                 english_meaning = aklanon_dict[f"{clean_word}-"]
                 translated_words.append(english_meaning)
-                logger.info(f"🔄 Translated '{clean_word}' → '{english_meaning}'")
+                translations_made.append(f"'{clean_word}' → '{english_meaning}'")
             # Check without hyphen if word has hyphen
             elif "-" in word and clean_word.replace("-", "") in aklanon_dict:
                 english_meaning = aklanon_dict[clean_word.replace("-", "")]
                 translated_words.append(english_meaning)
-                logger.info(f"🔄 Translated '{clean_word}' → '{english_meaning}'")
+                translations_made.append(f"'{clean_word}' → '{english_meaning}'")
             else:
                 translated_words.append(word)
-                logger.info(f"🔍 No translation for '{clean_word}', keeping original")
         
         translated_query = " ".join(translated_words)
+        
+        # Log only if translations were made (not word-by-word)
         if translated_query != query:
-            logger.info(f"📝 Query translation: '{query}' → '{translated_query}'")
-        else:
-            logger.info(f"📝 No translation changes made to: '{query}'")
+            logger.info(f"📝 Aklanon translation: '{query}' → '{translated_query}' ({len(translations_made)} words translated)")
+            if translations_made:
+                logger.debug(f"📝 Translations: {', '.join(translations_made)}")
         
         return translated_query
     def _is_person_query(self, query: str) -> bool:
@@ -732,22 +1259,34 @@ class ChatBot:
         return False
     
     async def _extract_entities_with_nlu(self, user_message: str) -> dict:
-        """Extract entities using both NLU engine and entity extractor"""
+        """Extract entities using both NLU engine and entity extractor with timeout protection and concurrency control"""
         try:
-            # Use the advanced entity extractor directly for better results
-            extracted_entities = self.entity_extractor.extract_entities(user_message)
+            # Use semaphore and timeout wrapper for entity extraction to prevent blocking
+            async with self.nlu_semaphore:
+                async def extract_entities():
+                    # Use the advanced entity extractor directly for better results
+                    extracted_entities = self.entity_extractor.extract_entities(user_message)
+                    
+                    # Get intent from NLU engine
+                    nlu_result = await self.nlu_engine.analyze_intent(user_message)
+                    
+                    return {
+                        'entities': extracted_entities,  # List of ExtractedEntity objects
+                        'intent': nlu_result.intent.value,
+                        'confidence': nlu_result.confidence
+                    }
             
-            # Get intent from NLU engine
-            nlu_result = await self.nlu_engine.analyze_intent(user_message)
+            result = await self._run_with_timeout(extract_entities(), 3.0, "entity extraction")
             
-            # Return entities in a format compatible with the rest of the system
-            return {
-                'entities': extracted_entities,  # List of ExtractedEntity objects
-                'intent': nlu_result.intent.value,
-                'confidence': nlu_result.confidence
-            }
+            if result:
+                return result
+            else:
+                # Fallback if timeout
+                logger.warning("⚠️ Entity extraction timed out, using fallback")
+                return {'entities': [], 'intent': 'unknown', 'confidence': 0.0}
+                
         except Exception as e:
-            print(f"Error in NLU entity extraction: {e}")
+            logger.error(f"Error in NLU entity extraction: {e}")
             return {'entities': [], 'intent': 'unknown', 'confidence': 0.0}
 
     def _extract_name_from_query(self, query: str) -> str:
@@ -1447,7 +1986,29 @@ class ChatBot:
         return header + staff_list + footer
 
     async def enhanced_search_supabase(self, query: str) -> str:
-        """Enhanced search strategy prioritizing full-text search via search_tsv."""
+        """Enhanced search strategy with performance optimization and timeout handling."""
+        try:
+            # 🚨 PERFORMANCE FIX: Increased timeout and added retry logic
+            for attempt in range(3):  # Max 3 attempts
+                try:
+                    return await asyncio.wait_for(
+                        self._enhanced_search_supabase_internal(query),
+                        timeout=25.0  # 🚀 INCREASED: from 15.0 to 25.0 seconds for high load
+                    )
+                except asyncio.TimeoutError:
+                    if attempt < 2:  # Don't log on final attempt
+                        logger.warning(f"⏰ Database search timeout on attempt {attempt + 1}, retrying...")
+                        await asyncio.sleep(1.0)  # Wait before retry
+                        continue
+                    else:
+                        logger.error(f"⏰ Database search timed out after 15 seconds and 3 attempts for query: '{query[:50]}...'")
+                        return "Search timed out after multiple attempts. Please try a simpler question."
+        except Exception as e:
+            logger.error(f"❌ Database search failed: {e}")
+            return "Database search failed. Please try again."
+
+    async def _enhanced_search_supabase_internal(self, query: str) -> str:
+        """Internal enhanced search strategy prioritizing full-text search via search_tsv."""
         import re
         
         # 🛡️ SAFETY CHECK: Handle None or empty query
@@ -2507,12 +3068,15 @@ class ChatBot:
                 staff_terms = ["head teacher", "principal", "guidance", "nurse", "secretary"]
                 for staff_term in staff_terms:
                     try:
-                        result = self.supabase.table("chatbot_prompts") \
-                            .select("keywords, response") \
-                            .ilike("keywords", f"%{staff_term}%") \
-                            .execute()
+                        def query(connection, term=staff_term):
+                            return connection.table("chatbot_prompts") \
+                                .select("keywords, response") \
+                                .ilike("keywords", f"%{term}%") \
+                                .execute()
                         
-                        if result.data:
+                        result = await self._execute_supabase_query(query, 2.0, f"staff query for {staff_term}")
+                        
+                        if result and result.data:
                             logger.info(f"✅ Found staff-specific match for '{staff_term}'")
                             best_match = result.data[0]
                             formatted_result = f"Q: {best_match['keywords']}\nA: {best_match['response']}"
@@ -2525,14 +3089,16 @@ class ChatBot:
                 logger.info(f"🔍 Full-text search for: '{word}'")
                 
                 try:
-                    # Use proper Supabase client methods with correct wildcard syntax
-                    result = self.supabase.table("chatbot_prompts") \
-                        .select("keywords, response") \
-                        .ilike("keywords", f"%{word}%") \
-                        .execute()
+                    def query(connection, search_word=word):
+                        return connection.table("chatbot_prompts") \
+                            .select("keywords, response") \
+                            .ilike("keywords", f"%{search_word}%") \
+                            .execute()
+                    
+                    result = await self._execute_supabase_query(query, 2.0, f"full-text search for {word}")
                     
                     # For staff queries, prioritize exact staff information over general school info
-                    if is_staff_query and result.data:
+                    if is_staff_query and result and result.data:
                         # Filter out general school information for staff queries
                         filtered_results = []
                         for item in result.data:
@@ -2547,13 +3113,16 @@ class ChatBot:
                             return formatted_result
                     
                     # If no results in keywords, try response field
-                    if not result.data:
-                        result = self.supabase.table("chatbot_prompts") \
-                            .select("keywords, response") \
-                            .ilike("response", f"%{word}%") \
-                            .execute()
+                    if not (result and result.data):
+                        def response_query(connection, search_word=word):
+                            return connection.table("chatbot_prompts") \
+                                .select("keywords, response") \
+                                .ilike("response", f"%{search_word}%") \
+                                .execute()
+                        
+                        result = await self._execute_supabase_query(response_query, 2.0, f"response search for {word}")
                     
-                    if result.data:
+                    if result and result.data:
                         logger.info(f"✅ Full-text search succeeded for '{word}' with {len(result.data)} results")
                         # Return the best match
                         best_match = result.data[0]
@@ -2588,25 +3157,31 @@ class ChatBot:
             for term in search_terms:
                 try:
                     # Try exact match in keywords first
-                    result = self.supabase.table("chatbot_prompts") \
-                        .select("keywords, response") \
-                        .eq("keywords", term) \
-                        .limit(1) \
-                        .execute()
+                    def exact_query(connection, search_term=term):
+                        return connection.table("chatbot_prompts") \
+                            .select("keywords, response") \
+                            .eq("keywords", search_term) \
+                            .limit(1) \
+                            .execute()
                     
-                    if result.data:
+                    result = await self._execute_supabase_query(exact_query, 1.5, f"exact match for {term}")
+                    
+                    if result and result.data:
                         logger.info(f"✅ Exact match found for '{term}'")
                         row = result.data[0]
                         return f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}"
                     
                     # Try ilike in response if no exact match
-                    result = self.supabase.table("chatbot_prompts") \
-                        .select("keywords, response") \
-                        .ilike("response", f"%{term}%") \
-                        .limit(1) \
-                        .execute()
+                    def response_query(connection, search_term=term):
+                        return connection.table("chatbot_prompts") \
+                            .select("keywords, response") \
+                            .ilike("response", f"%{search_term}%") \
+                            .limit(1) \
+                            .execute()
                     
-                    if result.data:
+                    result = await self._execute_supabase_query(response_query, 1.5, f"response search for {term}")
+                    
+                    if result and result.data:
                         logger.info(f"✅ Response match found for '{term}'")
                         row = result.data[0]
                         return f"Q: {row.get('keywords', '')}\nA: {row.get('response', '')}"
@@ -2978,28 +3553,547 @@ class ChatBot:
         # Default: general query
         return {"intent": "general", "confidence": 0.5}
 
+    async def _should_use_enhanced_fallback(self, query: str, sentiment_result, conversation_history: list, lang: str) -> bool:
+        """
+        Intelligent logic to determine when to use enhanced fallback instead of regular AI processing.
+        
+        Enhanced fallback is preferred when:
+        1. User shows frustration or negative sentiment
+        2. Query contains "doesn't exist" or similar non-existence indicators
+        3. User has repeatedly asked similar questions (conversation loop detection)
+        4. Query seems ambiguous or requires clarification
+        5. User explicitly asks for human help
+        6. Previous responses were unhelpful (based on conversation context)
+        """
+        query_lower = query.lower().strip()
+        
+        # 1. PRIORITY: Non-existence detection (from our previous fix)
+        non_existence_keywords = [
+            "doesn't exist", "does not exist", "don't exist", "do not exist",
+            "not found", "can't find", "cannot find", "no such", "non-existent",
+            "wala", "way", "ala"  # Aklanon/Tagalog
+        ]
+        
+        if any(keyword in query_lower for keyword in non_existence_keywords):
+            logger.info("🚫 Non-existence query detected → enhanced fallback priority")
+            return True
+        
+        # 2. Sentiment-based triggering
+        if sentiment_result.sentiment.value in ['negative', 'frustrated']:
+            logger.info(f"😤 Negative sentiment ({sentiment_result.sentiment.value}) → enhanced fallback")
+            return True
+        
+        if sentiment_result.urgency_level >= 4:  # High urgency
+            logger.info(f"⚡ High urgency ({sentiment_result.urgency_level}/5) → enhanced fallback")
+            return True
+        
+        # 3. Human help requests
+        human_keywords = [
+            "human", "person", "staff", "teacher", "help me", "assist me",
+            "tao", "tulong", "tabang"  # Tagalog/Aklanon
+        ]
+        
+        if any(keyword in query_lower for keyword in human_keywords):
+            logger.info("👤 Human assistance request → enhanced fallback")
+            return True
+        
+        # 4. Conversation loop detection (repeated similar queries)
+        if conversation_history and len(conversation_history) >= 4:
+            recent_queries = [msg.get('query', '').lower() for msg in conversation_history[-4:] 
+                            if msg.get('type') == 'user' and msg.get('query')]
+            
+            # Check if current query is very similar to recent ones
+            for recent_query in recent_queries:
+                if self._queries_are_similar(query_lower, recent_query):
+                    logger.info("🔄 Conversation loop detected → enhanced fallback")
+                    return True
+        
+        # 5. Ambiguous or clarification-seeking queries
+        clarification_indicators = [
+            "what do you mean", "i don't understand", "unclear", "confusing",
+            "explain", "clarify", "hindi ko naintindihan", "ano ibig sabihin"
+        ]
+        
+        if any(indicator in query_lower for indicator in clarification_indicators):
+            logger.info("❓ Clarification request → enhanced fallback")
+            return True
+        
+        # 6. Complex questions that might need structured responses
+        complexity_indicators = [
+            "how do i", "what are the steps", "can you help me with",
+            "i need to", "procedure", "process", "paano", "ano ang dapat"
+        ]
+        
+        if any(indicator in query_lower for indicator in complexity_indicators):
+            logger.info("🏗️ Complex procedural query → enhanced fallback")
+            return True
+        
+        # Default: use regular AI processing
+        return False
+    
+    def _queries_are_similar(self, query1: str, query2: str, threshold: float = 0.4) -> bool:
+        """Check if two queries are similar using enhanced word overlap and semantic matching."""
+        if not query1 or not query2:
+            return False
+        
+        # Normalize queries
+        words1 = set(query1.lower().split())
+        words2 = set(query2.lower().split())
+        
+        if len(words1) == 0 or len(words2) == 0:
+            return False
+        
+        # Remove common stop words that don't add meaning
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'am', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'me', 'you', 'i'}
+        words1 = words1 - stop_words
+        words2 = words2 - stop_words
+        
+        # If no meaningful words left, not similar
+        if len(words1) == 0 or len(words2) == 0:
+            return False
+        
+        # Calculate exact word overlap
+        overlap = len(words1.intersection(words2))
+        exact_similarity = overlap / min(len(words1), len(words2))
+        
+        # Enhanced semantic similarity for common patterns
+        semantic_boost = 0.0
+        
+        # Detect similar intent patterns
+        intent_synonyms = {
+            'what': {'show', 'tell', 'give'},
+            'show': {'tell', 'give', 'what'},
+            'tell': {'show', 'give', 'what'},
+            'have': {'offer', 'available', 'provide'},
+            'offer': {'have', 'available', 'provide'},
+            'available': {'have', 'offer', 'provide'},
+        }
+        
+        # Check for synonym matches
+        for word1 in words1:
+            for word2 in words2:
+                if word1 in intent_synonyms and word2 in intent_synonyms[word1]:
+                    semantic_boost += 0.3
+                    break
+        
+        # Final similarity score
+        total_similarity = exact_similarity + semantic_boost
+        
+        return total_similarity >= threshold
+
     async def answer(self, query: str, context: str = None, conversation_history: list = None, user_timezone: str = None, session_id: str = None) -> str:
-        lang = await self.detect_language(query)
+        """
+        Main answer method with critical performance optimizations and concurrent request management.
+        """
+        start_time = time.time()
+        
+        try:
+            # � CONCURRENT OPTIMIZATION: Use request manager for load balancing
+            result = await self.request_manager.execute_request(
+                self._answer_with_concurrent_optimization,
+                query, context, conversation_history, user_timezone, session_id
+            )
+            return result
+        except Exception as e:
+            if "System overloaded" in str(e):
+                logger.warning(f"🚨 System overloaded, using emergency fallback")
+                return self._get_overload_response(query)
+            logger.error(f"❌ Critical error in answer method: {e}")
+            return "I'm experiencing technical difficulties. Please try again or contact the admin office."
+        finally:
+            total_time = time.time() - start_time
+            if total_time > 5.0:
+                logger.warning(f"⚠️ Slow response time: {total_time:.2f}s for query: '{query[:50]}...'")
+
+    async def _answer_with_concurrent_optimization(self, query: str, context: str = None, conversation_history: list = None, user_timezone: str = None, session_id: str = None) -> str:
+        """Answer method optimized for concurrent requests with response caching"""
+        
+        # 🚀 PERFORMANCE FIX: Early cache check for common queries
+        normalized_query = query.strip().lower()
+        
+        # Quick responses for very common queries to reduce load
+        quick_responses = {
+            "hello": "Hello! Welcome to our school. How can I help you today?",
+            "hi": "Hi there! I'm here to help with any questions about our school.",
+            "": "Please ask me a question about our school and I'll be happy to help!",
+            "help": "I'm here to help you with information about our school programs, enrollment, hours, and more. What would you like to know?",
+        }
+        
+        if normalized_query in quick_responses:
+            return quick_responses[normalized_query]
+        
+        # Enhanced cache context - avoid complex attribute access during initialization
+        cache_context = {
+            'language': 'auto-detect',
+            'context': context[:50] if context else None  # Limit context for cache key
+        }
+        
+        # Check cache first
+        try:
+            cached_response = self.response_cache.get(query, cache_context)
+            if cached_response:
+                logger.info(f"📋 Cache hit for query: {query[:50]}...")
+                return cached_response
+        except Exception as e:
+            logger.warning(f"Cache retrieval failed: {e}, continuing without cache")
+        
+        try:
+            # Add timeout wrapper for entire answer process
+            response = await asyncio.wait_for(
+                self._answer_with_timeout(query, context, conversation_history, user_timezone, session_id),
+                timeout=12.0  # Reduced timeout for better concurrent performance
+            )
+            
+            # Only cache successful string responses
+            if isinstance(response, str) and len(response) > 10:
+                # Cache the response (with shorter TTL for dynamic content)
+                cache_ttl = 180 if any(word in query.lower() for word in ['time', 'today', 'now', 'current']) else 300
+                try:
+                    self.response_cache.set(query, response, cache_context, ttl=cache_ttl)
+                except Exception as e:
+                    logger.warning(f"Cache setting failed: {e}")
+            
+            return response
+            
+        except asyncio.TimeoutError:
+            logger.error(f"⏰ Query timed out after 12 seconds: '{query[:100]}...'")
+            return self._get_timeout_response(query)
+        except Exception as e:
+            logger.error(f"❌ Critical error in answer method: {e}")
+            return "I'm experiencing technical difficulties. Please try again or contact the admin office."
+
+    def _get_overload_response(self, query: str) -> str:
+        """Generate appropriate response when system is overloaded."""
+        # Quick language detection for overload response
+        if any(word in query.lower() for word in ['ang', 'sa', 'para', 'mo']):
+            return "Maraming mga request ngayon. Pakiulit pagkatapos ng ilang sandali o kontakin ang admin office sa (036) 269-6345."
+        elif any(word in query.lower() for word in ['nga', 'sang', 'kay', 'diri']):
+            return "Madamo nga requests subong. Pakiulit pagkatapos sang pila ka segundo o tawgan ang admin office sa (036) 269-6345."
+        else:
+            return "System is currently experiencing high load. Please try again in a moment or contact the admin office at (036) 269-6345."
+
+    def _get_timeout_response(self, query: str) -> str:
+        """Generate appropriate timeout response based on query."""
+        # Quick language detection for timeout response
+        if any(word in query.lower() for word in ['ang', 'sa', 'para', 'mo']):
+            return "Natagalan ang proseso. Pakiulit ang tanong o bisitahin ang admin office para sa tulong."
+        elif any(word in query.lower() for word in ['nga', 'sang', 'kay', 'diri']):
+            return "Nagluwat gid ang sistema. Pakiulit lang ang pangutana o adto sa admin office."
+        else:
+            return "The request is taking too long. Please try again with a simpler question or visit the admin office."
+
+    async def _handle_structured_response(self, query: str, language: str = "english", nlu_result = None) -> Optional[str]:
+        """Handle complex procedural queries with structured responses."""
+        try:
+            # Classify the query to determine if it needs structured response
+            classification = self.query_classifier.classify_query(query)
+            
+            # 🚨 CRITICAL: Check if this is a university query that should be rejected
+            if "university_rejection" in classification.keywords:
+                logger.warning(f"🚫 REJECTING UNIVERSITY QUERY: {query}")
+                return self._get_university_rejection_response(language)
+            
+            if not classification.needs_structured_response:
+                return None
+            
+            logger.info(f"🏗️ Using structured response for query: {query[:50]}... (Type: {classification.response_type}, Confidence: {classification.confidence:.2f})")
+            
+            # Detect language from query
+            detected_language = self.query_classifier.detect_language(query)
+            if detected_language != "english":
+                language = detected_language
+            
+            # Get the appropriate template
+            template_name = classification.suggested_template or "generic"
+            
+            # Gather relevant database information for template customization
+            database_info = await self._gather_database_info_for_template(query, classification)
+            
+            # Generate structured response using template
+            if template_name in self.response_templates.templates:
+                structured_response = self.response_templates.get_template(
+                    template_name, 
+                    language=language,
+                    **database_info
+                )
+                
+                # Enhance with database-specific information
+                enhanced_response = await self._enhance_structured_response(
+                    structured_response, 
+                    query, 
+                    classification, 
+                    database_info,
+                    language
+                )
+                
+                return enhanced_response
+            else:
+                # Fall back to basic structured response
+                return self._create_basic_structured_response(query, classification, language)
+                
+        except Exception as e:
+            logger.error(f"❌ Error in structured response handling: {e}")
+            return None
+    
+    def _get_university_rejection_response(self, language: str = "english") -> str:
+        """Provide appropriate response for university-related queries."""
+        if language == "tl":
+            return (
+                "🏫 Pasensya na, ako si TOMAS, ang chatbot ng **Tomas SM. Bautista Elementary School**. "
+                "Pang-elementary school lang ang aming serbisyo (Kindergarten hanggang Grade 6). "
+                "Hindi kami nag-hahandle ng university o college na mga tanong. "
+                "Para sa university information, pakicontact ninyo ang tamang university o college."
+            )
+        elif language == "akl":
+            return (
+                "🏫 Pasensya, ako si TOMAS, chatbot sang **Tomas SM. Bautista Elementary School**. "
+                "Para lang sa elementary school (Kindergarten tubtob sa Grade 6) amon serbisyo. "
+                "Wala kami nga university ukon college. Para sa university, mag-contact sa ila."
+            )
+        else:  # English
+            return (
+                "🏫 I'm sorry, but I'm TOMAS, the chatbot for **Tomas SM. Bautista Elementary School**. "
+                "We only serve elementary education (Kindergarten through Grade 6). "
+                "We don't handle university or college inquiries. "
+                "For university information, please contact the appropriate university or college directly."
+            )
+    
+    async def _gather_database_info_for_template(self, query: str, classification: QueryClassification) -> Dict[str, Any]:
+        """Gather relevant database information for template customization."""
+        database_info = {}
+        
+        try:
+            # Extract key search terms from the query
+            search_terms = classification.keywords
+            if not search_terms:
+                # Extract basic terms from query
+                search_terms = [word for word in query.lower().split() if len(word) > 3][:3]
+            
+            # Perform targeted database searches based on classification type
+            if classification.response_type == ResponseType.PROCEDURAL:
+                # Look for procedure-related information
+                for term in search_terms:
+                    if term in ['enroll', 'enrollment', 'register', 'registration']:
+                        # Get enrollment-specific information
+                        try:
+                            enrollment_info = await self.enhanced_search_supabase('enrollment requirements')
+                            if enrollment_info and len(enrollment_info) > 10:
+                                database_info['enrollment_requirements'] = enrollment_info[:200]
+                        except Exception as e:
+                            logger.warning(f"Failed to search enrollment info: {e}")
+                        break
+                    elif term in ['transfer', 'transferee']:
+                        # Get transfer-specific information
+                        try:
+                            transfer_info = await self.enhanced_search_supabase('transfer requirements')
+                            if transfer_info and len(transfer_info) > 10:
+                                database_info['transfer_requirements'] = transfer_info[:200]
+                        except Exception as e:
+                            logger.warning(f"Failed to search transfer info: {e}")
+                        break
+            
+            elif classification.response_type == ResponseType.CONTACT_INFO:
+                # Look for contact information
+                try:
+                    contact_info = await self.enhanced_search_supabase('contact office hours phone')
+                    if contact_info and len(contact_info) > 10:
+                        database_info['contact_details'] = contact_info[:200]
+                except Exception as e:
+                    logger.warning(f"Failed to search contact info: {e}")
+            
+            elif classification.response_type == ResponseType.INFORMATIONAL:
+                # Get general information
+                try:
+                    general_info = await self.enhanced_search_supabase(' '.join(search_terms[:2]))
+                    if general_info and len(general_info) > 10:
+                        database_info['general_information'] = general_info[:300]
+                except Exception as e:
+                    logger.warning(f"Failed to search general info: {e}")
+        
+        except Exception as e:
+            logger.warning(f"⚠️ Could not gather database info for template: {e}")
+        
+        return database_info
+    
+    async def _enhance_structured_response(self, base_response: str, query: str, 
+                                         classification: QueryClassification, 
+                                         database_info: Dict[str, Any],
+                                         language: str) -> str:
+        """Enhance structured response with specific database information."""
+        try:
+            enhanced_response = base_response
+            
+            # Add specific database information to relevant sections
+            if database_info.get('enrollment_requirements'):
+                # Insert enrollment-specific details
+                enhanced_response = enhanced_response.replace(
+                    "Gather all necessary documents",
+                    f"Gather all necessary documents. Based on our records: {database_info['enrollment_requirements']}"
+                )
+            
+            if database_info.get('contact_details'):
+                # Enhance contact information
+                if "Contact Information" in enhanced_response:
+                    enhanced_response += f"\n\nAdditional Information:\n{database_info['contact_details']}"
+            
+            if database_info.get('general_information'):
+                # Add general context
+                enhanced_response += f"\n\nAdditional Context:\n{database_info['general_information']}"
+            
+            return enhanced_response
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Could not enhance structured response: {e}")
+            return base_response
+    
+    def _create_basic_structured_response(self, query: str, classification: QueryClassification, language: str) -> str:
+        """Create a basic structured response when no specific template is available."""
+        try:
+            title = "Information Request"
+            if language.lower() in ['tagalog', 'filipino']:
+                title = "Kahilingan ng Impormasyon"
+            elif language.lower() in ['hiligaynon', 'ilonggo']:
+                title = "Pangayo sang Impormasyon"
+            
+            builder = StructuredResponseBuilder().create_response(
+                classification.response_type or ResponseType.INFORMATIONAL, 
+                title, 
+                language
+            )
+            
+            # Add basic contact information
+            builder.add_contact(
+                "University Office",
+                phone="(036) 269-6345",
+                office="Admin Building",
+                hours="8:00 AM - 5:00 PM"
+            )
+            
+            if language.lower() in ['tagalog', 'filipino']:
+                builder.add_note("Para sa mas detalyadong impormasyon, pumunta sa admin office.")
+            elif language.lower() in ['hiligaynon', 'ilonggo']:
+                builder.add_note("Para sa mas detalyado nga impormasyon, kadto sa admin office.")
+            else:
+                builder.add_note("For more detailed information, please visit the admin office.")
+            
+            return builder.build()
+            
+        except Exception as e:
+            logger.error(f"❌ Error creating basic structured response: {e}")
+            return "Please contact the admin office for assistance: (036) 269-6345"
+
+    async def _answer_with_timeout(self, query: str, context: str = None, conversation_history: list = None, user_timezone: str = None, session_id: str = None) -> str:
+        """Internal answer method with performance optimizations."""
+        # 🚨 PERFORMANCE FIX: Early validation and quick exits
+        if not query or not query.strip():
+            return "No query provided."
+        
+        query = query.strip()
+        if len(query) > 1000:  # Limit extremely long queries
+            query = query[:1000] + "..."
+            logger.warning(f"⚠️ Query truncated to 1000 characters")
+
+        # � CACHE CHECK: Return cached response for exact matches
+        cache_key = query.lower().strip()
+        cached_response = self.response_cache.get(cache_key)
+        if cached_response:
+            logger.info(f"🎯 Cache hit for query: '{query[:50]}...'")
+            return cached_response
+
+        # �🚨 PERFORMANCE FIX: Fast language detection
+        lang = await asyncio.wait_for(self.detect_language(query), timeout=2.0)
         lowered = query.lower().strip()  # For backward compatibility
         
         # Generate user ID from conversation or use provided session ID
         user_id = session_id if session_id else self._generate_user_id(conversation_history)
         
-        # --- SENTIMENT ANALYSIS & TONE DETECTION ---
-        sentiment_result = sentiment_analyzer.analyze_sentiment(query, {
-            'conversation_history': conversation_history,
-            'user_id': user_id,
-            'language': lang
-        })
+        # --- FAST SENTIMENT ANALYSIS (with timeout) ---
+        try:
+            sentiment_result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    sentiment_analyzer.analyze_sentiment, 
+                    query, 
+                    {
+                        'conversation_history': conversation_history,
+                        'user_id': user_id,
+                        'language': lang
+                    }
+                ),
+                timeout=3.0
+            )
+        except asyncio.TimeoutError:
+            logger.warning("⚠️ Sentiment analysis timed out, using neutral sentiment")
+            # Create default sentiment result
+            class MockSentiment:
+                value = 'neutral'
+            class MockSentimentResult:
+                sentiment = MockSentiment()
+                emotion = MockSentiment()
+                urgency_level = 1
+                confidence = 0.5
+                recommended_tone = 'neutral'
+            sentiment_result = MockSentimentResult()
         
         logger.info(f"🎭 Sentiment: {sentiment_result.sentiment.value} (confidence: {sentiment_result.confidence:.2f})")
         if sentiment_result.emotion:
             logger.info(f"😊 Emotion: {sentiment_result.emotion.value}")
         logger.info(f"📈 Urgency: {sentiment_result.urgency_level}/5")
-        logger.info(f"🎯 Recommended tone: {sentiment_result.recommended_tone}")
         
         # Get tone adjustment suggestions for response personalization
         tone_adjustments = sentiment_analyzer.get_tone_adjustment_suggestions(sentiment_result)
+        
+        # --- EARLY: Check for Structured Response First (before fallback) ---
+        try:
+            logger.info(f"🔍 Early check for structured response for query: {query[:50]}...")
+            # Quick classification check without full NLU
+            classification = self.query_classifier.classify_query(query)
+            if classification.needs_structured_response:
+                logger.info(f"📋 Procedural query detected early - generating structured response (confidence: {classification.confidence:.2f})")
+                structured_response = await self._handle_structured_response(query, lang)
+                if structured_response:
+                    logger.info("✅ Generated structured response for procedural query")
+                    return structured_response
+                else:
+                    logger.info("❌ Structured response generation failed, continuing with normal processing")
+        except Exception as e:
+            logger.warning(f"Early structured response check failed: {e}, continuing with normal processing")
+        
+        # 🧠 CRITICAL FIX: INTELLIGENT FALLBACK TRIGGERING MOVED TO TOP PRIORITY
+        try:
+            should_use_enhanced_fallback = await asyncio.wait_for(
+                self._should_use_enhanced_fallback(query, sentiment_result, conversation_history, lang),
+                timeout=1.0
+            )
+            
+            if should_use_enhanced_fallback:
+                logger.info("🎯 EARLY intelligent fallback triggering → using enhanced fallback")
+                try:
+                    enhanced_response = await asyncio.wait_for(
+                        self.fallback_handler.get_intelligent_fallback(
+                            query=query,
+                            language=lang,
+                            chatbot_instance=self,
+                            sentiment_context={
+                                'sentiment': sentiment_result.sentiment,
+                                'emotion': sentiment_result.emotion,
+                                'urgency': sentiment_result.urgency_level,
+                                'tone_adjustments': tone_adjustments
+                            }
+                        ),
+                        timeout=25.0  # 🚀 INCREASED: timeout for response generation under load
+                    )
+                    return enhanced_response
+                except asyncio.TimeoutError:
+                    logger.warning("⚠️ Enhanced fallback timed out, continuing with normal processing")
+                except Exception as e:
+                    logger.warning(f"Enhanced fallback failed: {e}, continuing with normal processing")
+        except asyncio.TimeoutError:
+            logger.warning("⚠️ Fallback triggering check timed out")
+        except Exception as e:
+            logger.warning(f"Fallback triggering failed: {e}")
+        
+        # --- SENTIMENT ANALYSIS & TONE DETECTION (COMPLETED ABOVE) ---
+        logger.info(f"🎯 Recommended tone: {sentiment_result.recommended_tone}")
         
         # --- CONVERSATION MEMORY: Get context for personalized responses ---
         memory_context = self.conversation_memory.generate_context_summary(user_id)
@@ -3025,6 +4119,20 @@ class ChatBot:
             
             nlu_result = await self.nlu_engine.analyze_intent(query, conversation_history)
             logger.info(f"🧠 NLU Intent: {nlu_result.intent.value} (confidence: {nlu_result.confidence:.2f})")
+            
+            # --- NEW: Check for Structured Response First ---
+            try:
+                logger.info(f"🔍 Checking for structured response for query: {query[:50]}...")
+                structured_response = await self._handle_structured_response(query, lang, nlu_result)
+                if structured_response:
+                    logger.info("📋 Generated structured response for procedural query")
+                    return structured_response
+                else:
+                    logger.info("📝 No structured response needed, continuing with normal processing")
+            except Exception as e:
+                logger.warning(f"Structured response failed: {e}, continuing with normal processing")
+                import traceback
+                logger.warning(f"Structured response traceback: {traceback.format_exc()}")
             
             # --- NEW: Try Intelligent Response Generation First ---
             extracted_entities = await self._extract_entities_with_nlu(query)
@@ -3062,6 +4170,17 @@ class ChatBot:
         except Exception as e:
             logger.warning(f"NLU processing failed, falling back to legacy system: {e}")
         
+        # --- NEW: STRUCTURED RESPONSE FRAMEWORK ---
+        # Check if query needs structured response (procedural, complex information)
+        try:
+            structured_response = await self._handle_structured_response(query, lang)
+            if structured_response:
+                logger.info("🏗️ Using structured response framework")
+                await self._store_conversation_turn(user_id, query, structured_response, lang, conversation_history)
+                return structured_response
+        except Exception as e:
+            logger.warning(f"⚠️ Structured response handling failed: {e}")
+        
         # --- Legacy fallback for compatibility ---
         intent_analysis = self._analyze_query_intent(query)
         human_analysis = self._analyze_human_request_intent(query)
@@ -3072,7 +4191,23 @@ class ChatBot:
         # --- Detect if user explicitly wants human support (with high confidence) ---
         if human_analysis['wants_human'] and human_analysis['confidence'] > 0.7:
             logger.info("👤 High confidence human request → triggering fallback handler.")
-            return self.fallback_handler.generate_fallback_message(lang)
+            # Use enhanced fallback with NLP analysis and sentiment context
+            try:
+                return await self.fallback_handler.get_intelligent_fallback(
+                    query=query,
+                    language=lang,
+                    chatbot_instance=self,
+                    sentiment_context={
+                        'sentiment': sentiment_result.sentiment,
+                        'emotion': sentiment_result.emotion,
+                        'urgency': sentiment_result.urgency_level,
+                        'tone_adjustments': tone_adjustments
+                    }
+                )
+            except Exception as e:
+                logger.warning(f"Enhanced fallback failed: {e}")
+                # Fallback to simple version
+                return self.fallback_handler.generate_simple_fallback_message(lang)
 
         # --- Detect goodbye / end of conversation ---
         if intent_analysis['intent'] == 'goodbye' and intent_analysis['confidence'] > 0.8:
@@ -3395,8 +4530,18 @@ class ChatBot:
 
         # Normal flow: Fetch context from summarized_text and Supabase, then send to Groq
         logger.info("📚 Starting normal flow: fetching context from summarized_text and Supabase")
-        summarized_text = await self.fetch_summarized_file()
-        supabase_prompts = await self.enhanced_search_supabase(query)
+        # 🚨 CRITICAL FIX: Add timeouts for major operations
+        try:
+            summarized_text = await asyncio.wait_for(self.fetch_summarized_file(), timeout=3.0)
+        except asyncio.TimeoutError:
+            logger.warning("⚠️ Summary file fetch timed out")
+            summarized_text = None
+        
+        try:
+            supabase_prompts = await asyncio.wait_for(self.enhanced_search_supabase(query), timeout=25.0)  # 🚀 INCREASED: timeout for database operations
+        except asyncio.TimeoutError:
+            logger.warning("⚠️ Supabase search timed out after 15 seconds")
+            supabase_prompts = None
 
         full_context = ""
         context_sources = 0
@@ -3460,6 +4605,26 @@ class ChatBot:
                 return self._validate_response_against_facts(response, query, lang)
             
             # Generic no context response for other queries
+            # Use enhanced fallback for no context scenarios
+            try:
+                enhanced_response = await self.fallback_handler.get_intelligent_fallback(
+                    query=query,
+                    language=lang,
+                    chatbot_instance=self,
+                    sentiment_context={
+                        'sentiment': sentiment_result.sentiment,
+                        'emotion': sentiment_result.emotion,
+                        'urgency': sentiment_result.urgency_level,
+                        'tone_adjustments': tone_adjustments
+                    }
+                )
+                return self._validate_response_against_facts(enhanced_response, query, lang)
+            except Exception as e:
+                logger.warning(f"Enhanced fallback failed for no context: {e}")
+                # Fallback to original logic - define english_response for use below
+                pass
+            
+            # Define fallback response for cases where enhanced fallback fails
             english_response = (
                 "I checked our records, but I wasn't able to find any information about "
                 f"{query}. You may visit the school office for further details."
@@ -3496,6 +4661,10 @@ class ChatBot:
 
         # --- CONVERSATION MEMORY: Store this interaction ---
         await self._store_conversation_turn(user_id, query, response, lang, conversation_history)
+
+        # 🚀 CACHE UPDATE: Store response for future use (if not a personal query)
+        if not self._is_personal_query(query):
+            self._update_cache(cache_key, response)
 
         # Return the response (no translation needed since it's already in the right language)
         return response
@@ -3642,7 +4811,50 @@ class ChatBot:
             
         except Exception as e:
             logger.warning(f"Intelligent response generation failed: {e}")
-            return None
+            # 🔄 PERFORMANCE FIX: Add fallback response generation
+            return self._generate_fallback_response(query, intent, sentiment_result)
+    
+    def _generate_fallback_response(self, query: str, intent: str, sentiment_result: SentimentResult = None) -> str:
+        """Generate a fallback response when intelligent generation fails"""
+        try:
+            # Simple language detection without async for fallback
+            detected_lang = "en"  # Default to English
+            query_lower = query.lower()
+            
+            # Quick language detection for fallback
+            if any(word in query_lower for word in ["po", "opo", "kumusta", "sino", "saan", "hindi", "salamat"]):
+                detected_lang = "tl"
+            elif any(word in query_lower for word in ["it", "nga", "ro", "eon", "gid", "sang", "wara", "mayo", "maayong"]):
+                detected_lang = "akl"
+            
+            # Sentiment-aware fallback responses
+            if sentiment_result and sentiment_result.urgency_level >= 4:
+                fallback_responses = {
+                    "en": "I understand this is urgent. Let me help you find the information you need about our school.",
+                    "tl": "Naiintindihan ko na madalian ito. Tulungan ko kayo na makuha ang impormasyong kailangan ninyo tungkol sa aming paaralan.",
+                    "akl": "Nasabtan ko nga importante ini. Buligan ta kamo makakuha sang impormasyon nga kinahanglan ninyo parte sa amon eskuelahan."
+                }
+            elif sentiment_result and sentiment_result.emotion and sentiment_result.emotion.value in ["frustrated", "anxious"]:
+                fallback_responses = {
+                    "en": "I apologize for any confusion. Let me help you with information about our school.",
+                    "tl": "Humihingi ako ng paumanhin sa anumang pagkalito. Tulungan ko kayo tungkol sa aming paaralan.",
+                    "akl": "Pasensyahe ko ninyo sa pagkabag-o. Buligan ta kamo parte sa amon eskuelahan."
+                }
+            else:
+                # Standard fallback responses
+                fallback_responses = {
+                    "en": "I understand your question. Let me help you with information about our school.",
+                    "tl": "Nauunawaan ko ang inyong tanong. Tulungan ko kayo tungkol sa aming paaralan.",
+                    "akl": "Nasabtan ko anay nga pamangkot ninyo. Buligan ta kamo parte sa amon eskuelahan."
+                }
+            
+            response = fallback_responses.get(detected_lang, fallback_responses["en"])
+            logger.info(f"🔄 Using fallback response in {detected_lang} (intent: {intent})")
+            return response
+            
+        except Exception as e:
+            logger.error(f"❌ Even fallback response generation failed: {e}")
+            return "I'm here to help with information about our school. Please try rephrasing your question."
 
 if __name__ == "__main__":
     import asyncio
