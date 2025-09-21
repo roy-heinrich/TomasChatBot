@@ -132,8 +132,8 @@ class NLUEngine:
         if staff_score > 0.6:
             return NLUResult(Intent.STAFF_INQUIRY, staff_score, [])
         
-        # Continue with existing priority-based classification for other intents
-        return self._legacy_classification_fallback(user_lower)
+        # Continue with priority-based classification for other intents
+        # DO NOT return early - let it fall through to Priority rules
         
         # Priority 1: Denials and clarifications (check first to avoid false positives)
         if any(phrase in user_lower for phrase in ["not asking", "i am not", "i'm not", "hindi ako", "wala ako"]):
