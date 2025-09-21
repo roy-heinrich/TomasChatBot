@@ -30,6 +30,11 @@ class ResponseTone(Enum):
     HELPFUL = "helpful"
     REASSURING = "reassuring"
     PROFESSIONAL = "professional"
+    APOLOGETIC = "apologetic"
+    PATIENT = "patient"
+    EMPATHETIC = "empathetic"
+    WARM = "warm"
+    INFORMATIVE = "informative"
 
 class ResponseType(Enum):
     """Types of responses for different contexts"""
@@ -105,7 +110,15 @@ class ResponseGenerationEngine:
                 tone_variants={
                     ResponseTone.FRIENDLY: "Hi there{user_name}! 😊 I'm TOMAS, and I'm excited to help you learn about our amazing school!",
                     ResponseTone.FORMAL: "Good {time_period}{user_name}. I am TOMAS, the digital assistant for Tomas SM. Bautista Elementary School. How may I assist you today?",
-                    ResponseTone.ENTHUSIASTIC: "Hey{user_name}! 🎉 Welcome to TOMAS! I'm super excited to help you discover everything awesome about our school!"
+                    ResponseTone.ENTHUSIASTIC: "Hey{user_name}! 🎉 Welcome to TOMAS! I'm super excited to help you discover everything awesome about our school!",
+                    ResponseTone.HELPFUL: "Hello{user_name}! I'm here to help you with any questions about our school! 🏫",
+                    ResponseTone.REASSURING: "Welcome{user_name}! Don't worry, I'm here to guide you through everything you need to know about our school.",
+                    ResponseTone.PROFESSIONAL: "Greetings{user_name}. I am TOMAS, providing assistance for Tomas SM. Bautista Elementary School inquiries.",
+                    ResponseTone.APOLOGETIC: "Hello{user_name}, I apologize if there have been any delays. How can I help you with school information?",
+                    ResponseTone.PATIENT: "Hi{user_name}! Take your time, I'm here to help answer any questions you have about our school.",
+                    ResponseTone.EMPATHETIC: "Hello{user_name}! I understand you may have many questions - I'm here to help make things clearer for you.",
+                    ResponseTone.WARM: "Hi there{user_name}! 🌟 It's wonderful to meet you! I'm here to share everything special about our school!",
+                    ResponseTone.INFORMATIVE: "Hello{user_name}! I'm TOMAS, your information assistant for comprehensive details about Tomas SM. Bautista Elementary School."
                 },
                 conditions={"is_returning_user": False}
             ),
@@ -123,7 +136,16 @@ class ResponseGenerationEngine:
                 ],
                 tone_variants={
                     ResponseTone.FRIENDLY: "Hey there{user_name}! 😊 Nice to have you back! {context_reference}",
-                    ResponseTone.PROFESSIONAL: "Welcome back{user_name}. {context_reference} How may I continue assisting you?"
+                    ResponseTone.PROFESSIONAL: "Welcome back{user_name}. {context_reference} How may I continue assisting you?",
+                    ResponseTone.HELPFUL: "Great to see you again{user_name}! {context_reference} What can I help you with today?",
+                    ResponseTone.REASSURING: "Welcome back{user_name}! {context_reference} I'm here to continue helping you.",
+                    ResponseTone.ENTHUSIASTIC: "Hey{user_name}! So glad you're back! {context_reference} What's next?",
+                    ResponseTone.FORMAL: "Good day{user_name}. {context_reference} Please let me know how I may assist you.",
+                    ResponseTone.APOLOGETIC: "Welcome back{user_name}! {context_reference} I apologize for any previous issues.",
+                    ResponseTone.PATIENT: "Hello again{user_name}! {context_reference} Take your time with any questions.",
+                    ResponseTone.EMPATHETIC: "Hi{user_name}! I'm glad you're back. {context_reference} How are you feeling about everything?",
+                    ResponseTone.WARM: "Welcome back{user_name}! 🌟 {context_reference} It's wonderful to continue our conversation!",
+                    ResponseTone.INFORMATIVE: "Hello again{user_name}. {context_reference} I'm ready to provide any information you need."
                 },
                 conditions={"is_returning_user": True}
             )
@@ -254,10 +276,18 @@ class ResponseGenerationEngine:
         # Generate personalized response
         response_text = self._personalize_response(template, context, extracted_entities)
         
-        # Select appropriate tone
+        # Select appropriate tone with fallback
         tone = self._determine_response_tone(context, conversation_history)
         if tone in template.tone_variants:
             response_text = self._apply_tone_variant(template.tone_variants[tone], context, extracted_entities)
+        else:
+            # Fallback: try common tones if requested tone not available
+            fallback_tones = [ResponseTone.FRIENDLY, ResponseTone.HELPFUL, ResponseTone.PROFESSIONAL]
+            for fallback_tone in fallback_tones:
+                if fallback_tone in template.tone_variants:
+                    response_text = self._apply_tone_variant(template.tone_variants[fallback_tone], context, extracted_entities)
+                    break
+            # If no fallback found, keep the base response_text
         
         # Generate intelligent follow-up
         follow_up = self._generate_follow_up(template, context, conversation_history)
