@@ -4266,6 +4266,9 @@ class ChatBot:
         elif any(phrase in query_lower for phrase in ["what am i asking", "what did i ask", "what was my question", "what am i asking earlier"]):
             quick_response = self._get_previous_question_response(conversation_history)
             return quick_response
+        elif any(phrase in query_lower for phrase in ["where is the school", "school location", "where is your school"]):
+            # Quick location response to avoid database timeout
+            return "Our school, Tomas SM. Bautista Elementary School, is located in Fatima, New Washington, Aklan. 🏫"
         
         start_time = time.time()
         

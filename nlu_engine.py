@@ -88,6 +88,21 @@ class NLUEngine:
         # PHASE 1: Exact phrase matching (highest priority)
         # This catches complex multilingual phrases before word-by-word analysis
         exact_phrases = {
+            # English location phrases
+            "where is the school": (Intent.LOCATION_INQUIRY, 0.95),
+            "where is your school": (Intent.LOCATION_INQUIRY, 0.95),
+            "where is the school located": (Intent.LOCATION_INQUIRY, 0.95),
+            "what is the school location": (Intent.LOCATION_INQUIRY, 0.9),
+            "school location": (Intent.LOCATION_INQUIRY, 0.85),
+            "where can i find the school": (Intent.LOCATION_INQUIRY, 0.9),
+            "school address": (Intent.LOCATION_INQUIRY, 0.9),
+            
+            # Enhanced multilingual greetings
+            "kumusta": (Intent.GREETING_SIMPLE, 0.9),
+            "salamat": (Intent.APPRECIATION, 0.85),
+            "hola": (Intent.GREETING_SIMPLE, 0.8),
+            "konnichiwa": (Intent.GREETING_SIMPLE, 0.8),
+            
             # Tagalog location phrases
             "saan ang lokasyon ng paaralan": (Intent.LOCATION_INQUIRY, 0.95),
             "saan ang paaralan": (Intent.LOCATION_INQUIRY, 0.9),
