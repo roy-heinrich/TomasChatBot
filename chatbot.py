@@ -298,6 +298,7 @@ class ChatBot:
         self.language_cache = {}
         self.language_cache_ttl = 600  # 10-minute cache TTL (increased)
         self.last_detected_language = "en"  # 🆕 Store last detected language for API access
+        self.last_language_confidence = 0.5  # 🆕 Store language detection confidence
         
         # Initialize structured response framework
         self.query_classifier = QueryClassifier()
@@ -775,6 +776,11 @@ class ChatBot:
 
     async def detect_language(self, text: str) -> str:
         """Enhanced language detection with improved Aklanon/Tagalog recognition and caching."""
+        result = await self.detect_language_with_confidence(text)
+        return result["language"]
+    
+    async def detect_language_with_confidence(self, text: str) -> dict:
+        """Enhanced language detection that returns both language and confidence scores."""
         # 🚀 PERFORMANCE FIX: Check cache first
         cache_key = hash(text.lower().strip())
         current_time = time.time()
@@ -783,37 +789,68 @@ class ChatBot:
             cached_result, timestamp = self.language_cache[cache_key]
             if current_time - timestamp < self.language_cache_ttl:
                 logger.debug(f"🚀 Language cache hit: {cached_result}")
-                return cached_result
+                return cached_result if isinstance(cached_result, dict) else {"language": cached_result, "confidence": 0.9}
         
         # Fast-path detection for common patterns (performance optimization)
         text_lower = text.lower().strip()
         
-        # Quick English detection (most common)
-        english_quick_patterns = ["hello", "hi", "good morning", "good afternoon", "thank you", "where", "what", "how"]
-        if any(pattern in text_lower for pattern in english_quick_patterns):
-            result = "en"
-            self.language_cache[cache_key] = (result, current_time)
-            logger.debug(f"🚀 Fast-path English detection: {result}")
-            return result
+        # Calculate confidence scores for each language
+        scores = {"en": 0.0, "tl": 0.0, "akl": 0.0}
         
-        # Quick Aklanon detection
-        aklanon_quick_patterns = ["it", "nga", "ro", "eon", "gid", "sang", "wara", "mayo", "maayong"]
-        if any(pattern in text_lower for pattern in aklanon_quick_patterns):
-            result = "akl"
-            self.language_cache[cache_key] = (result, current_time)
-            logger.debug(f"🚀 Fast-path Aklanon detection: {result}")
-            return result
+        # Quick English detection patterns with scoring
+        english_quick_patterns = {
+            "hello": 0.9, "hi": 0.8, "good morning": 0.95, "good afternoon": 0.95, 
+            "thank you": 0.9, "where": 0.7, "what": 0.7, "how": 0.7, "the": 0.6,
+            "school": 0.8, "information": 0.8, "enrollment": 0.9
+        }
         
-        # Quick Tagalog detection  
-        tagalog_quick_patterns = ["po", "opo", "kumusta", "sino", "saan", "hindi", "salamat"]
-        if any(pattern in text_lower for pattern in tagalog_quick_patterns):
-            result = "tl"
-            self.language_cache[cache_key] = (result, current_time)
-            logger.debug(f"🚀 Fast-path Tagalog detection: {result}")
-            return result
+        for pattern, confidence in english_quick_patterns.items():
+            if pattern in text_lower:
+                scores["en"] += confidence
         
-        # Fall back to full detection for complex cases
-        result = await self._detect_language_full(text)
+        # Quick Tagalog detection patterns with scoring
+        tagalog_quick_patterns = {
+            "po": 0.95, "opo": 0.95, "kumusta": 0.9, "sino": 0.8, "saan": 0.8, 
+            "hindi": 0.8, "salamat": 0.9, "ako": 0.7, "ikaw": 0.8, "kayo": 0.8,
+            "gusto": 0.8, "mag": 0.6, "ng": 0.5, "sa": 0.4
+        }
+        
+        for pattern, confidence in tagalog_quick_patterns.items():
+            if pattern in text_lower:
+                scores["tl"] += confidence
+        
+        # Quick Aklanon detection patterns with scoring
+        aklanon_quick_patterns = {
+            "it": 0.6, "nga": 0.8, "ro": 0.7, "eon": 0.8, "gid": 0.9, 
+            "sang": 0.8, "wara": 0.9, "mayo": 0.8, "maayong": 0.95
+        }
+        
+        for pattern, confidence in aklanon_quick_patterns.items():
+            if pattern in text_lower:
+                scores["akl"] += confidence
+        
+        # Normalize scores to 0-1 range
+        max_score = max(scores.values()) if max(scores.values()) > 0 else 1.0
+        normalized_scores = {lang: min(score / max_score, 1.0) for lang, score in scores.items()}
+        
+        # Determine the language with highest confidence
+        best_language = max(normalized_scores, key=normalized_scores.get)
+        best_confidence = normalized_scores[best_language]
+        
+        # If no clear winner or low confidence, use full detection
+        if best_confidence < 0.6:
+            full_result = await self._detect_language_full_with_confidence(text)
+            result = full_result
+        else:
+            result = {
+                "language": best_language,
+                "confidence": best_confidence,
+                "scores": normalized_scores
+            }
+        
+        # 🆕 Store the final accurate language detection result
+        self.last_detected_language = result["language"]
+        self.last_language_confidence = result.get("confidence", 0.5)
         
         # Cache the result
         self.language_cache[cache_key] = (result, current_time)
@@ -821,6 +858,8 @@ class ChatBot:
         # Clean cache periodically
         if len(self.language_cache) > 1000:
             self._clean_language_cache(current_time)
+        
+        logger.info(f"🔎 Language detection: {result['language'].upper()} (confidence: {result['confidence']:.2f})")
         
         return result
     
@@ -1070,6 +1109,97 @@ class ChatBot:
         except Exception as e:
             logger.warning(f"Language detection failed: {e}")
             return "en"  # safe fallback
+    
+    async def _detect_language_full_with_confidence(self, text: str) -> dict:
+        """Full language detection with comprehensive analysis and confidence scores."""
+        try:
+            # Initialize scores
+            scores = {"en": 0.0, "tl": 0.0, "akl": 0.0}
+            
+            # Get the raw scores from the existing method
+            result = await self._detect_language_full(text)
+            
+            # Run the analysis again to get detailed scores
+            text_lower = text.lower()
+            
+            # English markers scoring
+            english_markers = [
+                "where", "what", "when", "who", "why", "how", "the", "is", "are", 
+                "school", "location", "address", "teacher", "principal", "student",
+                "class", "grade", "program", "office", "information", "contact",
+                "phone", "email", "time", "schedule", "hours", "enrollment",
+                "good morning", "good afternoon", "good evening", "hello", "hi",
+                "thanks", "thank you", "please", "sorry", "excuse me", "yes", "no"
+            ]
+            
+            english_score = 0
+            for marker in english_markers:
+                if marker in text_lower:
+                    if marker in ["school", "office", "teacher", "principal", "phone", "email"]:
+                        english_score += 0.5  # Borrowed words get less weight
+                    else:
+                        english_score += 1
+            
+            # Tagalog markers scoring
+            tagalog_patterns = {
+                "po": 3, "opo": 3, "kumusta": 2.5, "sino": 2, "saan": 2, "hindi": 2,
+                "salamat": 2, "ako": 1.5, "ikaw": 1.5, "gusto": 1.5, "ng": 1, "sa": 0.5
+            }
+            
+            tagalog_score = 0
+            for pattern, weight in tagalog_patterns.items():
+                if pattern in text_lower:
+                    tagalog_score += weight
+            
+            # Aklanon markers scoring
+            aklanon_patterns = {
+                "gid": 3, "sang": 2.5, "wara": 3, "mayo": 2.5, "maayong": 3,
+                "nga": 2, "it": 1.5, "ro": 2, "eon": 2.5
+            }
+            
+            aklanon_score = 0
+            for pattern, weight in aklanon_patterns.items():
+                if pattern in text_lower:
+                    aklanon_score += weight
+            
+            # Calculate total and normalize
+            total_score = english_score + tagalog_score + aklanon_score
+            if total_score == 0:
+                total_score = 1  # Avoid division by zero
+            
+            # Normalize scores to 0-1 range
+            scores["en"] = min(english_score / total_score, 1.0)
+            scores["tl"] = min(tagalog_score / total_score, 1.0) 
+            scores["akl"] = min(aklanon_score / total_score, 1.0)
+            
+            # Get the best match
+            best_language = max(scores, key=scores.get)
+            best_confidence = scores[best_language]
+            
+            # If the detected language doesn't match the highest score, trust the original logic
+            # but adjust confidence based on our scoring
+            if result != best_language and best_confidence > 0.6:
+                logger.info(f"🔎 Confidence scoring suggests {best_language} ({best_confidence:.2f}) over detected {result}")
+                final_language = best_language
+                final_confidence = best_confidence
+            else:
+                final_language = result
+                final_confidence = scores.get(result, 0.5)
+            
+            return {
+                "language": final_language,
+                "confidence": final_confidence,
+                "scores": scores,
+                "raw_scores": {
+                    "english": english_score,
+                    "tagalog": tagalog_score, 
+                    "aklanon": aklanon_score
+                }
+            }
+            
+        except Exception as e:
+            logger.warning(f"Language detection with confidence failed: {e}")
+            return {"language": "en", "confidence": 0.5, "scores": {"en": 0.5, "tl": 0.0, "akl": 0.0}}
     
     def _word_boundary_match(self, word: str, text: str) -> bool:
         """Check if word appears with proper word boundaries in text."""
@@ -3801,8 +3931,6 @@ class ChatBot:
             
             # Detect language from query
             detected_language = self.query_classifier.detect_language(query)
-            # 🆕 Store detected language for API access
-            self.last_detected_language = detected_language
             if detected_language != "english":
                 language = detected_language
             
