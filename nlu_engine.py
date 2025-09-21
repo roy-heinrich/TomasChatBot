@@ -6,6 +6,24 @@ from enum import Enum
 
 logger = logging.getLogger(__name__)
 
+# Import the new multilingual NLP engine with robust fallbacks
+MULTILINGUAL_NLP_AVAILABLE = False
+multilingual_nlp = None
+SemanticIntent = None
+MultilingualEntity = None
+try:
+    # First try package-relative import (preferred in package context)
+    from .multilingual_nlp import multilingual_nlp, SemanticIntent, MultilingualEntity
+    MULTILINGUAL_NLP_AVAILABLE = True
+except Exception:
+    try:
+        # Fall back to absolute import for scripts run directly
+        from multilingual_nlp import multilingual_nlp, SemanticIntent, MultilingualEntity
+        MULTILINGUAL_NLP_AVAILABLE = True
+    except Exception as e:
+        MULTILINGUAL_NLP_AVAILABLE = False
+        logger.warning(f"Multilingual NLP engine not available: {e}")
+
 class Intent(Enum):
     """Defined intents for the school chatbot"""
     # Enhanced greeting intents for better personalization
@@ -35,6 +53,19 @@ class Intent(Enum):
     CLARIFICATION = "clarification"
     DENIAL = "denial"
     GOODBYE = "goodbye"
+    
+    # Conversation Flow Intents - for better multi-turn conversations
+    ENROLLMENT_DOCUMENTS = "enrollment_documents"  # Specific document requirements
+    ENROLLMENT_DEADLINE = "enrollment_deadline"    # Deadline and timeline questions
+    ENROLLMENT_PROCESS = "enrollment_process"      # Step-by-step process
+    SCHOOL_OVERVIEW = "school_overview"            # General school information request
+    GRADE_LEVELS = "grade_levels"                  # What grades/levels offered
+    SCHOOL_PROGRAMS = "school_programs"            # Academic programs and curricula
+    FOLLOW_UP_QUESTION = "follow_up_question"      # Follow-up to previous answer
+    TOPIC_CONTINUATION = "topic_continuation"      # Continuing same topic
+    CLARIFICATION_REQUEST = "clarification_request" # Asking for more details
+    COMPARISON_REQUEST = "comparison_request"       # Comparing options/programs
+    
     UNKNOWN = "unknown"
 
 @dataclass
@@ -66,18 +97,80 @@ class NLUEngine:
         
     async def analyze_intent(self, user_input: str, context: Dict = None) -> NLUResult:
         """
-        Analyze user input to determine intent and extract entities
+        Analyze user input to determine intent and extract entities using advanced NLP
         """
-        # Start with rule-based classification (fast and reliable)
+        
+        # First, try semantic classification with the new multilingual NLP engine
+        if MULTILINGUAL_NLP_AVAILABLE:
+            try:
+                # Detect language semantically
+                lang_result = await multilingual_nlp.detect_language_semantic(user_input)
+                logger.info(f"🔍 Semantic language detection: {lang_result.language} (confidence: {lang_result.confidence:.2f})")
+                
+                # Classify intent semantically
+                semantic_intent = await multilingual_nlp.classify_intent_semantic(user_input, lang_result.language)
+                
+                # If semantic classification is confident, use it
+                if semantic_intent.confidence >= 0.5:
+                    # Extract entities using multilingual NER
+                    entities = await multilingual_nlp.extract_entities_multilingual(user_input, lang_result.language)
+                    
+                    # Convert to our format
+                    nlu_entities = []
+                    for entity in entities:
+                        nlu_entities.append(Entity(
+                            type=entity.label.lower(),
+                            value=entity.normalized_form or entity.text,
+                            confidence=entity.confidence,
+                            start=entity.start,
+                            end=entity.end
+                        ))
+                    
+                    # Convert semantic intent to Intent enum
+                    try:
+                        intent_enum = Intent(semantic_intent.intent)
+                    except ValueError:
+                        intent_enum = Intent.UNKNOWN
+                    
+                    logger.info(f"🎯 Semantic classification: {intent_enum.value} (confidence: {semantic_intent.confidence:.2f}, similarity: {semantic_intent.similarity_score:.2f})")
+                    logger.info(f"📝 Matched example: '{semantic_intent.matched_example}'")
+
+                    # If semantic classifier detected a greeting-with-name or name_introduction
+                    # but the multilingual NER returned no entities, try a lightweight
+                    # regex extraction as a safe fallback so we can persist person_name.
+                    try:
+                        if intent_enum in (Intent.GREETING_WITH_NAME, Intent.NAME_INTRODUCTION) and len(nlu_entities) == 0:
+                            import re
+                            name_match = re.search(r"(?:my name is|i am|i'm|im|ako si|ako ay|call me|this is)\s+([A-Za-z'\-]{2,})", user_input, flags=re.IGNORECASE)
+                            if name_match:
+                                name_val = name_match.group(1).strip().title()
+                                nlu_entities.append(Entity(type="person_name", value=name_val, confidence=0.9))
+                                logger.info(f"🔎 Extracted name via regex (semantic fallback): {name_val}")
+                    except Exception:
+                        # Non-critical: if regex fails for any reason, continue without entities
+                        pass
+
+                    return NLUResult(intent_enum, semantic_intent.confidence, nlu_entities)
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ Semantic classification failed: {e}, falling back to rule-based")
+        
+        # Fallback to rule-based classification with enhanced confidence
         rule_result = self._rule_based_classification(user_input)
         
-        # If rule-based classification is confident, use it
-        if rule_result.confidence >= 0.7:
-            logger.info(f"🎯 Rule-based classification: {rule_result.intent.value} (confidence: {rule_result.confidence:.2f})")
-            return rule_result
+        # Boost confidence if we have semantic backup data
+        if MULTILINGUAL_NLP_AVAILABLE and rule_result.confidence < 0.7:
+            try:
+                # Get semantic confirmation
+                semantic_intent = await multilingual_nlp.classify_intent_semantic(user_input)
+                if semantic_intent.intent == rule_result.intent.value and semantic_intent.confidence > 0.3:
+                    # Boost confidence when both methods agree
+                    boosted_confidence = min(rule_result.confidence + 0.2, 0.9)
+                    logger.info(f"🔗 Semantic confirmation boosted confidence: {rule_result.confidence:.2f} → {boosted_confidence:.2f}")
+                    return NLUResult(rule_result.intent, boosted_confidence, rule_result.entities)
+            except Exception:
+                pass
         
-        # For low-confidence cases, could fall back to AI classification
-        # For now, return the rule-based result
         logger.info(f"🔍 Using rule-based result: {rule_result.intent.value} (confidence: {rule_result.confidence:.2f})")
         return rule_result
     
@@ -127,6 +220,27 @@ class NLUEngine:
         detected_intent = Intent.UNKNOWN
         evidence_factors = []
         
+        # Priority: Name introductions - higher priority than greetings
+        # This catches "hi i am john" as a name_introduction rather than a plain greeting
+        name_intro_patterns = [
+            "my name is", "i am", "i'm", "im ", "ako si", "ako ay", "called"
+        ]
+        for pattern in name_intro_patterns:
+            if pattern in user_lower:
+                # Check if there's an actual name after the pattern (not just the pattern alone)
+                pattern_pos = user_lower.find(pattern)
+                text_after = user_lower[pattern_pos + len(pattern):].strip()
+                if len(text_after) > 0 and not text_after.startswith("asking") and not text_after.startswith("not"):
+                    # Try to extract the name with a regex so we can return it as an entity
+                    import re
+                    name_match = re.search(r"(?:my name is|i am|i'm|im|ako si|ako ay|call me|this is)\s+([A-Za-z'-]{2,})", user_lower)
+                    entities = []
+                    if name_match:
+                        name_val = name_match.group(1).strip().title()
+                        entities.append(Entity(type="person_name", value=name_val, confidence=0.9))
+                        logger.info(f"🔎 Extracted name via regex: {name_val}")
+                    return NLUResult(Intent.NAME_INTRODUCTION, 0.95, entities)
+
         # Enhanced greeting detection with confidence scoring
         greeting_indicators = self._analyze_greeting_patterns(user_lower)
         if greeting_indicators['intent'] != Intent.UNKNOWN:
@@ -159,11 +273,34 @@ class NLUEngine:
         
         # Priority 2: Enhanced greeting classification with mood/style detection
         greeting_keywords = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", "good afternoon", "good evening", "magandang umaga", "magandang hapon", "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", "evening", "greetings", "hiya", "wassup", "howdy", "sup", "yo"]
-        
+        # Priority 3: Name introductions - higher priority than greetings
+        # This catches "hi i am john" as name_introduction rather than greeting_with_name
+        name_intro_patterns = [
+            "my name is", "i am", "i'm", "im ", "ako si", "ako ay", "called"
+        ]
+        for pattern in name_intro_patterns:
+            if pattern in user_lower:
+                # Check if there's an actual name after the pattern (not just the pattern alone)
+                pattern_pos = user_lower.find(pattern)
+                text_after = user_lower[pattern_pos + len(pattern):].strip()
+                if len(text_after) > 0 and not text_after.startswith("asking") and not text_after.startswith("not"):
+                    # Try to extract the name with a regex so we can return it as an entity
+                    import re
+                    name_match = re.search(r"(?:my name is|i am|i'm|im|ako si|ako ay|call me|this is)\s+([A-Za-z'-]{2,})", user_lower)
+                    entities = []
+                    if name_match:
+                        name_val = name_match.group(1).strip().title()
+                        entities.append(Entity(type="person_name", value=name_val, confidence=0.9))
+                        logger.info(f"🔎 Extracted name via regex: {name_val}")
+                    return NLUResult(Intent.NAME_INTRODUCTION, 0.95, entities)
+
         if any(greet in user_lower for greet in greeting_keywords):
-            # Check for name introduction first
-            if "my name is" in user_lower or "i am" in user_lower or "i'm" in user_lower or "im " in user_lower or "ako si" in user_lower:
-                return NLUResult(Intent.GREETING_WITH_NAME, 0.9, [])
+            # Now only classify as greeting_with_name if it's a pure greeting without introduction intent
+            # This should catch cases like "hello, my name is john" where greeting comes first
+            if any(pattern in user_lower for pattern in ["my name is", "i am", "i'm", "im ", "ako si"]):
+                # But if it's clearly a name introduction, it was already caught above
+                # This is for cases where greeting is the primary intent
+                return NLUResult(Intent.GREETING_WITH_NAME, 0.85, [])
             
             # Detect greeting style/mood for dynamic personalization
             elif any(word in user_lower for word in ["awesome", "great", "fantastic", "wonderful", "amazing", "excited", "!!!", "super", "really good"]):
@@ -179,23 +316,15 @@ class NLUEngine:
         
         # Priority 4: Name queries - asking about their own name
         name_query_patterns = [
-            "what is my name", "whats my name", "my name is", "tell me my name",
+            "what is my name", "whats my name", "tell me my name",
             "do you remember my name", "can you remember my name", 
             "sino ang pangalan ko", "ano ang pangalan ko", "pangalan ko",
             "sino ako", "who am i"
         ]
         if any(pattern in user_lower for pattern in name_query_patterns):
-            # But exclude name introductions ("my name is John")
-            if not any(intro in user_lower for intro in ["my name is", "ako si"]):
+            # But exclude name introductions ("my name is John") which were already handled above
+            if not any(intro in user_lower for intro in ["my name is", "ako si", "i am", "i'm"]):
                 return NLUResult(Intent.NAME_QUERY, 0.9, [])
-        
-        # Priority 5: Name introductions (without greeting)
-        name_intro_patterns = [
-            "my name is", "i am", "i'm", "im ", "ako si", "ako ay"
-        ]
-        for pattern in name_intro_patterns:
-            if pattern in user_lower and not any(greet in user_lower for greet in ["hi", "hello", "hey"]):
-                return NLUResult(Intent.NAME_INTRODUCTION, 0.8, [])
         
         # Priority 5: Enrollment (check before child introduction to avoid conflicts)
         if any(word in user_lower for word in ["enroll", "enrollment", "admission", "register", "pag-enroll"]):
@@ -326,7 +455,90 @@ class NLUEngine:
         if any(pattern in user_lower for pattern in contact_patterns):
             return NLUResult(Intent.CONTACT_INFO, 0.8, [])
         
-        # Priority 18: Goodbyes
+        # CONVERSATION FLOW INTENTS - for better multi-turn conversations
+        
+        # Priority 18: Enrollment-specific conversation flow
+        enrollment_doc_patterns = [
+            "what documents", "what papers", "documents needed", "requirements", "papers needed",
+            "what do i need", "documents required", "anong documents", "anong papers",
+            "ano mga requirements", "kailangan nga papers", "documents nga kailangan"
+        ]
+        if any(pattern in user_lower for pattern in enrollment_doc_patterns):
+            return NLUResult(Intent.ENROLLMENT_DOCUMENTS, 0.85, [])
+            
+        enrollment_deadline_patterns = [
+            "when is the deadline", "deadline", "last day", "cut off", "when to enroll",
+            "deadline ng enrollment", "kailan deadline", "hanggang kailan", "last day ng",
+            "cut off nga enrollment", "hasta san", "deadline sang enrollment"
+        ]
+        if any(pattern in user_lower for pattern in enrollment_deadline_patterns):
+            return NLUResult(Intent.ENROLLMENT_DEADLINE, 0.85, [])
+            
+        enrollment_process_patterns = [
+            "how to enroll", "enrollment process", "steps to enroll", "paano mag-enroll",
+            "process ng enrollment", "hakbang sa enrollment", "paano enrollment",
+            "steps nga enrollment", "paano mag-register", "process sang enrollment"
+        ]
+        if any(pattern in user_lower for pattern in enrollment_process_patterns):
+            return NLUResult(Intent.ENROLLMENT_PROCESS, 0.85, [])
+        
+        # Priority 19: School information-specific conversation flow
+        school_overview_patterns = [
+            "tell me about your school", "about the school", "school overview", "describe your school",
+            "what kind of school", "type of school", "sabihin mo tungkol sa school",
+            "kwento mo ang school", "ano bang school", "klaseng school", "uri ng school"
+        ]
+        if any(pattern in user_lower for pattern in school_overview_patterns):
+            return NLUResult(Intent.SCHOOL_OVERVIEW, 0.85, [])
+            
+        grade_levels_patterns = [
+            "what grades", "grade levels", "what levels", "grades offered", "anong grade",
+            "grade levels ninyo", "anong baitang", "mga baitang", "levels nga naa",
+            "grade nga available", "anong year", "year levels"
+        ]
+        if any(pattern in user_lower for pattern in grade_levels_patterns):
+            return NLUResult(Intent.GRADE_LEVELS, 0.85, [])
+            
+        school_programs_patterns = [
+            "programs offered", "academic programs", "what programs", "curriculum",
+            "subjects offered", "mga programa", "programa ninyo", "anong programa",
+            "subjects nga naa", "curriculum ninyo", "mga subjects"
+        ]
+        if any(pattern in user_lower for pattern in school_programs_patterns):
+            return NLUResult(Intent.SCHOOL_PROGRAMS, 0.85, [])
+        
+        # Priority 20: General conversation flow intents
+        follow_up_patterns = [
+            "and what about", "what else", "anything else", "also", "plus",
+            "how about", "what about", "ano pa", "ano rin", "at ano pa",
+            "amo pa", "ano pa nga", "diin pa", "unsa pa"
+        ]
+        if any(pattern in user_lower for pattern in follow_up_patterns):
+            return NLUResult(Intent.FOLLOW_UP_QUESTION, 0.75, [])
+            
+        clarification_request_patterns = [
+            "can you explain", "more details", "tell me more", "elaborate",
+            "i need more info", "explain mo", "detalye pa", "explain nga",
+            "mas detalye", "daghan pa nga info", "clarify mo"
+        ]
+        if any(pattern in user_lower for pattern in clarification_request_patterns):
+            return NLUResult(Intent.CLARIFICATION_REQUEST, 0.8, [])
+            
+        topic_continuation_patterns = [
+            "about that", "regarding that", "speaking of", "tungkol dyan",
+            "about sa", "regarding nga", "speaking nga", "tungkol sa una"
+        ]
+        if any(pattern in user_lower for pattern in topic_continuation_patterns):
+            return NLUResult(Intent.TOPIC_CONTINUATION, 0.75, [])
+            
+        comparison_patterns = [
+            "compare", "difference", "better", "vs", "versus", "compared to",
+            "mas maganda", "pagkakaiba", "difference sa", "compare nga"
+        ]
+        if any(pattern in user_lower for pattern in comparison_patterns):
+            return NLUResult(Intent.COMPARISON_REQUEST, 0.8, [])
+        
+        # Priority 21: Goodbyes
         if any(word in user_lower for word in ["bye", "goodbye", "thanks", "thank you", "salamat", "tapos na"]):
             return NLUResult(Intent.GOODBYE, 0.7, [])
         
@@ -342,9 +554,15 @@ class NLUEngine:
         - name_introduction: User introduces their name without greeting
         - name_query: User asks about their own name ("what is my name", "sino ang pangalan ko")
         - child_introduction: User introduces their child
-        - enrollment_inquiry: Questions about school enrollment/admission
+        - enrollment_inquiry: General questions about school enrollment/admission
+        - enrollment_documents: Specific questions about enrollment documents/requirements
+        - enrollment_deadline: Questions about enrollment deadlines and timelines
+        - enrollment_process: Questions about how to enroll step-by-step
         - staff_inquiry: Questions about teachers or staff
         - school_info: General school information requests
+        - school_overview: Specific requests for school description/overview
+        - grade_levels: Questions about what grades/levels are offered
+        - school_programs: Questions about academic programs and curriculum
         - schedule_inquiry: Questions about school hours or schedules
         - facilities_inquiry: Questions about school facilities (cafeteria, library, gym, etc.)
         - financial_inquiry: Questions about tuition, fees, payments, costs
@@ -354,6 +572,10 @@ class NLUEngine:
         - appreciation: Thank you messages, gratitude expressions
         - confirmation: Yes/no responses, agreement ("yes", "oo", "correct")
         - contact_info: Requests for contact information
+        - follow_up_question: Follow-up questions ("what else", "and what about")
+        - clarification_request: Requests for more details or explanations
+        - topic_continuation: Continuing previous conversation topic
+        - comparison_request: Asking to compare options or programs
         - denial: User denying or clarifying they weren't asking about something
         - clarification: User clarifying what they meant
         - goodbye: User saying goodbye or thanks

@@ -19,6 +19,18 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import calendar
 
+# Import the new multilingual NLP engine
+try:
+    from multilingual_nlp import multilingual_nlp
+    MULTILINGUAL_NLP_AVAILABLE = True
+except ImportError:
+    try:
+        from .multilingual_nlp import multilingual_nlp
+        MULTILINGUAL_NLP_AVAILABLE = True
+    except ImportError:
+        MULTILINGUAL_NLP_AVAILABLE = False
+        print("⚠️ Multilingual NLP engine not available - using fallback entity extraction")
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -46,7 +58,8 @@ class AdvancedEntityExtractor:
         
     def extract_entities(self, text: str, intent_context: str = None) -> List[ExtractedEntity]:
         """
-        Extract all entities from the given text
+        Extract all entities from the given text using rule-based patterns
+        (Use extract_entities_async for semantic NLP extraction)
         
         Args:
             text: Input text to analyze
@@ -58,7 +71,7 @@ class AdvancedEntityExtractor:
         entities = []
         text_lower = text.lower()
         
-        # Extract different entity types
+        # Extract different entity types using pattern matching
         entities.extend(self._extract_person_names(text, text_lower))
         entities.extend(self._extract_grade_levels(text, text_lower))
         entities.extend(self._extract_subjects(text, text_lower))
@@ -71,7 +84,61 @@ class AdvancedEntityExtractor:
         # Sort by confidence and remove overlaps
         entities = self._resolve_entity_conflicts(entities)
         
-        logger.info(f"🔍 Extracted {len(entities)} entities from: '{text[:50]}...'")
+        logger.info(f"🔍 Rule-based extracted {len(entities)} entities from: '{text[:50]}...'")
+        for entity in entities:
+            logger.info(f"   📍 {entity.entity_type}: '{entity.value}' (confidence: {entity.confidence:.2f})")
+        
+        return entities
+    
+    async def extract_entities_async(self, text: str, intent_context: str = None) -> List[ExtractedEntity]:
+        """
+        Async version of extract_entities for better performance with NLP models
+        """
+        entities = []
+        
+        # First, try semantic multilingual entity extraction if available
+        if MULTILINGUAL_NLP_AVAILABLE:
+            try:
+                # Detect language first for better extraction
+                lang_result = await multilingual_nlp.detect_language_semantic(text)
+                language = lang_result.language
+                
+                # Extract entities using multilingual NER
+                semantic_entities = await multilingual_nlp.extract_entities_multilingual(text, language)
+                
+                # Convert to our format
+                for entity in semantic_entities:
+                    entities.append(ExtractedEntity(
+                        entity_type=entity.label.lower(),
+                        value=entity.normalized_form or entity.text,
+                        confidence=entity.confidence,
+                        start_pos=entity.start,
+                        end_pos=entity.end,
+                        context=f"Language: {language}, Method: semantic"
+                    ))
+                
+                logger.info(f"🔍 Semantic extraction found {len(entities)} entities")
+                
+            except Exception as e:
+                logger.warning(f"⚠️ Semantic entity extraction failed: {e}, falling back to rule-based")
+        
+        # Add rule-based extraction for domain-specific entities
+        text_lower = text.lower()
+        
+        # Extract different entity types using pattern matching
+        entities.extend(self._extract_person_names(text, text_lower))
+        entities.extend(self._extract_grade_levels(text, text_lower))
+        entities.extend(self._extract_subjects(text, text_lower))
+        entities.extend(self._extract_dates(text, text_lower))
+        entities.extend(self._extract_contact_info(text, text_lower))
+        entities.extend(self._extract_school_terms(text, text_lower))
+        entities.extend(self._extract_ages(text, text_lower))
+        entities.extend(self._extract_staff_roles(text, text_lower))
+        
+        # Sort by confidence and remove overlaps
+        entities = self._resolve_entity_conflicts(entities)
+        
+        logger.info(f"🔍 Total extracted {len(entities)} entities from: '{text[:50]}...'")
         for entity in entities:
             logger.info(f"   📍 {entity.entity_type}: '{entity.value}' (confidence: {entity.confidence:.2f})")
         

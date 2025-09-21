@@ -1,5 +1,20 @@
 [
   {
+    "id": "1758469285224",
+    "text": "Add more specific intents for conversation flow",
+    "completed": false
+  },
+  {
+    "id": "1758469278802",
+    "text": "Implement better database query optimization for enrollment/fees topics",
+    "completed": false
+  },
+  {
+    "id": "1758469273826",
+    "text": "Fix the name introduction classification",
+    "completed": false
+  },
+  {
     "id": "1758423771919",
     "text": "Concurrent Load Optimization: Improve performance beyond 10 concurrent users",
     "completed": true

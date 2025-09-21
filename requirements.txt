@@ -12,6 +12,12 @@ langid
 rapidfuzz
 deep_translator
 openai
+transformers
+sentence-transformers
+torch
+spacy
+polyglot
+langdetect
 
 # Document Processing  
 docx2txt
