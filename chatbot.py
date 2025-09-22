@@ -5009,6 +5009,11 @@ class ChatBot:
                 except Exception as e:
                     logger.warning(f"Cache setting failed: {e}")
             
+            # 📱 MESSAGE SPLITTING: Split long responses into multiple messages
+            if isinstance(response, str) and len(response) > 250:
+                split_response = self._split_long_message(response)
+                return split_response
+            
             return response
             
         except asyncio.TimeoutError:
@@ -5037,6 +5042,59 @@ class ChatBot:
             return "Nagluwat gid ang sistema. Pakiulit lang ang pangutana o adto sa admin office."
         else:
             return "The request is taking too long. Please try again with a simpler question or visit the admin office."
+
+    def _split_long_message(self, message: str) -> str:
+        """Split long messages into multiple parts for better readability."""
+        if len(message) <= 250:
+            return message
+        
+        # Split at sentence boundaries (., !, ?)
+        sentences = []
+        current_sentence = ""
+        
+        for char in message:
+            current_sentence += char
+            if char in '.!?' and len(current_sentence.strip()) > 20:
+                sentences.append(current_sentence.strip())
+                current_sentence = ""
+        
+        # Add remaining text if any
+        if current_sentence.strip():
+            sentences.append(current_sentence.strip())
+        
+        # If no sentences found, split by length
+        if not sentences:
+            sentences = [message[i:i+200] for i in range(0, len(message), 200)]
+        
+        # Group sentences into parts of ~200-250 characters
+        parts = []
+        current_part = ""
+        
+        for sentence in sentences:
+            if len(current_part + sentence) <= 250:
+                current_part += sentence + " "
+            else:
+                if current_part:
+                    parts.append(current_part.strip())
+                current_part = sentence + " "
+        
+        # Add the last part
+        if current_part:
+            parts.append(current_part.strip())
+        
+        # If only one part, return original message
+        if len(parts) <= 1:
+            return message
+        
+        # Format as numbered parts
+        formatted_parts = []
+        for i, part in enumerate(parts, 1):
+            if i == 1:
+                formatted_parts.append(f"Part {i}/{len(parts)}: {part}")
+            else:
+                formatted_parts.append(f"Part {i}/{len(parts)}: {part}")
+        
+        return "\n\n".join(formatted_parts)
 
     async def _handle_structured_response(self, query: str, language: str = "english", nlu_result = None) -> Optional[str]:
         """Handle complex procedural queries with structured responses."""
