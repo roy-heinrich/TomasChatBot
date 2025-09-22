@@ -3308,7 +3308,7 @@ class ChatBot:
         else:
             return "Tomas SM. Bautista Elementary School is located in Fatima, New Washington, Aklan."
 
-    async def ask_groq(self, query: str, context: str, lang: str, conversation_history: list = None, user_timezone: str = None) -> str:
+    async def ask_groq(self, query: str, context: str, lang: str, conversation_history: list = None, user_timezone: str = None, fallback_content: str = None) -> str:
         """Token-optimized Groq API call with emergency fallbacks."""
         # Extract user name from full conversation history before truncation
         user_name = self._extract_user_name(conversation_history) if conversation_history else ""
@@ -3407,10 +3407,16 @@ class ChatBot:
                     # Non-token error, try emergency fallback
                     logger.error(f"❌ Groq API error in {mode} mode: {e}")
                     if mode == "no_context":
+                        if fallback_content:
+                            logger.info("🔄 AI failed in no_context mode, returning database content directly")
+                            return fallback_content
                         return await self._emergency_template_response(query, lang)
                     continue
         
-        # If all attempts fail
+        # If all attempts fail, return fallback content if available
+        if fallback_content:
+            logger.info("🔄 AI failed, returning database content directly")
+            return fallback_content
         return await self._emergency_template_response(query, lang)
 
     async def _emergency_template_response(self, query: str, lang: str) -> str:
@@ -3867,15 +3873,18 @@ class ChatBot:
             # Add original search words
             comprehensive_terms.extend(search_words)
             
-            # Add related terms for common queries
+            # Add related terms for common queries (but prioritize original terms)
             if any(word in ["teacher", "teachers", "communicate", "communication", "parent", "parents"] for word in search_words):
                 comprehensive_terms.extend(["teacher", "communication", "parent", "contact", "reach"])
             
             if any(word in ["school", "facility", "facilities"] for word in search_words):
-                comprehensive_terms.extend(["school", "facility", "building", "room"])
+                comprehensive_terms.extend(["school", "facility", "building"])
             
-            # Remove duplicates and try each term
-            unique_terms = list(set(comprehensive_terms))
+            # Prioritize original search terms over generic additions
+            # Put original terms first, then add related terms
+            original_terms = [term for term in comprehensive_terms if term in search_words]
+            related_terms = [term for term in comprehensive_terms if term not in search_words]
+            unique_terms = original_terms + related_terms
             
             for term in unique_terms:
                 logger.info(f"🔍 Full-text search for: '{term}'")
@@ -4838,7 +4847,8 @@ class ChatBot:
             return response
 
         # Multilingual intent-based template selection for non-quick responses
-        if MULTILINGUAL_NLP_AVAILABLE and intent_confidence > 0.3:
+        # 🎯 FIX: Skip template selection since ALL queries should use database search
+        if False:  # MULTILINGUAL_NLP_AVAILABLE and intent_confidence > 0.3:
             # Use ResponseTemplates for procedural/informational intents
             from response_templates import ResponseTemplates
             templates = ResponseTemplates()
@@ -4966,7 +4976,8 @@ class ChatBot:
             logger.info(f"🔍 Response from _answer_with_timeout: '{response[:100]}...' (length: {len(response)})")
 
             # If procedural/structured response, use language-specific template
-            if isinstance(response, dict) and response.get("type") == "procedural":
+            # 🎯 FIX: Skip template selection since ALL queries should use database search
+            if False:  # isinstance(response, dict) and response.get("type") == "procedural":
                 template_name = response.get("template_name", "enrollment")
                 # Use ResponseTemplates for language-specific response
                 from response_templates import ResponseTemplates
@@ -5030,6 +5041,12 @@ class ChatBot:
     async def _handle_structured_response(self, query: str, language: str = "english", nlu_result = None) -> Optional[str]:
         """Handle complex procedural queries with structured responses."""
         try:
+            # 🎯 FIX: Skip structured responses for queries that should use database search
+            # Check if this query should use database search instead of structured response
+            if self._should_skip_conversation_flow(query):
+                logger.info(f"🔍 Query should use database search - skipping structured response: {query[:50]}...")
+                return None
+            
             # Classify the query to determine if it needs structured response
             classification = self.query_classifier.classify_query(query)
             
@@ -5294,20 +5311,21 @@ class ChatBot:
         tone_adjustments = sentiment_analyzer.get_tone_adjustment_suggestions(sentiment_result)
         
         # --- EARLY: Check for Structured Response First (before fallback) ---
-        try:
-            logger.info(f"🔍 Early check for structured response for query: {query[:50]}...")
-            # Quick classification check without full NLU
-            classification = self.query_classifier.classify_query(query)
-            if classification.needs_structured_response:
-                logger.info(f"📋 Procedural query detected early - generating structured response (confidence: {classification.confidence:.2f})")
-                structured_response = await self._handle_structured_response(query, lang)
-                if structured_response:
-                    logger.info("✅ Generated structured response for procedural query")
-                    return structured_response
-                else:
-                    logger.info("❌ Structured response generation failed, continuing with normal processing")
-        except Exception as e:
-            logger.warning(f"Early structured response check failed: {e}, continuing with normal processing")
+        # 🎯 FIX: Skip early structured response check since ALL queries should use database search
+        # try:
+        #     logger.info(f"🔍 Early check for structured response for query: {query[:50]}...")
+        #     # Quick classification check without full NLU
+        #     classification = self.query_classifier.classify_query(query)
+        #     if classification.needs_structured_response:
+        #         logger.info(f"📋 Procedural query detected early - generating structured response (confidence: {classification.confidence:.2f})")
+        #         structured_response = await self._handle_structured_response(query, lang)
+        #         if structured_response:
+        #             logger.info("✅ Generated structured response for procedural query")
+        #             return structured_response
+        #         else:
+        #             logger.info("❌ Structured response generation failed, continuing with normal processing")
+        # except Exception as e:
+        #     logger.warning(f"Early structured response check failed: {e}, continuing with normal processing")
         
         # 🧠 CRITICAL FIX: INTELLIGENT FALLBACK TRIGGERING MOVED TO TOP PRIORITY
         try:
@@ -5503,19 +5521,7 @@ class ChatBot:
         except Exception as e:
             logger.warning(f"NLU processing failed, falling back to legacy system: {e}")
         
-        # --- NEW: STRUCTURED RESPONSE FRAMEWORK ---
-        # Check if query needs structured response (procedural, complex information)
-        try:
-            structured_response = await self._handle_structured_response(query, lang)
-            if structured_response:
-                logger.info("🏗️ Using structured response framework")
-                await self._store_conversation_turn(user_id, query, structured_response, lang, conversation_history)
-                return structured_response
-        except Exception as e:
-            logger.warning(f"⚠️ Structured response handling failed: {e}")
-        
-        # --- Legacy fallback for compatibility ---
-        # 🎯 FIX: ALL queries should search database first
+        # 🎯 FIX: ALL queries should search database first, then use structured response if needed
         logger.info("🔍 All queries now use database search - searching database directly")
         try:
             # Search Supabase database
@@ -5537,8 +5543,16 @@ class ChatBot:
             if full_context:
                 logger.info("✅ Found context in database - using AI with context")
                 # Use AI with database context
-                response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone)
-                return self._validate_response_against_facts(response, query, lang)
+                try:
+                    # Pass database content as fallback in case AI fails
+                    fallback_content = supabase_result if supabase_result else snippet
+                    response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone, fallback_content)
+                    return self._validate_response_against_facts(response, query, lang)
+                except Exception as ai_error:
+                    logger.warning(f"AI processing failed: {ai_error}")
+                    # If AI fails but we have database content, return the database content directly
+                    logger.info("🔄 AI failed, returning database content directly")
+                    return supabase_result if supabase_result else snippet
             else:
                 logger.info("❌ No context found in database - continuing with fallback")
                 # Continue with original fallback logic if no database context found
@@ -5546,6 +5560,17 @@ class ChatBot:
         except Exception as e:
             logger.warning(f"Direct database search failed: {e}")
             # Continue with original fallback logic if database search fails
+        
+        # --- STRUCTURED RESPONSE FRAMEWORK (as fallback when no database content) ---
+        # 🎯 FIX: Skip structured response framework since ALL queries should use database search
+        # try:
+        #     structured_response = await self._handle_structured_response(query, lang)
+        #     if structured_response:
+        #         logger.info("🏗️ Using structured response framework as fallback")
+        #         await self._store_conversation_turn(user_id, query, structured_response, lang, conversation_history)
+        #         return structured_response
+        # except Exception as e:
+        #     logger.warning(f"⚠️ Structured response handling failed: {e}")
         
         intent_analysis = self._analyze_query_intent(query)
         human_analysis = self._analyze_human_request_intent(query)

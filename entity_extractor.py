@@ -24,12 +24,8 @@ try:
     from multilingual_nlp import multilingual_nlp
     MULTILINGUAL_NLP_AVAILABLE = True
 except ImportError:
-    try:
-        from .multilingual_nlp import multilingual_nlp
-        MULTILINGUAL_NLP_AVAILABLE = True
-    except ImportError:
-        MULTILINGUAL_NLP_AVAILABLE = False
-        print("⚠️ Multilingual NLP engine not available - using fallback entity extraction")
+    MULTILINGUAL_NLP_AVAILABLE = False
+    print("⚠️ Multilingual NLP engine not available - using fallback entity extraction")
 
 logger = logging.getLogger(__name__)
 

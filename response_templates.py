@@ -831,6 +831,44 @@ class ResponseTemplates:
             ResponseType.INFORMATIONAL, title, language
         )
         
+        # Add basic information section
+        if language.lower() in ['tagalog', 'filipino']:
+            builder.add_section(
+                "Impormasyon", 
+                "Para sa mas detalyadong impormasyon tungkol sa inyong katanungan, maaari kayong pumunta sa admin office ng paaralan.",
+                order=1
+            )
+            builder.add_contact(
+                "Admin Office",
+                phone="the school office",
+                office="Admin Building",
+                hours="8:00 AM - 5:00 PM"
+            )
+        elif language.lower() in ['hiligaynon', 'ilonggo']:
+            builder.add_section(
+                "Impormasyon", 
+                "Para sa mas detalyado nga impormasyon tuhoy sa inyo nga pamangkot, pwede kamo magkadto sa admin office sang eskwelahan.",
+                order=1
+            )
+            builder.add_contact(
+                "Admin Office",
+                phone="the school office",
+                office="Admin Building",
+                hours="8:00 AM - 5:00 PM"
+            )
+        else:
+            builder.add_section(
+                "Information", 
+                "For more detailed information about your inquiry, please visit the school's admin office.",
+                order=1
+            )
+            builder.add_contact(
+                "Admin Office",
+                phone="the school office",
+                office="Admin Building",
+                hours="8:00 AM - 5:00 PM"
+            )
+        
         return builder.build()
     
     def customize_template(self, template_name: str, language: str, database_info: Dict[str, Any]) -> str:

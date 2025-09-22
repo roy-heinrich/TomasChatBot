@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 # Import the new multilingual NLP engine
 try:
-    from .multilingual_nlp import multilingual_nlp, SemanticIntent, MultilingualEntity
+    from multilingual_nlp import multilingual_nlp, SemanticIntent, MultilingualEntity
     MULTILINGUAL_NLP_AVAILABLE = True
 except ImportError:
     MULTILINGUAL_NLP_AVAILABLE = False

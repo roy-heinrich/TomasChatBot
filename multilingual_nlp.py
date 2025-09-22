@@ -132,7 +132,10 @@ class MultilingualNLPEngine:
                 try:
                     nltk.data.find('corpora/wordnet')
                 except LookupError:
-                    nltk.download('wordnet', quiet=True)
+                    try:
+                        nltk.download('wordnet', quiet=True)
+                    except Exception as wordnet_error:
+                        logger.warning(f"Wordnet download failed: {wordnet_error}. Continuing without wordnet.")
                 
                 self.stemmer = PorterStemmer()
                 self.stop_words = set(stopwords.words('english'))
