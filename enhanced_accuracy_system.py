@@ -69,6 +69,24 @@ class EnhancedAccuracySystem:
                 "response_type": "factual",
                 "expected_keywords": ["fatima", "new washington", "aklan", "location"]
             },
+            "safety_procedures": {
+                "patterns": [
+                    r"earthquake.*drill",
+                    r"fire.*drill", 
+                    r"emergency.*drill",
+                    r"safety.*drill",
+                    r"earthquake.*procedure",
+                    r"fire.*procedure",
+                    r"emergency.*procedure",
+                    r"safety.*procedure",
+                    r"what to do.*earthquake",
+                    r"what to do.*fire",
+                    r"emergency.*plan",
+                    r"disaster.*preparedness"
+                ],
+                "response_type": "safety",
+                "expected_keywords": ["earthquake", "fire", "drill", "emergency", "safety", "procedure"]
+            },
             "enrollment": {
                 "patterns": [
                     r"how to enroll",
@@ -130,6 +148,11 @@ class EnhancedAccuracySystem:
             "fees": "For information about school fees and tuition, please contact our school office at (036) 269-6345 or visit us in person for detailed fee structure.",
             "schedule": "School hours are from 7:00 AM to 5:00 PM, Monday to Friday. Classes start at 7:30 AM and end at 4:30 PM.",
             "staff": "Our school is led by our principal and supported by qualified teachers and staff. For specific staff information, please contact our school office."
+        }
+        
+        # Intents that should trigger database search instead of specific responses
+        self.database_search_intents = {
+            "safety_procedures"
         }
     
     async def analyze_query_intent(self, query: str) -> QueryIntent:
@@ -212,8 +235,8 @@ class EnhancedAccuracySystem:
         """
         results = []
         
-        # If we have a specific response for this intent, use it
-        if intent.primary_intent in self.specific_responses:
+        # If we have a specific response for this intent, use it (unless it's a database search intent)
+        if intent.primary_intent in self.specific_responses and intent.primary_intent not in self.database_search_intents:
             results.append(SearchResult(
                 content=self.specific_responses[intent.primary_intent],
                 relevance_score=1.0,

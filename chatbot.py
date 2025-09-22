@@ -3730,19 +3730,26 @@ class ChatBot:
                     intent = await enhanced_accuracy_system.analyze_query_intent(query)
                     logger.info(f"🎯 Enhanced intent analysis: {intent.primary_intent} (confidence: {intent.confidence:.2f})")
                     
-                    # Check for specific responses first
-                    if intent.primary_intent in enhanced_accuracy_system.specific_responses:
+                    # Check for specific responses first (unless it's a database search intent)
+                    if (intent.primary_intent in enhanced_accuracy_system.specific_responses and 
+                        intent.primary_intent not in enhanced_accuracy_system.database_search_intents):
                         specific_response = enhanced_accuracy_system.specific_responses[intent.primary_intent]
                         logger.info(f"✅ Using specific response for {intent.primary_intent}")
                         return specific_response
                     
                     # Enhanced database search
+                    logger.info(f"🔍 Performing enhanced database search for intent: {intent.primary_intent}")
                     search_results = await enhanced_accuracy_system.enhanced_database_search(query, intent)
                     if search_results:
                         best_result = max(search_results, key=lambda x: x.relevance_score)
+                        logger.info(f"🔍 Database search found {len(search_results)} results, best relevance: {best_result.relevance_score:.2f}")
                         if best_result.relevance_score > 0.8:
                             logger.info(f"✅ Enhanced search found high-relevance result: {best_result.match_type}")
                             return best_result.content
+                        else:
+                            logger.info(f"⚠️ Database search results have low relevance, continuing with other methods")
+                    else:
+                        logger.info(f"⚠️ No database search results found for intent: {intent.primary_intent}")
                     
                 except Exception as e:
                     logger.warning(f"Enhanced accuracy system failed: {e}, falling back to standard search")
