@@ -32,6 +32,30 @@ except ImportError:
     MULTILINGUAL_NLP_AVAILABLE = False
     print("⚠️ Multilingual NLP engine not available - using fallback methods")
 
+# Import enhanced conversation flow
+try:
+    from enhanced_conversation_flow import enhanced_conversation_flow
+    ENHANCED_CONVERSATION_FLOW_AVAILABLE = True
+except ImportError:
+    ENHANCED_CONVERSATION_FLOW_AVAILABLE = False
+    print("⚠️ Enhanced conversation flow not available - using basic conversation handling")
+
+# Import enhanced accuracy system
+try:
+    from enhanced_accuracy_system import enhanced_accuracy_system
+    ENHANCED_ACCURACY_SYSTEM_AVAILABLE = True
+except ImportError:
+    ENHANCED_ACCURACY_SYSTEM_AVAILABLE = False
+    print("⚠️ Enhanced accuracy system not available - using basic accuracy handling")
+
+# Import enhanced conversation flow v2
+try:
+    from enhanced_conversation_flow_v2 import enhanced_conversation_flow_v2
+    ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE = True
+except ImportError:
+    ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE = False
+    print("⚠️ Enhanced conversation flow v2 not available - using basic conversation handling")
+
 import time
 from datetime import datetime
 from rapidfuzz import fuzz, process
@@ -938,6 +962,7 @@ class ChatBot:
             if pattern in text_lower:
                 scores["akl"] += confidence
         
+        
         # Normalize scores to 0-1 range
         max_score = max(scores.values()) if max(scores.values()) > 0 else 1.0
         normalized_scores = {lang: min(score / max_score, 1.0) for lang, score in scores.items()}
@@ -945,6 +970,34 @@ class ChatBot:
         # Determine the language with highest confidence
         best_language = max(normalized_scores, key=normalized_scores.get)
         best_confidence = normalized_scores[best_language]
+        
+        # Check if the text contains unsupported language patterns
+        unsupported_patterns = [
+            # Japanese
+            "konnichiwa", "ohayo", "konbanwa", "arigato", "sumimasen", "gomen", "hai", "iie", "watashi", "anata", "desu",
+            # Spanish
+            "hola", "gracias", "por favor", "buenos dias", "buenas tardes", "como estas",
+            # French
+            "bonjour", "merci", "s'il vous plait", "comment allez-vous",
+            # German
+            "hallo", "danke", "bitte", "wie geht es ihnen",
+            # Chinese
+            "ni hao", "xie xie", "qing", "zao shang hao",
+            # Korean
+            "annyeong", "gamsahamnida", "jebal", "anyong haseyo"
+        ]
+        
+        has_unsupported_language = any(pattern in text_lower for pattern in unsupported_patterns)
+        
+        # If we detect unsupported language patterns, return "unsupported"
+        if has_unsupported_language:
+            result = {
+                "language": "unsupported",
+                "confidence": 0.9,
+                "scores": {"en": 0.1, "tl": 0.1, "akl": 0.1}
+            }
+            logger.info(f"🔎 Unsupported language detected: {text_lower}")
+            return result
         
         # If no clear winner or low confidence, use advanced analysis
         if best_confidence < 0.6:
@@ -3594,7 +3647,7 @@ class ChatBot:
 
             
     async def fetch_prompts_from_supabase(self, query: str) -> str:
-        """Enhanced search using search_tsv full-text search first, then fallback methods."""
+        """Enhanced search using enhanced accuracy system and improved database search."""
         try:
             # 🛡️ SAFETY CHECK: Handle None or empty query
             if not query or query is None:
@@ -3606,6 +3659,30 @@ class ChatBot:
             if not query:
                 logger.warning("⚠️ Fetch prompts received empty string after cleanup")
                 return ""
+            
+            # 🎯 ENHANCED ACCURACY: Use enhanced accuracy system if available
+            if ENHANCED_ACCURACY_SYSTEM_AVAILABLE:
+                try:
+                    # Analyze query intent
+                    intent = await enhanced_accuracy_system.analyze_query_intent(query)
+                    logger.info(f"🎯 Enhanced intent analysis: {intent.primary_intent} (confidence: {intent.confidence:.2f})")
+                    
+                    # Check for specific responses first
+                    if intent.primary_intent in enhanced_accuracy_system.specific_responses:
+                        specific_response = enhanced_accuracy_system.specific_responses[intent.primary_intent]
+                        logger.info(f"✅ Using specific response for {intent.primary_intent}")
+                        return specific_response
+                    
+                    # Enhanced database search
+                    search_results = await enhanced_accuracy_system.enhanced_database_search(query, intent)
+                    if search_results:
+                        best_result = max(search_results, key=lambda x: x.relevance_score)
+                        if best_result.relevance_score > 0.8:
+                            logger.info(f"✅ Enhanced search found high-relevance result: {best_result.match_type}")
+                            return best_result.content
+                    
+                except Exception as e:
+                    logger.warning(f"Enhanced accuracy system failed: {e}, falling back to standard search")
             
             # PRIORITY 1: Try full-text search using search_tsv (most powerful)
             result = await self._try_full_text_search(query)
@@ -4295,7 +4372,15 @@ class ChatBot:
         # Extract name from conversation history quickly
         user_name = self._extract_user_name(conversation_history)
         if user_name:
-            return f"Yes, I remember! Your name is {user_name}. 😊"
+            # 🧠 ENHANCED: Use more personalized response
+            personalized_responses = [
+                f"Yes, I remember! Your name is {user_name}. 😊",
+                f"Of course, {user_name}! How can I help you today?",
+                f"Hello again, {user_name}! What would you like to know?",
+                f"Yes {user_name}, I remember you. What can I assist you with?"
+            ]
+            import random
+            return random.choice(personalized_responses)
         else:
             return "I don't see where you've told me your name in our conversation. What's your name?"
 
@@ -4317,10 +4402,12 @@ class ChatBot:
         
         if not previous_questions:
             return "I don't see any previous questions in our conversation."
-        elif len(previous_questions) == 1:
-            return f"Your previous question was: \"{previous_questions[0]}\""
+        
+        # 🧠 ENHANCED: Provide more contextual response about previous questions
+        if len(previous_questions) == 1:
+            return f"You previously asked: \"{previous_questions[0]}\" - would you like me to elaborate on that topic?"
         else:
-            return f"Your previous questions were: \"{previous_questions[1]}\" and \"{previous_questions[0]}\""
+            return f"Your previous questions were: \"{previous_questions[1]}\" and \"{previous_questions[0]}\". Which topic would you like to continue discussing?"
 
     async def answer(self, query: str, context: str = None, conversation_history: list = None, user_timezone: str = None, session_id: str = None) -> str:
         """
@@ -4359,16 +4446,40 @@ class ChatBot:
                 logger.warning(f"⚠️ Slow response time: {total_time:.2f}s for query: '{query[:50]}...'")
 
     async def _answer_with_concurrent_optimization(self, query: str, context: str = None, conversation_history: list = None, user_timezone: str = None, session_id: str = None) -> str:
-        """Answer method optimized for concurrent requests with response caching"""
+        """Answer method optimized for concurrent requests with response caching and enhanced conversation flow"""
         
         # 🚀 PERFORMANCE FIX: Early cache check for common queries
         normalized_query = query.strip().lower()
+        
+        # Extract greeting part for quick response matching
+        greeting_part = normalized_query
+        if normalized_query.startswith("hi "):
+            greeting_part = "hi"
+        elif normalized_query.startswith("hello "):
+            greeting_part = "hello"
+        elif normalized_query.startswith("hey "):
+            greeting_part = "hey"
 
         # Enhanced: Use semantic multilingual NLP engine for language detection and intent classification
         detected_language = "en"
         detected_intent = "unknown"
         intent_confidence = 0.0
         matched_example = ""
+        
+        # 🧠 ENHANCED CONVERSATION FLOW: Use enhanced conversation flow if available
+        contextual_intent = None
+        if ENHANCED_CONVERSATION_FLOW_AVAILABLE:
+            try:
+                contextual_intent = await enhanced_conversation_flow.analyze_with_context(
+                    query, session_id or "default_user", conversation_history
+                )
+                detected_language = "en"  # Will be updated by multilingual NLP
+                detected_intent = contextual_intent.intent
+                intent_confidence = contextual_intent.confidence
+                logger.info(f"🧠 Enhanced Conversation Flow: intent={detected_intent}, confidence={intent_confidence:.2f}, context_relevance={contextual_intent.context_relevance:.2f}")
+            except Exception as e:
+                logger.warning(f"Enhanced conversation flow failed: {e}, falling back to basic NLP")
+        
         # Use semantic engine if available
         if MULTILINGUAL_NLP_AVAILABLE:
             try:
@@ -4394,6 +4505,77 @@ class ChatBot:
                 detected_language = lang_result.get("language", "en")
             except Exception as e:
                 logger.warning(f"Language detection failed: {e}, defaulting to English")
+        
+        # Handle unsupported languages - send to fallback system
+        if detected_language == "unsupported":
+            logger.info(f"🌐 Unsupported language detected, using fallback system")
+            fallback_response = self._generate_fallback_response(query, "unsupported_language")
+            return fallback_response
+
+        # 🎯 PERSONALIZED NAME QUERIES: Handle name queries before other processing
+        query_lower = query.lower().strip()
+        name_query_patterns = [
+            ("what", "is", "my", "name"),
+            ("whats", "my", "name"),
+            ("my", "name", "again"),
+            ("remind", "me", "my", "name"),
+            ("tell", "me", "my", "name"),
+            ("do", "you", "remember", "my", "name"),
+            ("ano", "ang", "pangalan", "ko"),
+            ("pangalan", "ko", "ulit"),
+            ("naaalala", "mo", "pangalan", "ko"),
+            ("sino", "ako"),
+            ("tawag", "sa", "akin"),
+            ("kung", "ano", "pangalan", "ko"),
+            ("ano", "nga", "ngaean", "ko"),
+            ("sin-o", "ako"),
+            ("ngaean", "ko", "ulit"),
+            ("nahanumdom", "mo", "ngaean", "ko")
+        ]
+        
+        # Check if this is a personalized name query
+        is_name_query = False
+        for pattern in name_query_patterns:
+            query_words = query_lower.split()
+            if all(keyword in query_words for keyword in pattern):
+                is_name_query = True
+                break
+        
+        if is_name_query:
+            logger.info("🎯 Personalized name query detected")
+            # Get user profile to check if we have their name
+            user_id = session_id or "default_user"
+            user_profile = self.conversation_memory.get_user_profile(user_id)
+            user_name = user_profile.name if user_profile else ""
+            
+            if user_name:
+                logger.info(f"🎯 Found user name: {user_name}")
+                return self._get_personalized_name_response(user_name, "", detected_language)
+            else:
+                logger.info("🎯 No user name found in profile")
+                if detected_language in ["tl", "akl"]:
+                    return "Hindi ko pa narinig ang pangalan ninyo sa usapan natin 😊 Pwede bang malaman kung ano ang tawag sa inyo?"
+                else:
+                    return "I don't think you've mentioned your name yet in our conversation 😊 Could you remind me what I should call you?"
+
+        # 🎯 ENHANCED ACCURACY: Check for specific queries first
+        if ENHANCED_ACCURACY_SYSTEM_AVAILABLE:
+            try:
+                intent = await enhanced_accuracy_system.analyze_query_intent(query)
+                if intent.primary_intent in enhanced_accuracy_system.specific_responses:
+                    specific_response = enhanced_accuracy_system.specific_responses[intent.primary_intent]
+                    logger.info(f"🎯 Quick response for {intent.primary_intent}")
+                    return specific_response
+            except Exception as e:
+                logger.warning(f"Enhanced accuracy quick check failed: {e}")
+
+        # Extract entities early for name introduction handling
+        entities = []
+        try:
+            entities = self.entity_extractor.extract_entities(query)
+            logger.info(f"🔍 Early entity extraction: {[(e.entity_type, e.value) for e in entities]}")
+        except Exception as e:
+            logger.warning(f"Early entity extraction failed: {e}")
 
         # Quick responses for very common queries to reduce load, localized
         quick_responses = {
@@ -4419,25 +4601,50 @@ class ChatBot:
             },
         }
 
-        if normalized_query in quick_responses:
+        if greeting_part in quick_responses:
+            logger.info(f"🔍 Quick response matched for '{normalized_query}', intent: {detected_intent}, confidence: {intent_confidence}")
             # Use detected intent to further specialize response if needed
-            response = quick_responses[normalized_query].get(detected_language, quick_responses[normalized_query]["en"])
+            response = quick_responses[greeting_part].get(detected_language, quick_responses[greeting_part]["en"])
             # If intent is greeting_with_name or name_introduction, personalize
             if detected_intent in ["greeting_with_name", "name_introduction"] and intent_confidence > 0.3:
-                # Try to extract name using multilingual NLP entity extraction
-                name_entities = await multilingual_nlp.extract_entities_multilingual(query, detected_language)
+                logger.info(f"🔍 Name introduction intent detected, checking entities: {[(e.entity_type, e.value) for e in entities]}")
+                # Extract name from the entities that were already extracted
                 user_name = None
-                for ent in name_entities:
-                    if ent.label == "PERSON":
-                        user_name = ent.normalized_form or ent.text
+                for entity in entities:
+                    if entity.entity_type == "person_name":
+                        user_name = entity.value
                         break
+                
                 if user_name:
-                    if detected_language == "tl":
-                        response = f"Magandang araw, {user_name}! 👋 Welcome po sa aming paaralan. Paano ko kayo matutulungan?"
-                    elif detected_language == "akl":
-                        response = f"Maayong adlaw, {user_name}! 👋 Welcome sa Tomas SM. Bautista Elementary School. Ano matabangan ko?"
-                    else:
-                        response = f"Hello, {user_name}! Welcome to our school. How can I help you today?"
+                    # Use the proper name introduction handling instead of quick response
+                    logger.info(f"🎯 Name introduction detected in quick response, using proper handling for {user_name}")
+                    return self._handle_greeting_with_name(user_name, "", detected_language)
+                else:
+                    logger.info(f"🔍 No user name found in entities")
+            else:
+                logger.info(f"🔍 Name introduction conditions not met: intent={detected_intent}, confidence={intent_confidence}")
+            
+            # 🧠 ENHANCED CONVERSATION FLOW V2: Process conversation turn with advanced flow handling
+            has_conversation_history = bool(conversation_history and len(conversation_history) > 0)
+            has_conversation_keywords = any(word in query.lower() for word in ["enroll", "school", "deadline", "thank", "documents", "when", "what", "how"])
+            
+            should_use_enhanced_flow = (
+                isinstance(response, str) and ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE and
+                (has_conversation_history or has_conversation_keywords)
+            )
+            
+            if should_use_enhanced_flow:
+                try:
+                    logger.info(f"🔍 Calling enhanced conversation flow v2 for quick response: '{query}'")
+                    enhanced_response, conversation_thread = await enhanced_conversation_flow_v2.process_conversation_turn(
+                        query, session_id or "default_user", conversation_history or [], 
+                        detected_intent, response
+                    )
+                    logger.info(f"🧠 Enhanced conversation flow v2: {len(enhanced_response)} chars")
+                    return enhanced_response
+                except Exception as e:
+                    logger.warning(f"Enhanced conversation flow v2 failed: {e}")
+            
             return response
 
         # Multilingual intent-based template selection for non-quick responses
@@ -4458,15 +4665,66 @@ class ChatBot:
             if template_name:
                 localized_response = templates.get_template(template_name, detected_language)
                 if localized_response:
+                    # 🧠 ENHANCED CONVERSATION FLOW V2: Process conversation turn with advanced flow handling
+                    has_conversation_history = bool(conversation_history and len(conversation_history) > 0)
+                    has_conversation_keywords = any(word in query.lower() for word in ["enroll", "school", "deadline", "thank", "documents", "when", "what", "how"])
+                    
+                    should_use_enhanced_flow = (
+                        isinstance(localized_response, str) and ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE and
+                        (has_conversation_history or has_conversation_keywords)
+                    )
+                    
+                    if should_use_enhanced_flow:
+                        try:
+                            logger.info(f"🔍 Calling enhanced conversation flow v2 for template response: '{query}'")
+                            enhanced_response, conversation_thread = await enhanced_conversation_flow_v2.process_conversation_turn(
+                                query, session_id or "default_user", conversation_history or [], 
+                                detected_intent, localized_response
+                            )
+                            logger.info(f"🧠 Enhanced conversation flow v2: {len(enhanced_response)} chars")
+                            return enhanced_response
+                        except Exception as e:
+                            logger.warning(f"Enhanced conversation flow v2 failed: {e}")
+                    
                     return localized_response
             # For appreciation, return a thank you in the correct language
             if detected_intent == "appreciation":
+                appreciation_response = None
                 if detected_language == "tl":
-                    return "Maraming salamat po! 😊"
+                    appreciation_response = "Maraming salamat po! 😊"
                 elif detected_language == "akl":
-                    return "Damo gid nga salamat! 😊"
+                    appreciation_response = "Damo gid nga salamat! 😊"
                 else:
-                    return "Thank you very much! 😊"
+                    appreciation_response = "Thank you very much! 😊"
+                
+                # Add multilingual acknowledgment for appreciation responses
+                if detected_language != "en":
+                    lang_names = {"tl": "Tagalog", "akl": "Aklanon"}
+                    lang_name = lang_names.get(detected_language, detected_language)
+                    appreciation_response = f"Detected language: {lang_name}. Answering in {lang_name}:\n\n{appreciation_response}"
+                
+                # 🧠 ENHANCED CONVERSATION FLOW V2: Process conversation turn with advanced flow handling
+                has_conversation_history = bool(conversation_history and len(conversation_history) > 0)
+                has_conversation_keywords = any(word in query.lower() for word in ["enroll", "school", "deadline", "thank", "documents", "when", "what", "how"])
+                
+                should_use_enhanced_flow = (
+                    isinstance(appreciation_response, str) and ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE and
+                    (has_conversation_history or has_conversation_keywords)
+                )
+                
+                if should_use_enhanced_flow:
+                    try:
+                        logger.info(f"🔍 Calling enhanced conversation flow v2 for appreciation response: '{query}'")
+                        enhanced_response, conversation_thread = await enhanced_conversation_flow_v2.process_conversation_turn(
+                            query, session_id or "default_user", conversation_history or [], 
+                            detected_intent, appreciation_response
+                        )
+                        logger.info(f"🧠 Enhanced conversation flow v2: {len(enhanced_response)} chars")
+                        return enhanced_response
+                    except Exception as e:
+                        logger.warning(f"Enhanced conversation flow v2 failed: {e}")
+                
+                return appreciation_response
 
         # Enhanced cache context - avoid complex attribute access during initialization
         cache_context = {
@@ -4479,6 +4737,28 @@ class ChatBot:
             cached_response = self.response_cache.get(query, cache_context)
             if cached_response:
                 logger.info(f"📋 Cache hit for query: {query[:50]}...")
+                
+                # 🧠 ENHANCED CONVERSATION FLOW V2: Process conversation turn with advanced flow handling
+                has_conversation_history = bool(conversation_history and len(conversation_history) > 0)
+                has_conversation_keywords = any(word in query.lower() for word in ["enroll", "school", "deadline", "thank", "documents", "when", "what", "how"])
+                
+                should_use_enhanced_flow = (
+                    isinstance(cached_response, str) and ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE and
+                    (has_conversation_history or has_conversation_keywords)
+                )
+                
+                if should_use_enhanced_flow:
+                    try:
+                        logger.info(f"🔍 Calling enhanced conversation flow v2 for cached response: '{query}'")
+                        enhanced_response, conversation_thread = await enhanced_conversation_flow_v2.process_conversation_turn(
+                            query, session_id or "default_user", conversation_history or [], 
+                            detected_intent, cached_response
+                        )
+                        logger.info(f"🧠 Enhanced conversation flow v2: {len(enhanced_response)} chars")
+                        return enhanced_response
+                    except Exception as e:
+                        logger.warning(f"Enhanced conversation flow v2 failed: {e}")
+                
                 return cached_response
         except Exception as e:
             logger.warning(f"Cache retrieval failed: {e}, continuing without cache")
@@ -4489,6 +4769,8 @@ class ChatBot:
                 self._answer_with_timeout(query, context, conversation_history, user_timezone, session_id),
                 timeout=12.0  # Reduced timeout for better concurrent performance
             )
+            
+            logger.info(f"🔍 Response from _answer_with_timeout: '{response[:100]}...' (length: {len(response)})")
 
             # If procedural/structured response, use language-specific template
             if isinstance(response, dict) and response.get("type") == "procedural":
@@ -4497,8 +4779,19 @@ class ChatBot:
                 from response_templates import ResponseTemplates
                 templates = ResponseTemplates()
                 localized_response = templates.get_template(template_name, detected_language)
-                return localized_response
+                response = localized_response  # Don't return early, let it go through enhanced conversation flow
 
+            # Enhanced conversation flow v2 is now handled in _answer_with_timeout method
+            elif isinstance(response, str) and len(response) > 10 and ENHANCED_CONVERSATION_FLOW_AVAILABLE and contextual_intent:
+                try:
+                    enhanced_response = await enhanced_conversation_flow.generate_contextual_response(
+                        contextual_intent, session_id or "default_user", response
+                    )
+                    logger.info(f"🧠 Enhanced response with conversation context: {len(enhanced_response)} chars")
+                    response = enhanced_response
+                except Exception as e:
+                    logger.warning(f"Enhanced conversation flow response generation failed: {e}, using original response")
+            
             # Only cache successful string responses
             if isinstance(response, str) and len(response) > 10:
                 # Cache the response (with shorter TTL for dynamic content)
@@ -4759,6 +5052,12 @@ class ChatBot:
         lang = await asyncio.wait_for(self.detect_language(query), timeout=2.0)
         lowered = query.lower().strip()  # For backward compatibility
         
+        # Handle unsupported languages - send to fallback system
+        if lang == "unsupported":
+            logger.info(f"🌐 Unsupported language detected, using fallback system")
+            fallback_response = self._generate_fallback_response(query, "unsupported_language")
+            return fallback_response
+        
         # Generate user ID from conversation or use provided session ID
         user_id = session_id if session_id else self._generate_user_id(conversation_history)
         
@@ -4881,6 +5180,28 @@ class ChatBot:
                 structured_response = await self._handle_structured_response(query, lang, nlu_result)
                 if structured_response:
                     logger.info("📋 Generated structured response for procedural query")
+                    
+                    # 🧠 ENHANCED CONVERSATION FLOW V2: Process conversation turn with advanced flow handling
+                    has_conversation_history = bool(conversation_history and len(conversation_history) > 0)
+                    has_conversation_keywords = any(word in query.lower() for word in ["enroll", "school", "deadline", "thank", "documents", "when", "what", "how"])
+                    
+                    should_use_enhanced_flow = (
+                        isinstance(structured_response, str) and ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE and
+                        (has_conversation_history or has_conversation_keywords)
+                    )
+                    
+                    if should_use_enhanced_flow:
+                        try:
+                            logger.info(f"🔍 Calling enhanced conversation flow v2 for structured response: '{query}'")
+                            enhanced_response, conversation_thread = await enhanced_conversation_flow_v2.process_conversation_turn(
+                                query, session_id or "default_user", conversation_history or [], 
+                                nlu_result.intent.value, structured_response
+                            )
+                            logger.info(f"🧠 Enhanced conversation flow v2: {len(enhanced_response)} chars")
+                            return enhanced_response
+                        except Exception as e:
+                            logger.warning(f"Enhanced conversation flow v2 failed: {e}")
+                    
                     return structured_response
                 else:
                     logger.info("📝 No structured response needed, continuing with normal processing")
@@ -4914,12 +5235,61 @@ class ChatBot:
             
             if intelligent_response:
                 logger.info("🎯 Using intelligent response generation")
+                logger.info(f"🔍 Query: '{query}', Response length: {len(intelligent_response)}")
                 await self._store_conversation_turn(user_id, query, intelligent_response, lang, conversation_history)
+                
+                # 🧠 ENHANCED CONVERSATION FLOW V2: Process conversation turn with advanced flow handling
+                has_conversation_history = bool(conversation_history and len(conversation_history) > 0)
+                has_conversation_keywords = any(word in query.lower() for word in ["enroll", "school", "deadline", "thank", "documents", "when", "what", "how"])
+                
+                should_use_enhanced_flow = (
+                    isinstance(intelligent_response, str) and ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE and
+                    (has_conversation_history or has_conversation_keywords)
+                )
+                
+                logger.info(f"🔍 Enhanced flow check for intelligent response: has_history={has_conversation_history}, has_keywords={has_conversation_keywords}, should_use={should_use_enhanced_flow}")
+                
+                if should_use_enhanced_flow:
+                    try:
+                        logger.info(f"🔍 Calling enhanced conversation flow v2 for intelligent response: '{query}'")
+                        logger.info(f"🔍 ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE: {ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE}")
+                        enhanced_response, conversation_thread = await enhanced_conversation_flow_v2.process_conversation_turn(
+                            query, session_id or "default_user", conversation_history or [], 
+                            nlu_result.intent.value, intelligent_response
+                        )
+                        logger.info(f"🧠 Enhanced conversation flow v2: {len(enhanced_response)} chars")
+                        return enhanced_response
+                    except Exception as e:
+                        logger.warning(f"Enhanced conversation flow v2 failed: {e}")
+                        import traceback
+                        logger.warning(f"Enhanced conversation flow v2 traceback: {traceback.format_exc()}")
+                
                 return intelligent_response
             
             # Try to handle with intelligent NLU-based routing (fallback)
             nlu_response = await self._handle_intent_based_response(nlu_result, query, lang, conversation_history, user_timezone)
             if nlu_response:
+                # 🧠 ENHANCED CONVERSATION FLOW V2: Process conversation turn with advanced flow handling
+                has_conversation_history = bool(conversation_history and len(conversation_history) > 0)
+                has_conversation_keywords = any(word in query.lower() for word in ["enroll", "school", "deadline", "thank", "documents", "when", "what", "how"])
+                
+                should_use_enhanced_flow = (
+                    isinstance(nlu_response, str) and ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE and
+                    (has_conversation_history or has_conversation_keywords)
+                )
+                
+                if should_use_enhanced_flow:
+                    try:
+                        logger.info(f"🔍 Calling enhanced conversation flow v2 for NLU response: '{query}'")
+                        enhanced_response, conversation_thread = await enhanced_conversation_flow_v2.process_conversation_turn(
+                            query, session_id or "default_user", conversation_history or [], 
+                            nlu_result.intent.value, nlu_response
+                        )
+                        logger.info(f"🧠 Enhanced conversation flow v2: {len(enhanced_response)} chars")
+                        return enhanced_response
+                    except Exception as e:
+                        logger.warning(f"Enhanced conversation flow v2 failed: {e}")
+                
                 return nlu_response
                 
         except Exception as e:
@@ -4991,13 +5361,37 @@ class ChatBot:
                 lang = "en"
 
             # Return personalized goodbye if name is available
+            goodbye_response = None
             if user_name:
                 if lang == "tl" or lang == "akl":
-                    return f"Salamat sa pakikipag-usap, {user_name}! Paalam! 👋"
+                    goodbye_response = f"Salamat sa pakikipag-usap, {user_name}! Paalam! 👋"
                 else:
-                    return f"Thank you for chatting, {user_name}! Goodbye! 👋"
+                    goodbye_response = f"Thank you for chatting, {user_name}! Goodbye! 👋"
             else:
-                return self.get_goodbye(lang)
+                goodbye_response = self.get_goodbye(lang)
+            
+            # 🧠 ENHANCED CONVERSATION FLOW V2: Process conversation turn with advanced flow handling
+            has_conversation_history = bool(conversation_history and len(conversation_history) > 0)
+            has_conversation_keywords = any(word in query.lower() for word in ["enroll", "school", "deadline", "thank", "documents", "when", "what", "how"])
+            
+            should_use_enhanced_flow = (
+                isinstance(goodbye_response, str) and ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE and
+                (has_conversation_history or has_conversation_keywords)
+            )
+            
+            if should_use_enhanced_flow:
+                try:
+                    logger.info(f"🔍 Calling enhanced conversation flow v2 for goodbye response: '{query}'")
+                    enhanced_response, conversation_thread = await enhanced_conversation_flow_v2.process_conversation_turn(
+                        query, session_id or "default_user", conversation_history or [], 
+                        "appreciation", goodbye_response
+                    )
+                    logger.info(f"🧠 Enhanced conversation flow v2: {len(enhanced_response)} chars")
+                    return enhanced_response
+                except Exception as e:
+                    logger.warning(f"Enhanced conversation flow v2 failed: {e}")
+            
+            return goodbye_response
 
         # --- Removed early keyword matching - only use when tokens are at limit ---
 
@@ -5698,6 +6092,33 @@ class ChatBot:
                 acknowledgement = f"Detected language: {lang_name}. Answering in {lang_name}:\n\n"
                 response_text = acknowledgement + translated
 
+            # 🧠 ENHANCED CONVERSATION FLOW V2: Process conversation turn with advanced flow handling
+            # Force enhanced conversation flow for conversation flow queries
+            logger.info(f"🔍 Starting enhanced flow check for query: '{query}'")
+            has_conversation_history = bool(conversation_history and len(conversation_history) > 0)
+            has_conversation_keywords = any(word in query.lower() for word in ["enroll", "school", "deadline", "thank", "documents", "when", "what", "how"])
+            
+            should_use_enhanced_flow = (
+                isinstance(response_text, str) and ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE and
+                (has_conversation_history or has_conversation_keywords)
+            )
+            
+            logger.info(f"🔍 Enhanced flow check: response_type={type(response_text)}, available={ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE}, has_history={has_conversation_history}, has_keywords={has_conversation_keywords}, should_use={should_use_enhanced_flow}")
+            
+            if should_use_enhanced_flow:
+                try:
+                    logger.info(f"🔍 Calling enhanced conversation flow v2 for: '{query}' with intent: {intent}")
+                    enhanced_response, conversation_thread = await enhanced_conversation_flow_v2.process_conversation_turn(
+                        query, user_id or "default_user", conversation_history or [], 
+                        intent, response_text
+                    )
+                    logger.info(f"🧠 Enhanced conversation flow v2: {len(enhanced_response)} chars")
+                    response_text = enhanced_response
+                except Exception as e:
+                    logger.warning(f"Enhanced conversation flow v2 failed: {e}")
+                    import traceback
+                    logger.warning(f"Enhanced conversation flow v2 traceback: {traceback.format_exc()}")
+
             # Otherwise return original response
             return response_text
             
@@ -5709,6 +6130,18 @@ class ChatBot:
     def _generate_fallback_response(self, query: str, intent: str, sentiment_result: SentimentResult = None) -> str:
         """Generate a fallback response when intelligent generation fails"""
         try:
+            # Handle unsupported language case
+            if intent == "unsupported_language":
+                unsupported_responses = {
+                    "en": "I'm sorry, but I couldn't understand what you're saying. I can help you in English, Tagalog, or Aklanon. Please try rephrasing your question in one of these languages.",
+                    "tl": "Paumanhin, hindi ko maintindihan ang sinasabi ninyo. Makatutulong ako sa English, Tagalog, o Aklanon. Subukan ninyong magtanong sa isa sa mga wikang ito.",
+                    "akl": "Pasensyahe ko ninyo, wara ko nasabtan ang ginahambal ninyo. Makabulig ako sa English, Tagalog, o Aklanon. Subong lang sa isa sa mga lenguahe nga ini."
+                }
+                # Default to English for unsupported languages
+                response = unsupported_responses["en"]
+                logger.info(f"🔄 Using unsupported language fallback response (intent: {intent})")
+                return response
+            
             # Simple language detection without async for fallback
             detected_lang = "en"  # Default to English
             query_lower = query.lower()

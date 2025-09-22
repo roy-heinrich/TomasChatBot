@@ -181,23 +181,28 @@ class AdvancedEntityExtractor:
     def _build_name_patterns(self) -> List[str]:
         """Build patterns for name extraction"""
         return [
-            # English patterns - more specific to avoid false positives
-            r"my name is ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+and|\s*,|\s*$|\s+who|\s+but)",
-            r"i['\s]*m ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+and|\s*,|\s*$|\s+who|\s+but)",
-            r"call me ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+and|\s*,|\s*$)",
-            r"this is ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+and|\s*,|\s*$)",
+            # English patterns - handle both uppercase and lowercase names
+            r"my name is ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+and|\s*,|\s*$|\s+who|\s+but)",
+            r"i['\s]*m ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+and|\s*,|\s*$|\s+who|\s+but)",
+            r"i am ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+and|\s*,|\s*$|\s+who|\s+but)",
+            r"hi[,\s]*i['\s]*m ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+and|\s*,|\s*$|\s+who|\s+but)",
+            r"hi[,\s]+i am ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+and|\s*,|\s*$|\s+who|\s+but)",
+            r"hello[,\s]*i['\s]*m ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+and|\s*,|\s*$|\s+who|\s+but)",
+            r"hello[,\s]+i am ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+and|\s*,|\s*$|\s+who|\s+but)",
+            r"call me ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+and|\s*,|\s*$)",
+            r"this is ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+and|\s*,|\s*$)",
             
-            # Child/family patterns - more specific
-            r"my (?:son|daughter|child) (?:is\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+who|\s+and|\s*,|\s*$)",
-            r"(?:son|daughter|child) named ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+who|\s+and|\s*,|\s*$)",
-            r"her name is ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+and|\s*,|\s*$)",
-            r"his name is ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+and|\s*,|\s*$)",
-            r"daughter ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+who|\s+and|\s*,|\s*$)",
+            # Child/family patterns - handle both uppercase and lowercase names
+            r"my (?:son|daughter|child) (?:is\s+)?([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+who|\s+and|\s*,|\s*$)",
+            r"(?:son|daughter|child) named ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+who|\s+and|\s*,|\s*$)",
+            r"her name is ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+and|\s*,|\s*$)",
+            r"his name is ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+and|\s*,|\s*$)",
+            r"daughter ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+who|\s+and|\s*,|\s*$)",
             
-            # Filipino patterns
-            r"ako si ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+at|\s*,|\s*$)",
-            r"anak ko si ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+at|\s*,|\s*$)",
-            r"pangalan (?:niya|niya) ay ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*?)(?:\s+at|\s*,|\s*$)"
+            # Filipino patterns - handle both uppercase and lowercase names
+            r"ako si ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+at|\s*,|\s*$)",
+            r"anak ko si ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+at|\s*,|\s*$)",
+            r"pangalan (?:niya|niya) ay ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+at|\s*,|\s*$)"
         ]
     
     def _build_date_patterns(self) -> List[str]:
@@ -509,9 +514,8 @@ class AdvancedEntityExtractor:
             # Names should be mostly alphabetic
             if not word.replace("'", "").replace("-", "").isalpha():
                 return False
-            # Should start with capital letter
-            if not word[0].isupper():
-                return False
+            # Names should be valid (we'll capitalize them later)
+            # Don't require capital letters since we handle both cases
         
         return True
     

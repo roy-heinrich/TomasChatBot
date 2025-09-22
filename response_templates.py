@@ -23,7 +23,8 @@ class ResponseTemplates:
             "requirements": self._create_requirements_template,
             "offices": self._create_office_info_template,
             "deadlines": self._create_deadlines_template,
-            "contact_info": self._create_contact_template
+            "contact_info": self._create_contact_template,
+            "appreciation": self._create_appreciation_template
         }
     
     def get_template(self, template_name: str, language: str = "english", **kwargs) -> str:
@@ -802,6 +803,15 @@ class ResponseTemplates:
                                "• Submit requirements early\n• Check official website for updates")
         
         return builder.build()
+    
+    def _create_appreciation_template(self, language: str = "english", **kwargs) -> str:
+        """Create appreciation response template."""
+        if language.lower() in ['tagalog', 'filipino']:
+            return "Maraming salamat po! 😊 Ako si TOMAS ang chatbot representative ng Tomas SM. Bautista Elementary School. Paano ko kayo matutulungan?"
+        elif language.lower() in ['aklanon', 'akl']:
+            return "Damo gid nga salamat! 😊 Ako si TOMAS ang chatbot representative sang Tomas SM. Bautista Elementary School. Ano matabangan ko sa inyo?"
+        else:
+            return "Thank you very much! 😊 I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School. How can I help you today?"
     
     def _create_generic_template(self, language: str = "english", **kwargs) -> str:
         """Create a generic structured template."""
