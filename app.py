@@ -16,9 +16,23 @@ logging.basicConfig(level=logging.INFO)
 # -----------------------
 # Supabase
 # -----------------------
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ.get("supabase_url")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY") or os.environ.get("supabase_key") or os.environ.get("SUPABASE_ANON_KEY")
+
+# Debug environment variables
+logger.info(f"SUPABASE_URL: {'SET' if SUPABASE_URL else 'NOT SET'}")
+logger.info(f"SUPABASE_KEY: {'SET' if SUPABASE_KEY else 'NOT SET'}")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    logger.error("❌ Supabase environment variables are missing!")
+    raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set")
+
+try:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    logger.info("✅ Supabase client created successfully")
+except Exception as e:
+    logger.error(f"❌ Failed to create Supabase client: {e}")
+    raise
 
 # -----------------------
 #    key
