@@ -58,6 +58,9 @@ test_*.py
 *_test.py
 tests/
 
+# Keep NLTK download script
+!download_nltk_data.py
+
 # Logs
 *.log
 

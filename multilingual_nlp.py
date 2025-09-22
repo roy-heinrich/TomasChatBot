@@ -14,16 +14,8 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# Lightweight NLP alternatives
-try:
-    import nltk
-    from nltk.tokenize import word_tokenize, sent_tokenize
-    from nltk.corpus import stopwords
-    from nltk.stem import PorterStemmer
-    NLTK_AVAILABLE = True
-except ImportError:
-    NLTK_AVAILABLE = False
-    logger.warning("NLTK not available. Install with: pip install nltk")
+# Lightweight NLP alternatives - defer imports to avoid wordnet issues
+NLTK_AVAILABLE = False
 
 try:
     from textblob import TextBlob
@@ -122,18 +114,33 @@ class MultilingualNLPEngine:
     async def _initialize_models(self):
         """Initialize lightweight NLP models asynchronously"""
         try:
-            # Initialize NLTK components
-            if NLTK_AVAILABLE:
+            # Initialize NLTK components with safe imports
+            global NLTK_AVAILABLE
+            try:
                 logger.info("🚀 Initializing NLTK components...")
+                import nltk
+                from nltk.tokenize import word_tokenize, sent_tokenize
+                from nltk.corpus import stopwords
+                from nltk.stem import PorterStemmer
+                
+                # Try to download required data if not available
                 try:
-                    # Download required NLTK data
+                    nltk.data.find('tokenizers/punkt')
+                except LookupError:
                     nltk.download('punkt', quiet=True)
+                
+                try:
+                    nltk.data.find('corpora/stopwords')
+                except LookupError:
                     nltk.download('stopwords', quiet=True)
-                    self.stemmer = PorterStemmer()
-                    self.stop_words = set(stopwords.words('english'))
-                    logger.info("✅ NLTK components initialized successfully")
-                except Exception as e:
-                    logger.warning(f"NLTK initialization failed: {e}")
+                
+                self.stemmer = PorterStemmer()
+                self.stop_words = set(stopwords.words('english'))
+                NLTK_AVAILABLE = True
+                logger.info("✅ NLTK components initialized successfully")
+            except Exception as e:
+                logger.warning(f"NLTK initialization failed: {e}")
+                NLTK_AVAILABLE = False
             
             # Initialize scikit-learn TF-IDF vectorizer
             if SKLEARN_AVAILABLE:
@@ -543,6 +550,8 @@ class MultilingualNLPEngine:
         # Use NLTK for basic text processing if available
         if NLTK_AVAILABLE and self.stemmer:
             try:
+                # Import NLTK functions locally to avoid import-time issues
+                from nltk.tokenize import word_tokenize
                 # Tokenize and get POS tags for basic entity extraction
                 tokens = word_tokenize(text)
                 
