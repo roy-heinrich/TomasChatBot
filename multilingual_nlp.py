@@ -16,13 +16,7 @@ logger = logging.getLogger(__name__)
 
 # Lightweight NLP alternatives - defer imports to avoid wordnet issues
 NLTK_AVAILABLE = False
-
-try:
-    from textblob import TextBlob
-    TEXTBLOB_AVAILABLE = True
-except ImportError:
-    TEXTBLOB_AVAILABLE = False
-    logger.warning("TextBlob not available. Install with: pip install textblob")
+TEXTBLOB_AVAILABLE = False
 
 try:
     from sklearn.feature_extraction.text import TfidfVectorizer
@@ -115,7 +109,7 @@ class MultilingualNLPEngine:
         """Initialize lightweight NLP models asynchronously"""
         try:
             # Initialize NLTK components with safe imports
-            global NLTK_AVAILABLE
+            global NLTK_AVAILABLE, TEXTBLOB_AVAILABLE
             try:
                 logger.info("🚀 Initializing NLTK components...")
                 import nltk
@@ -134,6 +128,12 @@ class MultilingualNLPEngine:
                 except LookupError:
                     nltk.download('stopwords', quiet=True)
                 
+                # Download wordnet if needed (for textblob compatibility)
+                try:
+                    nltk.data.find('corpora/wordnet')
+                except LookupError:
+                    nltk.download('wordnet', quiet=True)
+                
                 self.stemmer = PorterStemmer()
                 self.stop_words = set(stopwords.words('english'))
                 NLTK_AVAILABLE = True
@@ -141,6 +141,16 @@ class MultilingualNLPEngine:
             except Exception as e:
                 logger.warning(f"NLTK initialization failed: {e}")
                 NLTK_AVAILABLE = False
+            
+            # Initialize TextBlob with safe imports
+            try:
+                logger.info("🚀 Initializing TextBlob...")
+                from textblob import TextBlob
+                TEXTBLOB_AVAILABLE = True
+                logger.info("✅ TextBlob initialized successfully")
+            except Exception as e:
+                logger.warning(f"TextBlob initialization failed: {e}")
+                TEXTBLOB_AVAILABLE = False
             
             # Initialize scikit-learn TF-IDF vectorizer
             if SKLEARN_AVAILABLE:
