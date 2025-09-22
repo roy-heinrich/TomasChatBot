@@ -319,8 +319,8 @@ async def clear_all_caches():
             },
             status_code=500
         )
-@app.route('/health', methods=['GET'])
-def health_check():
+@app.get('/health')
+async def health_check():
     return {"status": "healthy", "message": "Chatbot API is running"}
 
 # -----------------------
