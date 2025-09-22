@@ -23,15 +23,42 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY") or os.environ.get("supabase_key") 
 logger.info(f"SUPABASE_URL: {'SET' if SUPABASE_URL else 'NOT SET'}")
 logger.info(f"SUPABASE_KEY: {'SET' if SUPABASE_KEY else 'NOT SET'}")
 
+# Debug URL format
+if SUPABASE_URL:
+    logger.info(f"SUPABASE_URL format: {SUPABASE_URL[:30]}...")
+    if not SUPABASE_URL.startswith('https://'):
+        logger.warning("⚠️ SUPABASE_URL should start with https://")
+
+# Debug key format
+if SUPABASE_KEY:
+    logger.info(f"SUPABASE_KEY format: {SUPABASE_KEY[:20]}...")
+    if not SUPABASE_KEY.startswith('eyJ'):
+        logger.warning("⚠️ SUPABASE_KEY should start with 'eyJ' (JWT format)")
+
 if not SUPABASE_URL or not SUPABASE_KEY:
     logger.error("❌ Supabase environment variables are missing!")
     raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set")
 
 try:
+    # Test the connection first
+    logger.info("🔍 Testing Supabase connection...")
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    logger.info("✅ Supabase client created successfully")
+    
+    # Try a simple operation to verify the connection
+    try:
+        # This will fail if the key is invalid
+        result = supabase.table('_test_connection').select('*').limit(1).execute()
+        logger.info("✅ Supabase client created and connection verified")
+    except Exception as conn_error:
+        logger.warning(f"⚠️ Supabase client created but connection test failed: {conn_error}")
+        logger.info("✅ Supabase client created (connection test skipped)")
+        
 except Exception as e:
     logger.error(f"❌ Failed to create Supabase client: {e}")
+    logger.error("💡 Possible solutions:")
+    logger.error("   1. Check if SUPABASE_KEY is the correct 'anon' key")
+    logger.error("   2. Verify the key hasn't expired")
+    logger.error("   3. Ensure the key matches the SUPABASE_URL project")
     raise
 
 # -----------------------
