@@ -133,7 +133,7 @@ class EnhancedConversationFlowV2:
                     "general_inquiry": "Tomas SM. Bautista Elementary School is a quality educational institution in Fatima, New Washington, Aklan. We provide comprehensive elementary education with modern facilities and dedicated teachers committed to student success.",
                     "grade_levels": "We offer grades 1-6, providing comprehensive elementary education for children aged 6-12. Our curriculum covers all elementary levels from Grade 1 to Grade 6, designed to develop both academic skills and character building in a supportive environment.",
                     "facilities": "Our school has modern classrooms and a library that is available but with limited resources as of today. We are currently working on establishing a computer lab which is in the making, and playground facilities are planned for future development. While we don't have a cafeteria, we do have a canteen that serves all your needs with various food options.",
-                    "fees": "For detailed fee information and cost breakdown, please contact our school office at (036) 269-6345. Our fees are competitive and include various payment options to accommodate different family situations."
+                    "fees": "For detailed fee information and cost breakdown, please contact our school office at the school office. Our fees are competitive and include various payment options to accommodate different family situations."
                 }
             )
         }
@@ -142,11 +142,9 @@ class EnhancedConversationFlowV2:
         """Detect if the current conversation matches a known pattern"""
         message_lower = user_message.lower()
         
-        # Always check for new patterns first
-        if any(word in message_lower for word in ["enroll", "enrollment", "register"]):
-            return "enrollment_inquiry"
-        elif any(word in message_lower for word in ["school", "about", "information", "tell me", "grades", "facilities", "fees"]):
-            return "school_information"
+        # 🎯 FIX: ALL queries should go to database search first
+        # Return None for all queries to force database search
+        return None
         
         # Check if we're continuing an existing pattern
         if conversation_history:
@@ -160,9 +158,10 @@ class EnhancedConversationFlowV2:
             
             recent_text = " ".join(recent_content)
             
-            # Check for enrollment pattern continuation - be more aggressive
-            if any(word in recent_text for word in ["enroll", "enrollment", "register", "documents", "birth certificate", "report card", "id photos"]):
-                # If we're in an enrollment conversation, continue it for any follow-up
+            # Check for enrollment pattern continuation - be more specific
+            if any(word in recent_text for word in ["enroll", "enrollment", "register", "documents", "birth certificate", "report card", "id photos", "deadline"]):
+                # Only continue enrollment if there are clear enrollment-related terms
+                # Exclude "requirements" as it's too generic and catches queries that should go to database
                 return "enrollment_inquiry"
             
             # Check for school info pattern continuation
@@ -269,8 +268,35 @@ class EnhancedConversationFlowV2:
         if not pattern:
             return base_response
         
-        # Get template for this step
-        template = pattern.response_templates.get(step_name, base_response)
+        # 🎯 FIX: Prioritize database search results over hardcoded templates
+        # Only use hardcoded templates if base_response is generic or empty
+        if base_response and len(base_response) > 50 and not base_response.startswith("I can't answer") and not base_response.startswith("I don't have"):
+            # Use database search result as primary source
+            template = base_response
+        else:
+            # Fallback to hardcoded template only if no database result
+            template = pattern.response_templates.get(step_name, base_response)
+        
+        # 🎯 FIX: If base_response is a structured response (contains sentence format), use it directly
+        if base_response and ("You can contact" in base_response or "Maaari kayong makipag-ugnayan" in base_response or "Makig-istorya kamo" in base_response):
+            template = base_response
+        # 🎯 FIX: If base_response is already a structured response with bullet points, convert to sentence format
+        elif base_response and "•" in base_response and ("Admin Building" in base_response or "Monday - Friday" in base_response):
+            # Convert bullet point format to sentence format
+            lines = base_response.split('\n')
+            sentences = []
+            for line in lines:
+                if line.strip() and not line.startswith('Additional Context:'):
+                    # Remove bullet points and convert to sentence
+                    clean_line = line.replace('•', '').strip()
+                    if clean_line:
+                        sentences.append(clean_line)
+            
+            # Create sentence format
+            if sentences:
+                template = " ".join(sentences) + "."
+            else:
+                template = base_response
         
         # Add conversation continuity elements
         continuity_elements = []

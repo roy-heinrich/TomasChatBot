@@ -128,24 +128,39 @@ class StructuredResponse:
             return self._format_english()
     
     def _format_english(self) -> str:
-        """Format response in English."""
+        """Format response in English with engaging structure."""
         lines = []
         
-        # Title
+        # Add engaging header
         lines.append(f"📋 {self.title}")
         lines.append("=" * len(f"📋 {self.title}"))
         lines.append("")
         
-        # Sections (sorted by order)
+        # Add main information from sections with engaging formatting
         sorted_sections = sorted(self.sections, key=lambda x: x.order)
         for section in sorted_sections:
             lines.append(f"## {section.title}")
             lines.append(section.content)
             lines.append("")
         
-        # Steps (for procedural responses)
+        # Add contact information with engaging format
+        if self.contacts:
+            lines.append("## 📞 Contact Information")
+            for contact in self.contacts:
+                lines.append(f"**{contact.name}**")
+                if contact.office:
+                    lines.append(f"  📍 Office: {contact.office}")
+                if contact.phone:
+                    lines.append(f"  📞 Phone: {contact.phone}")
+                if contact.email:
+                    lines.append(f"  📧 Email: {contact.email}")
+                if contact.hours:
+                    lines.append(f"  🕐 Hours: {contact.hours}")
+                lines.append("")
+        
+        # Add steps with engaging format
         if self.steps:
-            lines.append("## Step-by-Step Process")
+            lines.append("## 📋 Step-by-Step Process")
             for step in sorted(self.steps, key=lambda x: x.step_number):
                 lines.append(f"### Step {step.step_number}: {step.title}")
                 lines.append(step.description)
@@ -163,9 +178,9 @@ class StructuredResponse:
                 
                 lines.append("")
         
-        # Requirements
+        # Add requirements with engaging format
         if self.requirements:
-            lines.append("## Requirements")
+            lines.append("## 📄 Requirements")
             required_items = [r for r in self.requirements if r.required]
             optional_items = [r for r in self.requirements if not r.required]
             
@@ -189,49 +204,49 @@ class StructuredResponse:
                     lines.append(line)
                 lines.append("")
         
-        # Contact Information
-        if self.contacts:
-            lines.append("## Contact Information")
-            for contact in self.contacts:
-                lines.append(f"**{contact.name}**")
-                if contact.office:
-                    lines.append(f"  📍 Office: {contact.office}")
-                if contact.phone:
-                    lines.append(f"  📞 Phone: {contact.phone}")
-                if contact.email:
-                    lines.append(f"  📧 Email: {contact.email}")
-                if contact.hours:
-                    lines.append(f"  🕐 Hours: {contact.hours}")
-                lines.append("")
-        
-        # Notes
+        # Add notes with engaging format
         if self.notes:
-            lines.append("## Important Notes")
+            lines.append("## ⚠️ Important Notes")
             for note in self.notes:
-                lines.append(f"⚠️ {note}")
+                lines.append(f"• {note}")
             lines.append("")
         
         return "\n".join(lines)
     
     def _format_tagalog(self) -> str:
-        """Format response in Tagalog."""
+        """Format response in Tagalog with engaging structure."""
         lines = []
         
-        # Title
+        # Add engaging header
         lines.append(f"📋 {self.title}")
         lines.append("=" * len(f"📋 {self.title}"))
         lines.append("")
         
-        # Sections
+        # Add main information from sections with engaging formatting
         sorted_sections = sorted(self.sections, key=lambda x: x.order)
         for section in sorted_sections:
             lines.append(f"## {section.title}")
             lines.append(section.content)
             lines.append("")
         
-        # Steps
+        # Add contact information with engaging format
+        if self.contacts:
+            lines.append("## 📞 Impormasyon ng Contact")
+            for contact in self.contacts:
+                lines.append(f"**{contact.name}**")
+                if contact.office:
+                    lines.append(f"  📍 Opisina: {contact.office}")
+                if contact.phone:
+                    lines.append(f"  📞 Telepono: {contact.phone}")
+                if contact.email:
+                    lines.append(f"  📧 Email: {contact.email}")
+                if contact.hours:
+                    lines.append(f"  🕐 Oras: {contact.hours}")
+                lines.append("")
+        
+        # Add steps with engaging format
         if self.steps:
-            lines.append("## Mga Hakbang")
+            lines.append("## 📋 Mga Hakbang")
             for step in sorted(self.steps, key=lambda x: x.step_number):
                 lines.append(f"### Hakbang {step.step_number}: {step.title}")
                 lines.append(step.description)
@@ -249,9 +264,9 @@ class StructuredResponse:
                 
                 lines.append("")
         
-        # Requirements
+        # Add requirements with engaging format
         if self.requirements:
-            lines.append("## Mga Kailangan")
+            lines.append("## 📄 Mga Kailangan")
             required_items = [r for r in self.requirements if r.required]
             optional_items = [r for r in self.requirements if not r.required]
             
@@ -270,12 +285,39 @@ class StructuredResponse:
                     line = f"• {req.item}"
                     if req.description:
                         line += f" - {req.description}"
+                    if req.alternative:
+                        line += f" (Alternatibo: {req.alternative})"
                     lines.append(line)
                 lines.append("")
         
-        # Contact Information
+        # Add notes with engaging format
+        if self.notes:
+            lines.append("## ⚠️ Mahalagang Tala")
+            for note in self.notes:
+                lines.append(f"• {note}")
+            lines.append("")
+        
+        return "\n".join(lines)
+    
+    def _format_hiligaynon(self) -> str:
+        """Format response in Hiligaynon/Aklanon with engaging structure."""
+        lines = []
+        
+        # Add engaging header
+        lines.append(f"📋 {self.title}")
+        lines.append("=" * len(f"📋 {self.title}"))
+        lines.append("")
+        
+        # Add main information from sections with engaging formatting
+        sorted_sections = sorted(self.sections, key=lambda x: x.order)
+        for section in sorted_sections:
+            lines.append(f"## {section.title}")
+            lines.append(section.content)
+            lines.append("")
+        
+        # Add contact information with engaging format
         if self.contacts:
-            lines.append("## Mga Contact")
+            lines.append("## 📞 Impormasyon sang Contact")
             for contact in self.contacts:
                 lines.append(f"**{contact.name}**")
                 if contact.office:
@@ -288,34 +330,9 @@ class StructuredResponse:
                     lines.append(f"  🕐 Oras: {contact.hours}")
                 lines.append("")
         
-        # Notes
-        if self.notes:
-            lines.append("## Mahalagang Tala")
-            for note in self.notes:
-                lines.append(f"⚠️ {note}")
-            lines.append("")
-        
-        return "\n".join(lines)
-    
-    def _format_hiligaynon(self) -> str:
-        """Format response in Hiligaynon."""
-        lines = []
-        
-        # Title
-        lines.append(f"📋 {self.title}")
-        lines.append("=" * len(f"📋 {self.title}"))
-        lines.append("")
-        
-        # Sections
-        sorted_sections = sorted(self.sections, key=lambda x: x.order)
-        for section in sorted_sections:
-            lines.append(f"## {section.title}")
-            lines.append(section.content)
-            lines.append("")
-        
-        # Steps
+        # Add steps with engaging format
         if self.steps:
-            lines.append("## Mga Tikang")
+            lines.append("## 📋 Mga Tikang")
             for step in sorted(self.steps, key=lambda x: x.step_number):
                 lines.append(f"### Tikang {step.step_number}: {step.title}")
                 lines.append(step.description)
@@ -333,9 +350,9 @@ class StructuredResponse:
                 
                 lines.append("")
         
-        # Requirements
+        # Add requirements with engaging format
         if self.requirements:
-            lines.append("## Mga Kinahanglan")
+            lines.append("## 📄 Mga Kinahanglan")
             required_items = [r for r in self.requirements if r.required]
             optional_items = [r for r in self.requirements if not r.required]
             
@@ -354,29 +371,16 @@ class StructuredResponse:
                     line = f"• {req.item}"
                     if req.description:
                         line += f" - {req.description}"
+                    if req.alternative:
+                        line += f" (Alternatibo: {req.alternative})"
                     lines.append(line)
                 lines.append("")
         
-        # Contact Information
-        if self.contacts:
-            lines.append("## Mga Contact")
-            for contact in self.contacts:
-                lines.append(f"**{contact.name}**")
-                if contact.office:
-                    lines.append(f"  📍 Opisina: {contact.office}")
-                if contact.phone:
-                    lines.append(f"  📞 Telepono: {contact.phone}")
-                if contact.email:
-                    lines.append(f"  📧 Email: {contact.email}")
-                if contact.hours:
-                    lines.append(f"  🕐 Oras: {contact.hours}")
-                lines.append("")
-        
-        # Notes
+        # Add notes with engaging format
         if self.notes:
-            lines.append("## Importante nga Tala")
+            lines.append("## ⚠️ Importante nga Tala")
             for note in self.notes:
-                lines.append(f"⚠️ {note}")
+                lines.append(f"• {note}")
             lines.append("")
         
         return "\n".join(lines)

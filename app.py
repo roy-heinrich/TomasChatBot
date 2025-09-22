@@ -201,6 +201,8 @@ async def chat_endpoint(data: ChatRequest):
             entities_for_frontend = []
         
         logger.info(f"✅ Generated response: {answer[:50]}...")
+        logger.info(f"🔍 Full response length: {len(answer)}")
+        logger.info(f"🔍 Full response content: '{answer}'")
         
         return {
             "response": answer,

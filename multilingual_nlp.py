@@ -162,10 +162,10 @@ class MultilingualNLPEngine:
                     lowercase=True
                 )
                 logger.info("✅ TF-IDF vectorizer initialized successfully")
-            
-            # Initialize intent classification examples
-            await self._initialize_intent_examples()
-            
+                
+                # Initialize intent classification examples
+                await self._initialize_intent_examples()
+                
             # Legacy heavy model initialization (disabled for deployment)
             # if TRANSFORMERS_AVAILABLE:
             #     logger.info("🚀 Initializing multilingual sentence transformer...")
@@ -262,9 +262,11 @@ class MultilingualNLPEngine:
         features = {}
         scores = {"en": 0.0, "tl": 0.0, "akl": 0.0}
         
-        # Method 1: Statistical language detection
+        # Method 1: Statistical language detection (reduced weight)
         statistical_result = await self._statistical_language_detection(text)
-        scores.update(statistical_result["scores"])
+        # 🎯 FIX: Reduce statistical weight since langdetect doesn't support Tagalog/Aklanon
+        for lang in scores:
+            scores[lang] += statistical_result["scores"].get(lang, 0.0) * 0.2  # Only 20% weight
         features["statistical"] = statistical_result
         
         # Method 2: Semantic similarity to known language patterns (using TF-IDF)
@@ -272,17 +274,17 @@ class MultilingualNLPEngine:
             semantic_result = await self._semantic_language_detection(text)
             # Combine with statistical scores
             for lang in scores:
-                scores[lang] = (scores[lang] + semantic_result["scores"].get(lang, 0.0)) / 2
+                scores[lang] += semantic_result["scores"].get(lang, 0.0) * 0.3  # 30% weight
             features["semantic"] = semantic_result
         
-        # Method 3: Linguistic feature analysis
+        # Method 3: Linguistic feature analysis (increased weight)
         linguistic_result = await self._linguistic_feature_analysis(text)
         features["linguistic"] = linguistic_result
         
-        # Apply linguistic boosters
+        # 🎯 FIX: Apply linguistic boosters with higher weight
         for lang, boost in linguistic_result.items():
             if lang in scores:
-                scores[lang] += boost * 0.3  # 30% weight for linguistic features
+                scores[lang] += boost * 0.8  # 80% weight for linguistic features
         
         # Normalize scores
         total = sum(scores.values())
@@ -293,8 +295,35 @@ class MultilingualNLPEngine:
         best_lang = max(scores, key=scores.get)
         confidence = scores[best_lang]
         
-        # Handle Aklanon as variant of Tagalog for now (can be improved with more data)
-        if best_lang == "akl" or (best_lang == "tl" and self._has_aklanon_markers(text)):
+        # 🎯 FIX: Rule-based override for clear patterns (highest priority)
+        text_lower = text.lower()
+        
+        # Strong English patterns (override everything)
+        if re.search(r'\b(how do|how can|how to|what is|what are|where is|when is|who is)\b', text_lower):
+            final_lang = "en"  # Force English for clear English question patterns
+            confidence = 0.95  # High confidence for rule-based detection
+        # 🎯 FIX: Strong English patterns for safety and emergency terms (highest priority)
+        if re.search(r'\b(earthquake|fire|drill|emergency|safety|evacuation|disaster)\b', text_lower):
+            final_lang = "en"  # Force English for safety terms
+            confidence = 0.95  # High confidence for rule-based detection
+        # 🎯 FIX: Common English words that should always be English
+        elif re.search(r'\b(hello|hi|goodbye|bye|thank you|thanks|help|yes|no|ok|okay)\b', text_lower):
+            final_lang = "en"  # Force English for common English words
+            confidence = 0.95  # High confidence for rule-based detection
+        # Strong Tagalog patterns (override everything)
+        elif re.search(r'\b(ako si|pangalan ko|naaalala mo|ano ang|kumusta|kamusta)\b', text_lower):
+            final_lang = "tl"  # Force Tagalog for clear Tagalog patterns
+            confidence = 0.95  # High confidence for rule-based detection
+        # 🎯 FIX: Specific Tagalog greeting patterns
+        elif re.search(r'\b(kumusta,?\s+ako\s+si|kamusta,?\s+ako\s+si)\b', text_lower):
+            final_lang = "tl"  # Force Tagalog for "kumusta, ako si" patterns
+            confidence = 0.95  # High confidence for rule-based detection
+        # Strong Aklanon patterns (override everything)
+        elif re.search(r'\b(maayong adlaw|maayong gabii|maayong buntag)\b', text_lower):
+            final_lang = "akl"  # Force Aklanon for clear Aklanon patterns
+            confidence = 0.95  # High confidence for rule-based detection
+        # Fallback to hybrid detection
+        elif best_lang == "akl" or (best_lang == "tl" and self._has_aklanon_markers(text)):
             final_lang = "akl"
         else:
             final_lang = best_lang
@@ -335,7 +364,7 @@ class MultilingualNLPEngine:
                 scores = {"en": 0.33, "tl": 0.33, "akl": 0.33}
         else:
             # Fallback when langdetect is not available
-            scores = {"en": 0.33, "tl": 0.33, "akl": 0.33}
+                scores = {"en": 0.33, "tl": 0.33, "akl": 0.33}
         
         return {"scores": scores, "method": "statistical"}
     
@@ -426,6 +455,17 @@ class MultilingualNLPEngine:
             english_features += 0.5  # Strong English indicator
         if re.search(r'\b(i am|i\'m|my name is|call me)\b', text_lower):
             english_features += 0.4  # Strong English indicator for name introductions
+        # 🎯 FIX: Strong English indicators for common question patterns
+        if re.search(r'\b(how do|how can|how to|what is|what are|where is|when is|who is)\b', text_lower):
+            english_features += 0.6  # Very strong English indicator for question patterns
+        if re.search(r'\b(teachers|parents|students|school|communicate|communication)\b', text_lower):
+            english_features += 0.4  # Strong English indicator for school-related terms
+        # 🎯 FIX: Add English indicators for safety and emergency terms
+        if re.search(r'\b(earthquake|fire|drill|emergency|safety|evacuation|disaster)\b', text_lower):
+            english_features += 0.5  # Strong English indicator for safety terms
+        # 🎯 FIX: Add English indicators for common English words
+        if re.search(r'\b(drills|procedures|policies|rules|guidelines|instructions)\b', text_lower):
+            english_features += 0.4  # Strong English indicator for procedural terms
         
         # Tagalog linguistic features  
         tagalog_features = 0.0
@@ -435,6 +475,12 @@ class MultilingualNLPEngine:
             tagalog_features += 0.3
         if re.search(r'\b(ako|ikaw|siya|kami|tayo|kayo|sila)\b', text_lower):
             tagalog_features += 0.2
+        # 🎯 FIX: Strong Tagalog indicators for name patterns
+        if re.search(r'\b(ako si|pangalan ko|naaalala mo|ano ang pangalan)\b', text_lower):
+            tagalog_features += 0.8  # Very strong Tagalog indicator
+        # Additional Tagalog patterns
+        if re.search(r'\b(kumusta|kamusta|magandang|mabuti|salamat|po|opo)\b', text_lower):
+            tagalog_features += 0.4  # Strong Tagalog indicator
         
         # Aklanon linguistic features
         aklanon_features = 0.0
@@ -443,6 +489,9 @@ class MultilingualNLPEngine:
             aklanon_features += 0.4
         if re.search(r'\b(sin-o|diin|siin|ngaa)\b', text_lower):
             aklanon_features += 0.3
+        # 🎯 FIX: Strong Aklanon greeting patterns
+        if re.search(r'\b(maayong adlaw|maayong gabii|maayong buntag)\b', text_lower):
+            aklanon_features += 0.6  # Very strong Aklanon indicator
         # 🎯 FIX: Remove "it" from Aklanon markers as it's too common in English
         # Only count "it" as Aklanon if it appears in specific Aklanon contexts
         if re.search(r'\b(ako|imo|iya|aton|inyo|ila)\b', text_lower):
@@ -569,14 +618,14 @@ class MultilingualNLPEngine:
                 for i, token in enumerate(tokens):
                     # Capitalized words might be names
                     if token[0].isupper() and len(token) > 1:
-                        entities.append(MultilingualEntity(
+                entities.append(MultilingualEntity(
                             text=token,
                             label="PERSON",
                             start=text.find(token),
                             end=text.find(token) + len(token),
                             confidence=0.6,  # Lower confidence for pattern-based extraction
-                            language=language
-                        ))
+                    language=language
+                ))
                 
                 logger.info(f"🔍 NLTK extracted {len(entities)} entities")
             except Exception as e:

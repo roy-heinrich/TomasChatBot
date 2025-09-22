@@ -82,7 +82,7 @@ class ResponseTemplates:
             
             builder.add_contact(
                 "📞 School Office",
-                phone="(036) 269-6345",
+                phone="the school office",
                 office="Main School Building",
                 hours="8:00 AM - 5:00 PM (Lunes-Biyernes)"
             )
@@ -136,7 +136,7 @@ class ResponseTemplates:
             
             builder.add_contact(
                 "Admissions Office",
-                phone="(036) 269-6345",
+                phone="the school office",
                 office="Ground Floor, Admin Building",
                 hours="8:00 AM - 5:00 PM (Lunes-Biyernes)"
             )
@@ -190,7 +190,7 @@ class ResponseTemplates:
             
             builder.add_contact(
                 "📞 School Office",
-                phone="(036) 269-6345",
+                phone="the school office",
                 office="Main School Building",
                 hours="8:00 AM - 5:00 PM (Monday-Friday)"
             )
@@ -288,7 +288,7 @@ class ResponseTemplates:
         
         builder.add_contact(
             "Registrar's Office",
-            phone="(036) 269-6345",
+            phone="the school office",
             office="2nd Floor, Admin Building"
         )
         
@@ -317,7 +317,7 @@ class ResponseTemplates:
             
         builder.add_contact(
             "Registrar's Office",
-            phone="(036) 269-6345",
+            phone="the school office",
             office="2nd Floor, Admin Building"
         )
         
@@ -349,7 +349,7 @@ class ResponseTemplates:
             )
             
             builder.add_section("📞 Main Contact Details", 
-                               "• Phone: (036) 269-6345\n• 📧 Email: info@university.edu.ph\n• 📍 Location: Admin Building")
+                               "• Phone: the school office\n• 📧 Email: info@university.edu.ph\n• 📍 Location: Admin Building")
             
             builder.add_section("⏰ Office Hours", 
                                "• Monday - Friday: 8:00 AM - 5:00 PM\n• Saturday: 8:00 AM - 12:00 PM")
@@ -361,7 +361,7 @@ class ResponseTemplates:
             )
             
             builder.add_section("📞 Main Contact Details", 
-                               "• Phone: (036) 269-6345\n• 📧 Email: info@university.edu.ph\n• 📍 Location: Admin Building")
+                               "• Phone: the school office\n• 📧 Email: info@university.edu.ph\n• 📍 Location: Admin Building")
             
             builder.add_section("⏰ Office Hours", 
                                "• Lunes - Biernes: 8:00 AM - 5:00 PM\n• Sabado: 8:00 AM - 12:00 PM")
@@ -373,7 +373,7 @@ class ResponseTemplates:
             )
             
             builder.add_section("📞 Main Contact Details", 
-                               "• Phone: (036) 269-6345\n• 📧 Email: info@university.edu.ph\n• 📍 Location: Admin Building")
+                               "• Phone: the school office\n• 📧 Email: info@university.edu.ph\n• 📍 Location: Admin Building")
             
             builder.add_section("⏰ Office Hours", 
                                "• Monday - Friday: 8:00 AM - 5:00 PM\n• Saturday: 8:00 AM - 12:00 PM")
@@ -423,7 +423,7 @@ class ResponseTemplates:
             
             builder.add_contact(
                 "💰 Cashier's Office",
-                phone="(036) 269-6345",
+                phone="the school office",
                 office="Main School Building",
                 hours="8:00 AM - 5:00 PM (Lunes-Biyernes)"
             )
@@ -462,7 +462,7 @@ class ResponseTemplates:
             
             builder.add_contact(
                 "💰 Cashier's Office",
-                phone="(036) 269-6345",
+                phone="the school office",
                 office="Main School Building",
                 hours="8:00 AM - 5:00 PM (Lunes-Biyernes)"
             )
@@ -508,7 +508,7 @@ class ResponseTemplates:
             
             builder.add_contact(
                 "💰 Cashier's Office",
-                phone="(036) 269-6345",
+                phone="the school office",
                 office="Main School Building",
                 hours="8:00 AM - 5:00 PM (Monday-Friday)"
             )
@@ -603,7 +603,7 @@ class ResponseTemplates:
             
             builder.add_contact(
                 "📞 School Office",
-                phone="(036) 269-6345",
+                phone="the school office",
                 office="Main School Building",
                 hours="8:00 AM - 5:00 PM (Lunes-Biyernes)"
             )
@@ -639,7 +639,7 @@ class ResponseTemplates:
             
             builder.add_contact(
                 "📞 School Office",
-                phone="(036) 269-6345",
+                phone="the school office",
                 office="Main School Building",
                 hours="8:00 AM - 5:00 PM (Lunes-Biyernes)"
             )
@@ -710,7 +710,7 @@ class ResponseTemplates:
             
             builder.add_contact(
                 "📞 School Office",
-                phone="(036) 269-6345",
+                phone="the school office",
                 office="Main School Building",
                 hours="8:00 AM - 5:00 PM (Monday-Friday)"
             )
@@ -730,12 +730,12 @@ class ResponseTemplates:
                 ResponseType.INFORMATIONAL, title, language
             )
             
-            builder.add_section("📍 Location", "• Admin Building, Ground Floor")
+            builder.add_section("📍 Lokasyon", "Ang opisina ay matatagpuan sa Admin Building, Ground Floor.")
             
-            builder.add_section("⏰ Office Hours", 
-                               "• Monday - Friday: 8:00 AM - 5:00 PM\n• Saturday: 8:00 AM - 12:00 PM")
+            builder.add_section("⏰ Oras ng Opisina", 
+                               "Ang opisina ay bukas mula Lunes hanggang Biyernes mula 8:00 AM hanggang 5:00 PM at Sabado mula 8:00 AM hanggang 12:00 PM.")
             
-            builder.add_section("📞 Contact", "• Phone: (036) 269-6345")
+            builder.add_section("📞 Contact", "Maaari kayong makipag-ugnayan sa opisina sa pamamagitan ng pagtawag sa school office.")
             
         elif language.lower() in ['hiligaynon', 'ilonggo']:
             title = f"📋 Impormasyon sang {office_name}"
@@ -743,12 +743,12 @@ class ResponseTemplates:
                 ResponseType.INFORMATIONAL, title, language
             )
             
-            builder.add_section("📍 Location", "• Admin Building, Ground Floor")
+            builder.add_section("📍 Lokasyon", "Ang opisina ara sa Admin Building, Ground Floor.")
             
-            builder.add_section("⏰ Office Hours", 
-                               "• Lunes - Biernes: 8:00 AM - 5:00 PM\n• Sabado: 8:00 AM - 12:00 PM")
+            builder.add_section("⏰ Oras sang Opisina", 
+                               "Ang opisina bukas halin Lunes tubtob Biernes halin 8:00 AM tubtob 5:00 PM kag Sabado halin 8:00 AM tubtob 12:00 PM.")
             
-            builder.add_section("📞 Contact", "• Phone: (036) 269-6345")
+            builder.add_section("📞 Contact", "Makig-istorya kamo sa opisina paagi sa pagtawag sa school office.")
             
         else:
             title = f"📋 {office_name} Information"
@@ -756,12 +756,12 @@ class ResponseTemplates:
                 ResponseType.INFORMATIONAL, title, language
             )
             
-            builder.add_section("📍 Location", "• Admin Building, Ground Floor")
+            builder.add_section("📍 Location", "The office is located at Admin Building, Ground Floor.")
             
             builder.add_section("⏰ Office Hours", 
-                               "• Monday - Friday: 8:00 AM - 5:00 PM\n• Saturday: 8:00 AM - 12:00 PM")
+                               "The office is open Monday through Friday from 8:00 AM to 5:00 PM and Saturday from 8:00 AM to 12:00 PM.")
             
-            builder.add_section("📞 Contact", "• Phone: (036) 269-6345")
+            builder.add_section("📞 Contact", "You can contact the office by calling the school office.")
         
         return builder.build()
     
@@ -817,11 +817,11 @@ class ResponseTemplates:
     def _create_staff_template(self, language: str = "english", **kwargs) -> str:
         """Create staff information response template."""
         if language.lower() in ['tagalog', 'filipino']:
-            return "Ang aming paaralan ay pinamumunuan ng aming principal at sinusuportahan ng mga kwalipikadong guro at staff. Para sa tiyak na impormasyon tungkol sa mga guro at head ng paaralan, maaari kayong pumunta sa school office o tumawag sa (036) 269-6345."
+            return "Ang aming paaralan ay pinamumunuan ng aming principal at sinusuportahan ng mga kwalipikadong guro at staff. Para sa tiyak na impormasyon tungkol sa mga guro at head ng paaralan, maaari kayong pumunta sa school office o tumawag sa the school office."
         elif language.lower() in ['aklanon', 'akl']:
-            return "Ang amon eskuelahan ginapamunuan sang amon principal kag ginasuportahan sang mga kwalipikado nga mga maestro kag staff. Para sa tiyak nga impormasyon parte sa mga maestro kag head sang eskuelahan, makadto kamo sa school office ukon tumawag sa (036) 269-6345."
+            return "Ang amon eskuelahan ginapamunuan sang amon principal kag ginasuportahan sang mga kwalipikado nga mga maestro kag staff. Para sa tiyak nga impormasyon parte sa mga maestro kag head sang eskuelahan, makadto kamo sa school office ukon tumawag sa the school office."
         else:
-            return "Our school is led by our principal and supported by qualified teachers and staff. For specific information about our teachers and school head, please contact our school office at (036) 269-6345."
+            return "Our school is led by our principal and supported by qualified teachers and staff. For specific information about our teachers and school head, please contact our school office at the school office."
     
     def _create_generic_template(self, language: str = "english", **kwargs) -> str:
         """Create a generic structured template."""

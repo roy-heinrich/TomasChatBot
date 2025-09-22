@@ -6,23 +6,13 @@ from enum import Enum
 
 logger = logging.getLogger(__name__)
 
-# Import the new multilingual NLP engine with robust fallbacks
-MULTILINGUAL_NLP_AVAILABLE = False
-multilingual_nlp = None
-SemanticIntent = None
-MultilingualEntity = None
+# Import the new multilingual NLP engine
 try:
-    # First try package-relative import (preferred in package context)
     from .multilingual_nlp import multilingual_nlp, SemanticIntent, MultilingualEntity
     MULTILINGUAL_NLP_AVAILABLE = True
-except Exception:
-    try:
-        # Fall back to absolute import for scripts run directly
-        from multilingual_nlp import multilingual_nlp, SemanticIntent, MultilingualEntity
-        MULTILINGUAL_NLP_AVAILABLE = True
-    except Exception as e:
-        MULTILINGUAL_NLP_AVAILABLE = False
-        logger.warning(f"Multilingual NLP engine not available: {e}")
+except ImportError:
+    MULTILINGUAL_NLP_AVAILABLE = False
+    logger.warning("Multilingual NLP engine not available")
 
 class Intent(Enum):
     """Defined intents for the school chatbot"""
@@ -134,22 +124,7 @@ class NLUEngine:
                     
                     logger.info(f"🎯 Semantic classification: {intent_enum.value} (confidence: {semantic_intent.confidence:.2f}, similarity: {semantic_intent.similarity_score:.2f})")
                     logger.info(f"📝 Matched example: '{semantic_intent.matched_example}'")
-
-                    # If semantic classifier detected a greeting-with-name or name_introduction
-                    # but the multilingual NER returned no entities, try a lightweight
-                    # regex extraction as a safe fallback so we can persist person_name.
-                    try:
-                        if intent_enum in (Intent.GREETING_WITH_NAME, Intent.NAME_INTRODUCTION) and len(nlu_entities) == 0:
-                            import re
-                            name_match = re.search(r"(?:my name is|i am|i'm|im|ako si|ako ay|call me|this is)\s+([A-Za-z'\-]{2,})", user_input, flags=re.IGNORECASE)
-                            if name_match:
-                                name_val = name_match.group(1).strip().title()
-                                nlu_entities.append(Entity(type="person_name", value=name_val, confidence=0.9))
-                                logger.info(f"🔎 Extracted name via regex (semantic fallback): {name_val}")
-                    except Exception:
-                        # Non-critical: if regex fails for any reason, continue without entities
-                        pass
-
+                    
                     return NLUResult(intent_enum, semantic_intent.confidence, nlu_entities)
                     
             except Exception as e:
@@ -220,27 +195,6 @@ class NLUEngine:
         detected_intent = Intent.UNKNOWN
         evidence_factors = []
         
-        # Priority: Name introductions - higher priority than greetings
-        # This catches "hi i am john" as a name_introduction rather than a plain greeting
-        name_intro_patterns = [
-            "my name is", "i am", "i'm", "im ", "ako si", "ako ay", "called"
-        ]
-        for pattern in name_intro_patterns:
-            if pattern in user_lower:
-                # Check if there's an actual name after the pattern (not just the pattern alone)
-                pattern_pos = user_lower.find(pattern)
-                text_after = user_lower[pattern_pos + len(pattern):].strip()
-                if len(text_after) > 0 and not text_after.startswith("asking") and not text_after.startswith("not"):
-                    # Try to extract the name with a regex so we can return it as an entity
-                    import re
-                    name_match = re.search(r"(?:my name is|i am|i'm|im|ako si|ako ay|call me|this is)\s+([A-Za-z'-]{2,})", user_lower)
-                    entities = []
-                    if name_match:
-                        name_val = name_match.group(1).strip().title()
-                        entities.append(Entity(type="person_name", value=name_val, confidence=0.9))
-                        logger.info(f"🔎 Extracted name via regex: {name_val}")
-                    return NLUResult(Intent.NAME_INTRODUCTION, 0.95, entities)
-
         # Enhanced greeting detection with confidence scoring
         greeting_indicators = self._analyze_greeting_patterns(user_lower)
         if greeting_indicators['intent'] != Intent.UNKNOWN:
@@ -284,15 +238,7 @@ class NLUEngine:
                 pattern_pos = user_lower.find(pattern)
                 text_after = user_lower[pattern_pos + len(pattern):].strip()
                 if len(text_after) > 0 and not text_after.startswith("asking") and not text_after.startswith("not"):
-                    # Try to extract the name with a regex so we can return it as an entity
-                    import re
-                    name_match = re.search(r"(?:my name is|i am|i'm|im|ako si|ako ay|call me|this is)\s+([A-Za-z'-]{2,})", user_lower)
-                    entities = []
-                    if name_match:
-                        name_val = name_match.group(1).strip().title()
-                        entities.append(Entity(type="person_name", value=name_val, confidence=0.9))
-                        logger.info(f"🔎 Extracted name via regex: {name_val}")
-                    return NLUResult(Intent.NAME_INTRODUCTION, 0.95, entities)
+                    return NLUResult(Intent.NAME_INTRODUCTION, 0.95, [])
 
         if any(greet in user_lower for greet in greeting_keywords):
             # Now only classify as greeting_with_name if it's a pure greeting without introduction intent

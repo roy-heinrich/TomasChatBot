@@ -145,7 +145,7 @@ class EnhancedAccuracySystem:
             "school_name": "Our school is Tomas SM. Bautista Elementary School, located in Fatima, New Washington, Aklan.",
             "location": "Tomas SM. Bautista Elementary School is located in Fatima, New Washington, Aklan. You can find us at the heart of the community.",
             "enrollment": "To enroll your child, you'll need to bring the following documents: birth certificate, report card, and 2x2 ID photos. Visit our school office for the complete enrollment process.",
-            "fees": "For information about school fees and tuition, please contact our school office at (036) 269-6345 or visit us in person for detailed fee structure.",
+            "fees": "For information about school fees and tuition, please contact our school office at the school office or visit us in person for detailed fee structure.",
             "schedule": "School hours are from 7:00 AM to 5:00 PM, Monday to Friday. Classes start at 7:30 AM and end at 4:30 PM.",
             "staff": "Our school is led by our principal and supported by qualified teachers and staff. For specific staff information, please contact our school office."
         }
@@ -323,7 +323,7 @@ class EnhancedAccuracySystem:
         elif intent.primary_intent == "location":
             return "We are located in Fatima, New Washington, Aklan."
         elif intent.primary_intent == "enrollment":
-            return "For enrollment information, please contact our school office at (036) 269-6345."
+            return "For enrollment information, please contact our school office at the school office."
         elif intent.primary_intent == "fees":
             return "For fee information, please contact our school office for detailed pricing."
         elif intent.primary_intent == "schedule":

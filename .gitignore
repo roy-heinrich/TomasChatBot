@@ -10,3 +10,10 @@ chatbot_widget.php
 Manage_Chatbot.php
 comprehensive_stress_test.py
 comprehensive_test_suite.py
+test_tagalog_name_recognition.html
+test_name_recognition.html
+stress_test_chatbot.html
+master_test_suite.html
+edge_case_testing.html
+comprehensive_chatbot_test.html
+chatbot_test_runner.html
