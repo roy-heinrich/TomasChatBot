@@ -369,6 +369,9 @@ class ChatBot:
         self.bucket = "summarized-text"
         self.file = "summarized_text.md"
         
+        # 📱 MESSAGE SPLITTING: Store split messages for API
+        self._last_split_messages = None
+        
         # Initialize NLU Engine for intent understanding
         self.nlu_engine = NLUEngine()
         
@@ -5011,8 +5014,10 @@ class ChatBot:
             
             # 📱 MESSAGE SPLITTING: Split long responses into multiple messages
             if isinstance(response, str) and len(response) > 250:
-                split_response = self._split_long_message(response)
-                return split_response
+                split_messages = self._split_long_message(response)
+                # Store split messages for API to handle
+                self._last_split_messages = split_messages
+                return split_messages[0]  # Return first message for backward compatibility
             
             return response
             
@@ -5043,10 +5048,10 @@ class ChatBot:
         else:
             return "The request is taking too long. Please try again with a simpler question or visit the admin office."
 
-    def _split_long_message(self, message: str) -> str:
-        """Split long messages into multiple parts for better readability."""
+    def _split_long_message(self, message: str) -> list:
+        """Split long messages into multiple separate messages for better readability."""
         if len(message) <= 250:
-            return message
+            return [message]  # Return as single message in array
         
         # Split at sentence boundaries (., !, ?)
         sentences = []
@@ -5084,17 +5089,10 @@ class ChatBot:
         
         # If only one part, return original message
         if len(parts) <= 1:
-            return message
+            return [message]
         
-        # Format as numbered parts
-        formatted_parts = []
-        for i, part in enumerate(parts, 1):
-            if i == 1:
-                formatted_parts.append(f"Part {i}/{len(parts)}: {part}")
-            else:
-                formatted_parts.append(f"Part {i}/{len(parts)}: {part}")
-        
-        return "\n\n".join(formatted_parts)
+        # Return as separate messages (no numbering needed since they'll be separate bubbles)
+        return parts
 
     async def _handle_structured_response(self, query: str, language: str = "english", nlu_result = None) -> Optional[str]:
         """Handle complex procedural queries with structured responses."""

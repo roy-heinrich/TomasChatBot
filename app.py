@@ -204,12 +204,27 @@ async def chat_endpoint(data: ChatRequest):
         logger.info(f"🔍 Full response length: {len(answer)}")
         logger.info(f"🔍 Full response content: '{answer}'")
         
-        return {
-            "response": answer,
-            "entities": entities_for_frontend,  # 🆕 Include extracted entities
-            "detected_language": getattr(chatbot, 'last_detected_language', 'en'),  # 🆕 Include detected language
-            "language_confidence": getattr(chatbot, 'last_language_confidence', 0.5)  # 🆕 Include language confidence
-        }
+        # 📱 MESSAGE SPLITTING: Check if response was split into multiple messages
+        split_messages = getattr(chatbot, '_last_split_messages', None)
+        if split_messages and len(split_messages) > 1:
+            logger.info(f"📱 Response split into {len(split_messages)} separate messages")
+            return {
+                "response": split_messages,  # Return array of messages
+                "entities": entities_for_frontend,
+                "detected_language": getattr(chatbot, 'last_detected_language', 'en'),
+                "language_confidence": getattr(chatbot, 'last_language_confidence', 0.5),
+                "is_split": True,
+                "message_count": len(split_messages)
+            }
+        else:
+            return {
+                "response": answer,  # Return single message
+                "entities": entities_for_frontend,
+                "detected_language": getattr(chatbot, 'last_detected_language', 'en'),
+                "language_confidence": getattr(chatbot, 'last_language_confidence', 0.5),
+                "is_split": False,
+                "message_count": 1
+            }
     
     except Exception as e:
         logger.error(f"❌ Error in chat endpoint: {str(e)}")
