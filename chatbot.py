@@ -3317,9 +3317,9 @@ class ChatBot:
         system_prompt = self.get_time_aware_system_prompt(lang, user_name, user_timezone)
         
         # Emergency token management
-        max_context_length = 1500
-        emergency_context_length = 500
-        critical_context_length = 100
+        max_context_length = 2000
+        emergency_context_length = 1000
+        critical_context_length = 500
         
         # Try progressively smaller contexts if needed
         context_attempts = [
@@ -3340,11 +3340,11 @@ class ChatBot:
                 elif len(context) > max_len:
                     truncated_context = context[:max_len] + "..."
                     user_message = f"Context: {truncated_context}\nQ: {query}"
-                    max_tokens = 100 if mode == "critical" else 150
+                    max_tokens = 200 if mode == "critical" else 300
                 else:
                     truncated_context = context
                     user_message = f"Context: {truncated_context}\nQuestion: {query}"
-                    max_tokens = 150
+                    max_tokens = 400
                 
                 # Calculate estimated tokens (rough: 4 chars = 1 token)
                 estimated_tokens = (len(system_prompt) + len(user_message) + max_tokens) / 4
@@ -6320,7 +6320,7 @@ class ChatBot:
             return validated_final_response + f" {self.get_followup(lang)}"
 
         # Truncate before sending to Groq (token management)
-        max_len = 1500  # Reduced from 4000 for token efficiency
+        max_len = 2000  # Increased to allow for more comprehensive responses
         if len(full_context) > max_len:
             logger.warning("⚠️ Context too long, truncating for token efficiency")
             full_context = full_context[:max_len] + "\n...(truncated)..."
