@@ -314,7 +314,7 @@ class MultilingualNLPEngine:
             final_lang = "en"  # Force English for common English words
             confidence = 0.95  # High confidence for rule-based detection
         # Strong Tagalog patterns (override everything)
-        elif re.search(r'\b(ako si|pangalan ko|naaalala mo|ano ang|kumusta|kamusta)\b', text_lower):
+        elif re.search(r'\b(ako si|pangalan ko|naaalala mo|ano ang|kumusta|kamusta|anong|baitang|paaralan|bukas|para sa)\b', text_lower):
             final_lang = "tl"  # Force Tagalog for clear Tagalog patterns
             confidence = 0.95  # High confidence for rule-based detection
         # 🎯 FIX: Specific Tagalog greeting patterns

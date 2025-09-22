@@ -188,8 +188,8 @@ class EnhancedFallbackHandler:
         """Simple keyword-based intent detection as fallback."""
         query_lower = query.lower()
         
-        # Check for non-existence indicators first (higher priority)
-        non_existence_words = ['doesn\'t exist', 'does not exist', 'don\'t exist', 'not exist', 'doesn\'t work', 'not real', 'fake', 'fictional', 'imaginary', 'made up']
+        # Check for non-existence indicators first (higher priority) - be more specific
+        non_existence_words = ['doesn\'t exist', 'does not exist', 'don\'t exist', 'not exist', 'doesn\'t work', 'not real', 'fake', 'fictional', 'imaginary', 'made up', 'wala ba', 'way ba']
         if any(word in query_lower for word in non_existence_words):
             return {'intent': 'non_existent_inquiry', 'confidence': 0.8, 'category': 'general'}
         

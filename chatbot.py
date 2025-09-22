@@ -254,14 +254,19 @@ class ResponseCache:
         # Normalize query
         normalized_query = re.sub(r'\s+', ' ', query.lower().strip())
         
-        # Include relevant context
+        # Include relevant context with more specificity
         context_str = ""
         if context:
-            context_str = f"|ctx:{context.get('language', '')}|tone:{context.get('tone', '')}"
+            context_str = f"|ctx:{context.get('language', '')}|tone:{context.get('tone', '')}|intent:{context.get('intent', '')}"
         
-        # Create hash
-        key_string = f"{normalized_query}{context_str}"
-        return hashlib.md5(key_string.encode()).hexdigest()
+        # Add query length and first few characters to make keys more unique
+        query_signature = f"{len(normalized_query)}:{normalized_query[:20]}"
+        
+        # Create hash with more unique components
+        key_string = f"{query_signature}{context_str}"
+        cache_key = hashlib.md5(key_string.encode()).hexdigest()
+        
+        return cache_key
     
     def get(self, query, context=None):
         """Get cached response if available and not expired."""
@@ -281,6 +286,7 @@ class ResponseCache:
                 
                 # Update access time for LRU
                 self.access_times[key] = current_time
+                
                 return cached_data['response']
             
         return None
@@ -320,6 +326,16 @@ class ResponseCache:
             self.cache.clear()
             self.access_times.clear()
     
+    def invalidate(self, query, context=None):
+        """Invalidate a specific cache entry."""
+        key = self._generate_key(query, context)
+        with self.lock:
+            if key in self.cache:
+                del self.cache[key]
+                if key in self.access_times:
+                    del self.access_times[key]
+                logger.info(f"🗑️ Cache entry invalidated for query: {query[:30]}...")
+
     def get_stats(self):
         """Get cache statistics."""
         with self.lock:
@@ -559,6 +575,27 @@ class ChatBot:
             # Return connection to pool
             if connection:
                 self.db_pool.return_connection(connection)
+
+    def _is_cache_response_appropriate(self, query: str, cached_response: str) -> bool:
+        """Check if cached response is appropriate for the current query."""
+        query_lower = query.lower()
+        response_lower = cached_response.lower()
+        
+        # Check for obvious mismatches
+        if "baitang" in query_lower or "grade" in query_lower:
+            # Query is about grade levels
+            if "buwan ng wika" in response_lower or "nutrition month" in response_lower or "scout" in response_lower:
+                # Response is about school activities - mismatch
+                return False
+        
+        if "activities" in query_lower or "buwan ng wika" in query_lower:
+            # Query is about activities
+            if "kindergarten" in response_lower and "grade" in response_lower and "activities" not in response_lower:
+                # Response is about grade levels - mismatch
+                return False
+        
+        # If no obvious mismatch, consider it appropriate
+        return True
 
     def _should_skip_conversation_flow(self, query: str) -> bool:
         """Check if query should skip conversation flow - ALL queries should use database search"""
@@ -2761,6 +2798,12 @@ class ChatBot:
             logger.info("✅ Found result with full-text search")
             return result
         
+        # 1.5. NEW: Try Tagalog-to-English translation search
+        result = await self._try_tagalog_translation_search(query)
+        if result:
+            logger.info("✅ Found result with Tagalog translation search")
+            return result
+        
         # 2. Try exact keyword search (fallback)
         logger.info(f"🔍 Trying exact search: '{query}'")
         result = await self.fetch_prompts_from_supabase(query)
@@ -3120,7 +3163,7 @@ class ChatBot:
         # 🚨 NEW: CULTURAL APPROPRIATENESS CHECK
         # Ensure responses maintain professional, educational tone
         overly_casual_patterns = [
-            "ay naku", "hay nako", "sus", "aba", "ay ewan", "basta", "eh ano ngayon",
+            "ay naku", "hay nako", "sus", "ay ewan", "basta", "eh ano ngayon",
             "pakialamerang", "walang kwenta", "ang galing talaga", "sobrang astig"
         ]
         
@@ -3814,6 +3857,81 @@ class ChatBot:
             logger.error(f"Error in enhanced supabase search internal: {e}")
             return ""
 
+    async def _try_tagalog_translation_search(self, query: str) -> str:
+        """Try searching with Tagalog-to-English translation for common school terms."""
+        try:
+            query_lower = query.lower()
+            
+            # Tagalog to English translation mapping for school-related terms
+            tagalog_translations = {
+                # Grade level terms
+                "baitang": "grade",
+                "anong baitang": "what grade",
+                "mga baitang": "grade levels",
+                "baitang na": "grade level",
+                "baitang ang": "grade level",
+                
+                # School terms
+                "paaralan": "school",
+                "eskuwelahan": "school",
+                "paaralan na": "school",
+                "paaralan ang": "school",
+                
+                # Question words
+                "anong": "what",
+                "ano ang": "what is",
+                "ano ang mga": "what are",
+                
+                # Open/available terms
+                "bukas": "open",
+                "available": "available",
+                "mayroon": "have",
+                "may": "have",
+                
+                # Common combinations
+                "anong baitang ang bukas": "what grade levels are open",
+                "anong baitang ang available": "what grade levels are available",
+                "mga baitang na bukas": "grade levels that are open",
+                "baitang na available": "grade levels available"
+            }
+            
+            # Try direct translation first
+            if query_lower in tagalog_translations:
+                english_query = tagalog_translations[query_lower]
+                logger.info(f"🔄 Tagalog translation: '{query}' → '{english_query}'")
+                result = await self._try_full_text_search(english_query)
+                if result:
+                    return result
+            
+            # Try partial translation for multi-word queries
+            for tagalog_phrase, english_phrase in tagalog_translations.items():
+                if tagalog_phrase in query_lower:
+                    logger.info(f"🔄 Partial Tagalog translation: '{tagalog_phrase}' → '{english_phrase}'")
+                    result = await self._try_full_text_search(english_phrase)
+                    if result:
+                        return result
+            
+            # Try searching for individual translated words
+            translated_words = []
+            for word in query_lower.split():
+                if word in tagalog_translations:
+                    translated_words.append(tagalog_translations[word])
+                else:
+                    translated_words.append(word)  # Keep original if no translation
+            
+            if translated_words != query_lower.split():
+                english_query = " ".join(translated_words)
+                logger.info(f"🔄 Word-by-word translation: '{query}' → '{english_query}'")
+                result = await self._try_full_text_search(english_query)
+                if result:
+                    return result
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Tagalog translation search failed: {e}")
+            return None
+
     async def _try_full_text_search(self, query: str) -> str:
         """Use PostgreSQL full-text search via search_tsv column for names and content."""
         try:
@@ -4383,11 +4501,11 @@ class ChatBot:
         non_existence_keywords = [
             "doesn't exist", "does not exist", "don't exist", "do not exist",
             "not found", "can't find", "cannot find", "no such", "non-existent",
-            "wala", "way", "ala"  # Aklanon/Tagalog
+            "wala ba", "way ba", "ala ba"  # Aklanon/Tagalog - more specific patterns
         ]
         
         if any(keyword in query_lower for keyword in non_existence_keywords):
-            logger.info("🚫 Non-existence query detected → enhanced fallback priority")
+            logger.info(f"🚫 Non-existence query detected → enhanced fallback priority (matched: {[k for k in non_existence_keywords if k in query_lower]})")
             return True
         
         # 2. Sentiment-based triggering
@@ -4943,29 +5061,35 @@ class ChatBot:
             if cached_response:
                 logger.info(f"📋 Cache hit for query: {query[:50]}...")
                 
-                # 🧠 ENHANCED CONVERSATION FLOW V2: Process conversation turn with advanced flow handling
-                has_conversation_history = bool(conversation_history and len(conversation_history) > 0)
-                has_conversation_keywords = any(word in query.lower() for word in ["enroll", "school", "deadline", "thank", "documents", "when", "what", "how"])
-                
-                should_use_enhanced_flow = (
-                    isinstance(cached_response, str) and ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE and
-                    (has_conversation_history or has_conversation_keywords) and
-                    not self._should_skip_conversation_flow(query)
-                )
-                
-                if should_use_enhanced_flow:
-                    try:
-                        logger.info(f"🔍 Calling enhanced conversation flow v2 for cached response: '{query}'")
-                        enhanced_response, conversation_thread = await enhanced_conversation_flow_v2.process_conversation_turn(
-                            query, session_id or "default_user", conversation_history or [], 
-                            detected_intent, cached_response
-                        )
-                        logger.info(f"🧠 Enhanced conversation flow v2: {len(enhanced_response)} chars")
-                        return enhanced_response
-                    except Exception as e:
-                        logger.warning(f"Enhanced conversation flow v2 failed: {e}")
-                
-                return cached_response
+                # 🛡️ CACHE VALIDATION: Check if cached response is appropriate for the query
+                if self._is_cache_response_appropriate(query, cached_response):
+                    # 🧠 ENHANCED CONVERSATION FLOW V2: Process conversation turn with advanced flow handling
+                    has_conversation_history = bool(conversation_history and len(conversation_history) > 0)
+                    has_conversation_keywords = any(word in query.lower() for word in ["enroll", "school", "deadline", "thank", "documents", "when", "what", "how"])
+                    
+                    should_use_enhanced_flow = (
+                        isinstance(cached_response, str) and ENHANCED_CONVERSATION_FLOW_V2_AVAILABLE and
+                        (has_conversation_history or has_conversation_keywords) and
+                        not self._should_skip_conversation_flow(query)
+                    )
+                    
+                    if should_use_enhanced_flow:
+                        try:
+                            logger.info(f"🔍 Calling enhanced conversation flow v2 for cached response: '{query}'")
+                            enhanced_response, conversation_thread = await enhanced_conversation_flow_v2.process_conversation_turn(
+                                query, session_id or "default_user", conversation_history or [], 
+                                detected_intent, cached_response
+                            )
+                            logger.info(f"🧠 Enhanced conversation flow v2: {len(enhanced_response)} chars")
+                            return enhanced_response
+                        except Exception as e:
+                            logger.warning(f"Enhanced conversation flow v2 failed: {e}")
+                    
+                    return cached_response
+                else:
+                    logger.warning(f"🚨 Cache response inappropriate for query, invalidating cache")
+                    # Invalidate the cache entry
+                    self.response_cache.invalidate(query, cache_context)
         except Exception as e:
             logger.warning(f"Cache retrieval failed: {e}, continuing without cache")
 
@@ -6158,12 +6282,12 @@ class ChatBot:
                     logger.warning("⚠️ Supabase search timed out after 25 seconds")
                     supabase_prompts = None
         else:
-            # 🚨 CRITICAL FIX: Add timeouts for major operations
-            try:
-                summarized_text = await asyncio.wait_for(self.fetch_summarized_file(), timeout=3.0)
-            except asyncio.TimeoutError:
-                logger.warning("⚠️ Summary file fetch timed out")
-                summarized_text = None
+        # 🚨 CRITICAL FIX: Add timeouts for major operations
+                try:
+                    summarized_text = await asyncio.wait_for(self.fetch_summarized_file(), timeout=3.0)
+                except asyncio.TimeoutError:
+                    logger.warning("⚠️ Summary file fetch timed out")
+                    summarized_text = None
         
         try:
             supabase_prompts = await asyncio.wait_for(self.enhanced_search_supabase(query), timeout=25.0)  # 🚀 INCREASED: timeout for database operations
