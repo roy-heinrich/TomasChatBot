@@ -618,7 +618,7 @@ class MultilingualNLPEngine:
                 for i, token in enumerate(tokens):
                     # Capitalized words might be names
                     if token[0].isupper() and len(token) > 1:
-                entities.append(MultilingualEntity(
+                        entities.append(MultilingualEntity(
                             text=token,
                             label="PERSON",
                             start=text.find(token),

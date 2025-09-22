@@ -3890,10 +3890,10 @@ class ChatBot:
                             }).execute()
                         except:
                             # Fallback to direct search_tsv query
-                        return connection.table("chatbot_prompts") \
-                            .select("keywords, response") \
-                                .text_search('search_tsv', search_word) \
-                            .execute()
+                            return connection.table("chatbot_prompts") \
+                                .select("keywords, response") \
+                                    .text_search('search_tsv', search_word) \
+                                .execute()
                     
                     result = await self._execute_supabase_query(query, 2.0, f"full-text search for {term}")
                     
@@ -4808,7 +4808,7 @@ class ChatBot:
                     # Use the proper name introduction handling instead of quick response
                     logger.info(f"🎯 Name introduction detected in quick response, using proper handling for {user_name}")
                     return self._handle_greeting_with_name(user_name, "", detected_language)
-                    else:
+                else:
                     logger.info(f"🔍 No user name found in entities")
             else:
                 logger.info(f"🔍 Name introduction conditions not met: intent={detected_intent}, confidence={intent_confidence}")
@@ -5427,7 +5427,7 @@ class ChatBot:
             
             # Try intelligent response generation (skip for safety queries)
             if not self._should_skip_conversation_flow(query):
-            intelligent_response = await self._generate_intelligent_response(
+                intelligent_response = await self._generate_intelligent_response(
                 intent=nlu_result.intent.value,
                 user_id=user_id,
                 query=query,
@@ -5670,8 +5670,8 @@ class ChatBot:
                 ]
                 for pattern in name_patterns:
                     name_match = re.search(pattern, lowered)
-                if name_match:
-                    user_name = name_match.group(1).title()
+                    if name_match:
+                        user_name = name_match.group(1).title()
                         logger.info(f"👤 Extracted name from query: {user_name}")
                         break
             
@@ -6078,12 +6078,12 @@ class ChatBot:
                     supabase_prompts = None
         else:
         # 🚨 CRITICAL FIX: Add timeouts for major operations
-        try:
-            summarized_text = await asyncio.wait_for(self.fetch_summarized_file(), timeout=3.0)
-        except asyncio.TimeoutError:
-            logger.warning("⚠️ Summary file fetch timed out")
-            summarized_text = None
-        
+            try:
+                summarized_text = await asyncio.wait_for(self.fetch_summarized_file(), timeout=3.0)
+            except asyncio.TimeoutError:
+                logger.warning("⚠️ Summary file fetch timed out")
+                summarized_text = None
+            
         try:
             supabase_prompts = await asyncio.wait_for(self.enhanced_search_supabase(query), timeout=25.0)  # 🚀 INCREASED: timeout for database operations
         except asyncio.TimeoutError:
@@ -6145,7 +6145,7 @@ class ChatBot:
                         context_sources += 1
             else:
                 # Original snippet extraction
-            snippet = await self.extract_snippet(summarized_text, query)
+                snippet = await self.extract_snippet(summarized_text, query)
             if snippet:
                 logger.info("✅ Found snippet in summary")
                 full_context += f"Summary: {snippet}\n"
