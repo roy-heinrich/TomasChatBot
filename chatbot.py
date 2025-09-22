@@ -3892,7 +3892,7 @@ class ChatBot:
                             # Fallback to direct search_tsv query
                             return connection.table("chatbot_prompts") \
                                 .select("keywords, response") \
-                                    .text_search('search_tsv', search_word) \
+                                .text_search('search_tsv', search_word) \
                                 .execute()
                     
                     result = await self._execute_supabase_query(query, 2.0, f"full-text search for {term}")
@@ -5428,13 +5428,13 @@ class ChatBot:
             # Try intelligent response generation (skip for safety queries)
             if not self._should_skip_conversation_flow(query):
                 intelligent_response = await self._generate_intelligent_response(
-                intent=nlu_result.intent.value,
-                user_id=user_id,
-                query=query,
-                extracted_entities=entities_for_generator,
-                conversation_history=conversation_history,
-                sentiment_result=sentiment_result
-            )
+                    intent=nlu_result.intent.value,
+                    user_id=user_id,
+                    query=query,
+                    extracted_entities=entities_for_generator,
+                    conversation_history=conversation_history,
+                    sentiment_result=sentiment_result
+                )
             else:
                 logger.info("🚨 Safety query detected - skipping intelligent response generation for database search")
                 intelligent_response = None
@@ -6077,13 +6077,13 @@ class ChatBot:
                     logger.warning("⚠️ Supabase search timed out after 25 seconds")
                     supabase_prompts = None
         else:
-        # 🚨 CRITICAL FIX: Add timeouts for major operations
+            # 🚨 CRITICAL FIX: Add timeouts for major operations
             try:
                 summarized_text = await asyncio.wait_for(self.fetch_summarized_file(), timeout=3.0)
             except asyncio.TimeoutError:
                 logger.warning("⚠️ Summary file fetch timed out")
                 summarized_text = None
-            
+        
         try:
             supabase_prompts = await asyncio.wait_for(self.enhanced_search_supabase(query), timeout=25.0)  # 🚀 INCREASED: timeout for database operations
         except asyncio.TimeoutError:
@@ -6146,10 +6146,10 @@ class ChatBot:
             else:
                 # Original snippet extraction
                 snippet = await self.extract_snippet(summarized_text, query)
-            if snippet:
-                logger.info("✅ Found snippet in summary")
-                full_context += f"Summary: {snippet}\n"
-                context_sources += 1
+                if snippet:
+                    logger.info("✅ Found snippet in summary")
+                    full_context += f"Summary: {snippet}\n"
+                    context_sources += 1
 
         # Emergency context prioritization when too much context
         if len(full_context) > 1500 and context_sources > 1:

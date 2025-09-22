@@ -624,8 +624,8 @@ class MultilingualNLPEngine:
                             start=text.find(token),
                             end=text.find(token) + len(token),
                             confidence=0.6,  # Lower confidence for pattern-based extraction
-                    language=language
-                ))
+                            language=language
+                        ))
                 
                 logger.info(f"🔍 NLTK extracted {len(entities)} entities")
             except Exception as e:
