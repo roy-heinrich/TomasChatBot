@@ -14,22 +14,41 @@ import os
 
 logger = logging.getLogger(__name__)
 
+# Lightweight NLP alternatives
 try:
-    from transformers import AutoTokenizer, AutoModel, pipeline
-    from sentence_transformers import SentenceTransformer, util
-    import torch
-    import numpy as np
-    TRANSFORMERS_AVAILABLE = True
+    import nltk
+    from nltk.tokenize import word_tokenize, sent_tokenize
+    from nltk.corpus import stopwords
+    from nltk.stem import PorterStemmer
+    NLTK_AVAILABLE = True
 except ImportError:
-    TRANSFORMERS_AVAILABLE = False
-    logger.warning("Transformers not available. Install with: pip install transformers sentence-transformers torch")
+    NLTK_AVAILABLE = False
+    logger.warning("NLTK not available. Install with: pip install nltk")
 
 try:
-    import spacy
-    SPACY_AVAILABLE = True
+    from textblob import TextBlob
+    TEXTBLOB_AVAILABLE = True
 except ImportError:
-    SPACY_AVAILABLE = False
-    logger.warning("spaCy not available. Install with: pip install spacy")
+    TEXTBLOB_AVAILABLE = False
+    logger.warning("TextBlob not available. Install with: pip install textblob")
+
+try:
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    import numpy as np
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+    logger.warning("scikit-learn not available. Install with: pip install scikit-learn")
+
+try:
+    from gensim.models import Word2Vec
+    from gensim.similarities import WmdSimilarity
+    GENSIM_AVAILABLE = True
+except (ImportError, Exception) as e:
+    GENSIM_AVAILABLE = False
+    logger.warning(f"Gensim not available: {e}. Using fallback methods.")
+
 
 try:
     from langdetect import detect, detect_langs
@@ -78,6 +97,13 @@ class MultilingualNLPEngine:
     """
     
     def __init__(self):
+        # Lightweight NLP components
+        self.tfidf_vectorizer = None
+        self.word2vec_model = None
+        self.stemmer = None
+        self.stop_words = set()
+        
+        # Legacy heavy components (disabled)
         self.sentence_model = None
         self.nlp_models = {}
         self.intent_embeddings = {}
@@ -94,27 +120,46 @@ class MultilingualNLPEngine:
             self.initialized = True
     
     async def _initialize_models(self):
-        """Initialize NLP models asynchronously"""
+        """Initialize lightweight NLP models asynchronously"""
         try:
-            if TRANSFORMERS_AVAILABLE:
-                logger.info("🚀 Initializing multilingual sentence transformer...")
-                # Use multilingual model that supports many languages including Tagalog
-                self.sentence_model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
-                
-                # Initialize intent classification examples
-                await self._initialize_intent_examples()
-                
-                logger.info("✅ Sentence transformer initialized successfully")
-            
-            if SPACY_AVAILABLE:
-                # Try to load multilingual spaCy model
+            # Initialize NLTK components
+            if NLTK_AVAILABLE:
+                logger.info("🚀 Initializing NLTK components...")
                 try:
-                    self.nlp_models['en'] = spacy.load('en_core_web_sm')
-                except OSError:
-                    logger.warning("English spaCy model not found. Install with: python -m spacy download en_core_web_sm")
-                
-                # For now, use English model for Tagalog/Aklanon as well
-                # In production, you'd want specific models or train custom ones
+                    # Download required NLTK data
+                    nltk.download('punkt', quiet=True)
+                    nltk.download('stopwords', quiet=True)
+                    self.stemmer = PorterStemmer()
+                    self.stop_words = set(stopwords.words('english'))
+                    logger.info("✅ NLTK components initialized successfully")
+                except Exception as e:
+                    logger.warning(f"NLTK initialization failed: {e}")
+            
+            # Initialize scikit-learn TF-IDF vectorizer
+            if SKLEARN_AVAILABLE:
+                logger.info("🚀 Initializing TF-IDF vectorizer...")
+                self.tfidf_vectorizer = TfidfVectorizer(
+                    max_features=1000,
+                    stop_words='english',
+                    ngram_range=(1, 2),
+                    lowercase=True
+                )
+                logger.info("✅ TF-IDF vectorizer initialized successfully")
+            
+            # Initialize intent classification examples
+            await self._initialize_intent_examples()
+            
+            # Legacy heavy model initialization (disabled for deployment)
+            # if TRANSFORMERS_AVAILABLE:
+            #     logger.info("🚀 Initializing multilingual sentence transformer...")
+            #     self.sentence_model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
+            #     logger.info("✅ Sentence transformer initialized successfully")
+            
+            # if SPACY_AVAILABLE:
+            #     try:
+            #         self.nlp_models['en'] = spacy.load('en_core_web_sm')
+            #     except OSError:
+            #         logger.warning("English spaCy model not found. Install with: python -m spacy download en_core_web_sm")
                 
         except Exception as e:
             logger.error(f"❌ Error initializing NLP models: {e}")
@@ -176,14 +221,17 @@ class MultilingualNLPEngine:
             ]
         }
         
-        # Create embeddings for all examples
-        if self.sentence_model:
-            for intent, examples in intent_examples.items():
-                embeddings = self.sentence_model.encode(examples)
-                self.intent_embeddings[intent] = embeddings
-                self.example_intents[intent] = examples
-                
-            logger.info(f"📚 Created embeddings for {len(intent_examples)} intents")
+        # Store examples for lightweight TF-IDF based classification
+        self.example_intents = intent_examples
+        logger.info(f"📚 Stored {len(intent_examples)} intent examples for TF-IDF classification")
+        
+        # Legacy heavy embedding creation (disabled for deployment)
+        # if self.sentence_model:
+        #     for intent, examples in intent_examples.items():
+        #         embeddings = self.sentence_model.encode(examples)
+        #         self.intent_embeddings[intent] = embeddings
+        #         self.example_intents[intent] = examples
+        #     logger.info(f"📚 Created embeddings for {len(intent_examples)} intents")
     
     async def detect_language_semantic(self, text: str) -> LanguageDetectionResult:
         """
@@ -202,8 +250,8 @@ class MultilingualNLPEngine:
         scores.update(statistical_result["scores"])
         features["statistical"] = statistical_result
         
-        # Method 2: Semantic similarity to known language patterns
-        if self.sentence_model:
+        # Method 2: Semantic similarity to known language patterns (using TF-IDF)
+        if self.tfidf_vectorizer and SKLEARN_AVAILABLE:
             semantic_result = await self._semantic_language_detection(text)
             # Combine with statistical scores
             for lang in scores:
@@ -275,10 +323,10 @@ class MultilingualNLPEngine:
         return {"scores": scores, "method": "statistical"}
     
     async def _semantic_language_detection(self, text: str) -> Dict:
-        """Use semantic similarity to detect language"""
+        """Use TF-IDF based similarity to detect language (lightweight alternative)"""
         scores = {"en": 0.0, "tl": 0.0, "akl": 0.0}
         
-        if not self.sentence_model:
+        if not self.tfidf_vectorizer or not SKLEARN_AVAILABLE:
             return {"scores": scores, "method": "semantic", "details": "model_not_available"}
         
         # Language prototype sentences
@@ -307,20 +355,40 @@ class MultilingualNLPEngine:
         }
         
         try:
-            # Encode input text
-            text_embedding = self.sentence_model.encode([text])
+            # Combine all prototypes for TF-IDF training
+            all_texts = [text]
+            all_labels = []
             
-            # Compare with language prototypes
             for lang, prototypes in language_prototypes.items():
-                prototype_embeddings = self.sentence_model.encode(prototypes)
-                similarities = util.cos_sim(text_embedding, prototype_embeddings)
+                all_texts.extend(prototypes)
+                all_labels.extend([lang] * len(prototypes))
+            
+            # Fit TF-IDF on all texts
+            tfidf_matrix = self.tfidf_vectorizer.fit_transform(all_texts)
+            
+            # Get text vector (first row)
+            text_vector = tfidf_matrix[0:1]
+            
+            # Calculate similarities with each language's prototypes
+            for i, lang in enumerate(language_prototypes.keys()):
+                # Get indices for this language's prototypes
+                start_idx = 1 + sum(len(language_prototypes[l]) for l in list(language_prototypes.keys())[:i])
+                end_idx = start_idx + len(language_prototypes[lang])
+                
+                # Get prototype vectors for this language
+                prototype_vectors = tfidf_matrix[start_idx:end_idx]
+                
+                # Calculate cosine similarities
+                similarities = cosine_similarity(text_vector, prototype_vectors)
+                
                 # Take maximum similarity as language score
-                scores[lang] = float(torch.max(similarities).item())
+                scores[lang] = float(np.max(similarities))
                 
         except Exception as e:
-            logger.warning(f"Semantic language detection failed: {e}")
+            logger.warning(f"TF-IDF language detection failed: {e}")
+            return {"scores": scores, "method": "semantic", "details": f"error: {e}"}
         
-        return {"scores": scores, "method": "semantic"}
+        return {"scores": scores, "method": "semantic", "details": "success"}
     
     async def _linguistic_feature_analysis(self, text: str) -> Dict[str, float]:
         """Analyze linguistic features to boost language detection"""
@@ -391,7 +459,7 @@ class MultilingualNLPEngine:
         # Ensure models are initialized
         await self._ensure_initialized()
         
-        if not self.sentence_model or not self.intent_embeddings:
+        if not self.tfidf_vectorizer or not self.example_intents or not SKLEARN_AVAILABLE:
             # Fallback to simple classification
             return SemanticIntent(
                 intent="unknown",
@@ -402,24 +470,44 @@ class MultilingualNLPEngine:
             )
         
         try:
-            # Encode input text
-            text_embedding = self.sentence_model.encode([text])
+            # Prepare all examples for TF-IDF
+            all_texts = [text]
+            all_labels = []
+            all_examples = []
+            
+            for intent, examples in self.example_intents.items():
+                all_texts.extend(examples)
+                all_labels.extend([intent] * len(examples))
+                all_examples.extend(examples)
+            
+            # Fit TF-IDF on all texts
+            tfidf_matrix = self.tfidf_vectorizer.fit_transform(all_texts)
+            
+            # Get text vector (first row)
+            text_vector = tfidf_matrix[0:1]
             
             best_intent = "unknown"
             best_similarity = 0.0
             best_example = ""
             
-            # Compare with all intent embeddings
-            for intent, embeddings in self.intent_embeddings.items():
-                similarities = util.cos_sim(text_embedding, embeddings)
-                max_similarity = float(torch.max(similarities).item())
+            # Calculate similarities with each intent's examples
+            current_idx = 1  # Start after the input text
+            for intent, examples in self.example_intents.items():
+                # Get vectors for this intent's examples
+                intent_vectors = tfidf_matrix[current_idx:current_idx + len(examples)]
+                
+                # Calculate cosine similarities
+                similarities = cosine_similarity(text_vector, intent_vectors)
+                max_similarity = float(np.max(similarities))
                 
                 if max_similarity > best_similarity:
                     best_similarity = max_similarity
                     best_intent = intent
                     # Find which example had the best match
-                    best_idx = torch.argmax(similarities).item()
-                    best_example = self.example_intents[intent][best_idx]
+                    best_idx = np.argmax(similarities)
+                    best_example = examples[best_idx]
+                
+                current_idx += len(examples)
             
             # Convert similarity to confidence (adjust threshold as needed)
             confidence = best_similarity if best_similarity > 0.3 else 0.1
@@ -429,11 +517,11 @@ class MultilingualNLPEngine:
                 confidence=confidence,
                 similarity_score=best_similarity,
                 matched_example=best_example,
-                method="semantic_similarity"
+                method="tfidf_similarity"
             )
             
         except Exception as e:
-            logger.error(f"❌ Semantic intent classification failed: {e}")
+            logger.error(f"❌ TF-IDF intent classification failed: {e}")
             return SemanticIntent(
                 intent="unknown",
                 confidence=0.1,
@@ -452,20 +540,42 @@ class MultilingualNLPEngine:
         
         entities = []
         
-        # Use spaCy NER if available
-        if language in self.nlp_models:
-            nlp = self.nlp_models[language]
-            doc = nlp(text)
-            
-            for ent in doc.ents:
-                entities.append(MultilingualEntity(
-                    text=ent.text,
-                    label=ent.label_,
-                    start=ent.start_char,
-                    end=ent.end_char,
-                    confidence=0.8,  # spaCy doesn't provide confidence scores by default
-                    language=language
-                ))
+        # Use NLTK for basic text processing if available
+        if NLTK_AVAILABLE and self.stemmer:
+            try:
+                # Tokenize and get POS tags for basic entity extraction
+                tokens = word_tokenize(text)
+                
+                # Simple named entity recognition using patterns
+                for i, token in enumerate(tokens):
+                    # Capitalized words might be names
+                    if token[0].isupper() and len(token) > 1:
+                        entities.append(MultilingualEntity(
+                            text=token,
+                            label="PERSON",
+                            start=text.find(token),
+                            end=text.find(token) + len(token),
+                            confidence=0.6,  # Lower confidence for pattern-based extraction
+                            language=language
+                        ))
+                
+                logger.info(f"🔍 NLTK extracted {len(entities)} entities")
+            except Exception as e:
+                logger.warning(f"NLTK entity extraction failed: {e}")
+        
+        # Legacy spaCy NER (disabled for deployment)
+        # if language in self.nlp_models:
+        #     nlp = self.nlp_models[language]
+        #     doc = nlp(text)
+        #     for ent in doc.ents:
+        #         entities.append(MultilingualEntity(
+        #             text=ent.text,
+        #             label=ent.label_,
+        #             start=ent.start_char,
+        #             end=ent.end_char,
+        #             confidence=0.8,
+        #             language=language
+        #         ))
         
         # Add custom multilingual entity extraction
         entities.extend(await self._extract_custom_entities(text, language))
@@ -518,31 +628,13 @@ class MultilingualNLPEngine:
         Context-aware translation using transformer models
         """
         
-        if not TRANSFORMERS_AVAILABLE:
-            # Fallback to simple translation
+        # Use lightweight translation (transformers disabled for deployment)
+        try:
             from deep_translator import GoogleTranslator
             return GoogleTranslator(source=source_lang, target=target_lang).translate(text)
-        
-        try:
-            # For now, use a simple approach. In production, you'd use specialized translation models
-            # or fine-tuned models for the school domain
-            
-            if source_lang == target_lang:
-                return text
-            
-            # Create context-aware prompt for better translation
-            if context:
-                enhanced_text = f"Context: {context}\nTranslate: {text}"
-            else:
-                enhanced_text = text
-            
-            # Use Google Translator as fallback but could be enhanced with transformer models
-            from deep_translator import GoogleTranslator
-            return GoogleTranslator(source=source_lang, target=target_lang).translate(enhanced_text)
-            
         except Exception as e:
-            logger.error(f"❌ Contextual translation failed: {e}")
-            return text
+            logger.warning(f"Translation failed: {e}")
+            return text  # Return original text if translation fails
 
 # Global instance
 multilingual_nlp = MultilingualNLPEngine()

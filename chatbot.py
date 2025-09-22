@@ -6404,3 +6404,13 @@ if __name__ == "__main__":
     
     # Run the test
     asyncio.run(test_chatbot())
+
+# Import the FastAPI app for Render deployment
+try:
+    from app import app
+    __all__ = ['app']
+except ImportError:
+    # If app.py is not available, create a placeholder
+    from fastapi import FastAPI
+    app = FastAPI(title="Tomas Chatbot API")
+    __all__ = ['app']
