@@ -14,6 +14,7 @@ import asyncio
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
+
 from collections import defaultdict
 import json
 
@@ -103,7 +104,7 @@ class EnhancedConversationFlowV2:
                 },
                 response_templates={
                     "initial_inquiry": "I'd be happy to help you with enrollment! Let me guide you through the process step by step. We'll cover the required documents, deadlines, and procedures to ensure a smooth enrollment experience for your child.",
-                    "document_requirements": "For enrollment, you'll need the following documents: birth certificate, report card, and 2x2 ID photos. These documents are essential for completing your child's enrollment and ensuring we have all the necessary information.",
+                    "document_requirements": "For enrollment, you'll need the following requirements and documents: birth certificate, report card, and 2x2 ID photos. These documents are essential requirements for completing your child's enrollment and ensuring we have all the necessary information.",
                     "deadline_information": "The enrollment deadline is typically in May. I recommend starting the process early to secure your child's spot, as we have limited capacity and enrollment is on a first-come, first-served basis.",
                     "conclusion": "You're all set with the enrollment information! Feel free to ask if you need any clarification or have additional questions about our school programs and facilities."
                 }
@@ -130,9 +131,9 @@ class EnhancedConversationFlowV2:
                 },
                 response_templates={
                     "general_inquiry": "Tomas SM. Bautista Elementary School is a quality educational institution in Fatima, New Washington, Aklan. We provide comprehensive elementary education with modern facilities and dedicated teachers committed to student success.",
-                    "grade_levels": "We offer grades 1-6, providing comprehensive elementary education for children aged 6-12. Our curriculum is designed to develop both academic skills and character building in a supportive environment.",
-                    "facilities": "Our school has modern classrooms, a library, computer lab, and playground facilities. We also have a cafeteria, multipurpose hall, and well-equipped science laboratory to support our students' learning needs.",
-                    "fees": "For detailed fee information, please contact our school office at (036) 269-6345. Our fees are competitive and include various payment options to accommodate different family situations."
+                    "grade_levels": "We offer grades 1-6, providing comprehensive elementary education for children aged 6-12. Our curriculum covers all elementary levels from Grade 1 to Grade 6, designed to develop both academic skills and character building in a supportive environment.",
+                    "facilities": "Our school has modern classrooms and a library that is available but with limited resources as of today. We are currently working on establishing a computer lab which is in the making, and playground facilities are planned for future development. While we don't have a cafeteria, we do have a canteen that serves all your needs with various food options.",
+                    "fees": "For detailed fee information and cost breakdown, please contact our school office at (036) 269-6345. Our fees are competitive and include various payment options to accommodate different family situations."
                 }
             )
         }
@@ -222,7 +223,22 @@ class EnhancedConversationFlowV2:
             elif detected_intent in ["appreciation"] and any(word in message_lower for word in ["thank", "thanks", "appreciate"]):
                 return 3, "conclusion"
         
-        # Map intent to step for other patterns
+        # 🎯 FIX: Enhanced keyword-based step determination for school information
+        if pattern.topic == "school_info":
+            # Handle specific queries about grades
+            if any(word in message_lower for word in ["grades", "grade", "levels", "level", "offer", "teach", "what grades", "which grades"]):
+                logger.info(f"🔍 Step determination: Detected grades query, routing to grade_levels")
+                return 1, "grade_levels"
+            # Handle specific queries about facilities - EXPANDED KEYWORDS
+            elif any(word in message_lower for word in ["facilities", "facility", "library", "cafeteria", "lab", "playground", "classroom", "computer lab", "science lab", "multipurpose", "hall", "canteen", "gym", "gymnasium", "clinic", "office", "amenities", "buildings", "rooms", "areas", "spaces"]):
+                logger.info(f"🔍 Step determination: Detected facilities query, routing to facilities")
+                return 2, "facilities"
+            # Handle specific queries about fees
+            elif any(word in message_lower for word in ["fees", "fee", "tuition", "cost", "price", "money", "pay", "how much", "payment", "bayad", "magkano"]):
+                logger.info(f"🔍 Step determination: Detected fees query, routing to fees")
+                return 3, "fees"
+        
+        # Map intent to step for other patterns (fallback)
         if detected_intent in pattern.step_intents:
             step_index = pattern.step_intents.index(detected_intent)
             return step_index, pattern.expected_steps[step_index]

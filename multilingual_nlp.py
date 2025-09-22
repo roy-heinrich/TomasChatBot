@@ -336,6 +336,12 @@ class MultilingualNLPEngine:
         if re.search(r'\b(where|what|when|who|how)\b', text_lower):
             english_features += 0.2
         
+        # 🎯 FIX: Strong English indicators for greetings and name introductions
+        if re.search(r'\b(hi|hello|hey|good morning|good afternoon|good evening)\b', text_lower):
+            english_features += 0.5  # Strong English indicator
+        if re.search(r'\b(i am|i\'m|my name is|call me)\b', text_lower):
+            english_features += 0.4  # Strong English indicator for name introductions
+        
         # Tagalog linguistic features  
         tagalog_features = 0.0
         if re.search(r'\b(ng|sa|ang|si|ni|kay)\b', text_lower):
@@ -347,12 +353,19 @@ class MultilingualNLPEngine:
         
         # Aklanon linguistic features
         aklanon_features = 0.0
-        if re.search(r'\b(sang|nga|gid|ro|it)\b', text_lower):
+        # 🎯 FIX: More specific Aklanon markers to avoid false positives
+        if re.search(r'\b(sang|nga|gid|ro)\b', text_lower):
             aklanon_features += 0.4
         if re.search(r'\b(sin-o|diin|siin|ngaa)\b', text_lower):
             aklanon_features += 0.3
+        # 🎯 FIX: Remove "it" from Aklanon markers as it's too common in English
+        # Only count "it" as Aklanon if it appears in specific Aklanon contexts
         if re.search(r'\b(ako|imo|iya|aton|inyo|ila)\b', text_lower):
             aklanon_features += 0.2
+        
+        # 🎯 FIX: Penalize Aklanon if strong English indicators are present
+        if english_features > 0.3:
+            aklanon_features *= 0.5  # Reduce Aklanon score when English indicators are strong
         
         features["en"] = english_features
         features["tl"] = tagalog_features  
@@ -363,9 +376,10 @@ class MultilingualNLPEngine:
     def _has_aklanon_markers(self, text: str) -> bool:
         """Check for distinctive Aklanon markers"""
         text_lower = text.lower()
+        # 🎯 FIX: More specific Aklanon markers, removed "it" as it's too common in English
         aklanon_markers = [
             "gid", "sang", "nga", "sin-o", "diin", "siin", 
-            "wara", "mayo", "ro", "it", "eon"
+            "wara", "mayo", "ro", "eon", "ngaa", "aton", "inyo"
         ]
         return any(marker in text_lower for marker in aklanon_markers)
     

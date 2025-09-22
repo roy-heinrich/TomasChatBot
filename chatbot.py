@@ -48,6 +48,24 @@ except ImportError:
     ENHANCED_ACCURACY_SYSTEM_AVAILABLE = False
     print("⚠️ Enhanced accuracy system not available - using basic accuracy handling")
 
+# Import enhanced search optimizer and performance optimizer
+try:
+    from enhanced_search_optimizer import EnhancedSearchOptimizer
+    enhanced_search_optimizer = EnhancedSearchOptimizer()
+    ENHANCED_SEARCH_OPTIMIZER_AVAILABLE = True
+    print("✅ Enhanced Search Optimizer loaded")
+except ImportError:
+    ENHANCED_SEARCH_OPTIMIZER_AVAILABLE = False
+    print("⚠️ Enhanced Search Optimizer not available - using basic search")
+
+try:
+    from performance_optimizer import performance_optimizer
+    PERFORMANCE_OPTIMIZER_AVAILABLE = True
+    print("✅ Performance Optimizer loaded")
+except ImportError:
+    PERFORMANCE_OPTIMIZER_AVAILABLE = False
+    print("⚠️ Performance Optimizer not available - using basic performance")
+
 # Import enhanced conversation flow v2
 try:
     from enhanced_conversation_flow_v2 import enhanced_conversation_flow_v2
@@ -3660,6 +3678,51 @@ class ChatBot:
                 logger.warning("⚠️ Fetch prompts received empty string after cleanup")
                 return ""
             
+            # 🚀 PERFORMANCE OPTIMIZATION: Use performance optimizer if available
+            if PERFORMANCE_OPTIMIZER_AVAILABLE:
+                try:
+                    # Use cached operation for better performance
+                    result = await performance_optimizer.cached_operation(
+                        "supabase_search",
+                        self._enhanced_supabase_search_internal,
+                        {"query": query},
+                        cache_ttl=300  # 5 minutes cache
+                    )
+                    return result
+                except Exception as e:
+                    logger.warning(f"Performance optimizer failed: {e}, falling back to standard search")
+            
+            # Fallback to standard search
+            return await self._enhanced_supabase_search_internal(query)
+            
+        except Exception as e:
+            logger.error(f"Error in optimized fetch_prompts_from_supabase: {e}")
+            return ""
+    
+    async def _enhanced_supabase_search_internal(self, query: str) -> str:
+        """Internal enhanced search with all optimizations"""
+        try:
+            # 🎯 ENHANCED SEARCH OPTIMIZER: Use enhanced search optimizer if available
+            if ENHANCED_SEARCH_OPTIMIZER_AVAILABLE:
+                try:
+                    # Analyze query for optimal search strategy
+                    search_analysis = await enhanced_search_optimizer.analyze_query(query)
+                    logger.info(f"🔍 Search analysis: intent={search_analysis.intent}, strategy={search_analysis.search_strategy}")
+                    
+                    # Get optimized search results
+                    search_results = await enhanced_search_optimizer.optimized_supabase_search(
+                        query, self.supabase, search_analysis
+                    )
+                    
+                    if search_results:
+                        # Return the best result
+                        best_result = search_results[0]
+                        logger.info(f"✅ Enhanced search found result: {best_result.match_type} (relevance: {best_result.relevance_score:.2f})")
+                        return best_result.content
+                    
+                except Exception as e:
+                    logger.warning(f"Enhanced search optimizer failed: {e}, falling back to standard search")
+            
             # 🎯 ENHANCED ACCURACY: Use enhanced accuracy system if available
             if ENHANCED_ACCURACY_SYSTEM_AVAILABLE:
                 try:
@@ -3708,7 +3771,7 @@ class ChatBot:
             return result
             
         except Exception as e:
-            logger.error(f"Error in optimized fetch_prompts_from_supabase: {e}")
+            logger.error(f"Error in enhanced supabase search internal: {e}")
             return ""
 
     async def _try_full_text_search(self, query: str) -> str:
@@ -5679,18 +5742,59 @@ class ChatBot:
 
         # Normal flow: Fetch context from summarized_text and Supabase, then send to Groq
         logger.info("📚 Starting normal flow: fetching context from summarized_text and Supabase")
-        # 🚨 CRITICAL FIX: Add timeouts for major operations
-        try:
-            summarized_text = await asyncio.wait_for(self.fetch_summarized_file(), timeout=3.0)
-        except asyncio.TimeoutError:
-            logger.warning("⚠️ Summary file fetch timed out")
-            summarized_text = None
         
-        try:
-            supabase_prompts = await asyncio.wait_for(self.enhanced_search_supabase(query), timeout=25.0)  # 🚀 INCREASED: timeout for database operations
-        except asyncio.TimeoutError:
-            logger.warning("⚠️ Supabase search timed out after 15 seconds")
-            supabase_prompts = None
+        # 🚀 PERFORMANCE OPTIMIZATION: Use parallel operations if available
+        if PERFORMANCE_OPTIMIZER_AVAILABLE:
+            try:
+                # Execute both operations in parallel for better performance
+                operations = [
+                    {
+                        "name": "fetch_summarized_file",
+                        "func": self.fetch_summarized_file,
+                        "params": {},
+                        "cache_ttl": 300
+                    },
+                    {
+                        "name": "enhanced_search_supabase",
+                        "func": self.enhanced_search_supabase,
+                        "params": {"query": query},
+                        "cache_ttl": 300
+                    }
+                ]
+                
+                results = await performance_optimizer.parallel_operations(operations, max_concurrent=2)
+                summarized_text = results[0] if results[0] is not None else None
+                supabase_prompts = results[1] if results[1] is not None else None
+                
+                logger.info("🚀 Parallel context fetching completed")
+                
+            except Exception as e:
+                logger.warning(f"Parallel operations failed: {e}, falling back to sequential")
+                # Fallback to sequential operations
+                try:
+                    summarized_text = await asyncio.wait_for(self.fetch_summarized_file(), timeout=3.0)
+                except asyncio.TimeoutError:
+                    logger.warning("⚠️ Summary file fetch timed out")
+                    summarized_text = None
+                
+                try:
+                    supabase_prompts = await asyncio.wait_for(self.enhanced_search_supabase(query), timeout=25.0)
+                except asyncio.TimeoutError:
+                    logger.warning("⚠️ Supabase search timed out after 25 seconds")
+                    supabase_prompts = None
+        else:
+            # 🚨 CRITICAL FIX: Add timeouts for major operations
+            try:
+                summarized_text = await asyncio.wait_for(self.fetch_summarized_file(), timeout=3.0)
+            except asyncio.TimeoutError:
+                logger.warning("⚠️ Summary file fetch timed out")
+                summarized_text = None
+            
+            try:
+                supabase_prompts = await asyncio.wait_for(self.enhanced_search_supabase(query), timeout=25.0)  # 🚀 INCREASED: timeout for database operations
+            except asyncio.TimeoutError:
+                logger.warning("⚠️ Supabase search timed out after 25 seconds")
+                supabase_prompts = None
 
         full_context = ""
         context_sources = 0
@@ -5706,11 +5810,51 @@ class ChatBot:
             context_sources += 1
             
         if summarized_text:
-            snippet = await self.extract_snippet(summarized_text, query)
-            if snippet:
-                logger.info("✅ Found snippet in summary")
-                full_context += f"Summary: {snippet}\n"
-                context_sources += 1
+            # 🎯 ENHANCED SEARCH OPTIMIZER: Use enhanced search for summarized text if available
+            if ENHANCED_SEARCH_OPTIMIZER_AVAILABLE:
+                try:
+                    # Analyze query for optimal search strategy
+                    search_analysis = await enhanced_search_optimizer.analyze_query(query)
+                    
+                    # Get optimized search results from summarized text
+                    search_results = await enhanced_search_optimizer.optimized_summarized_text_search(
+                        query, summarized_text, search_analysis
+                    )
+                    
+                    if search_results:
+                        # Combine the best results
+                        best_snippets = []
+                        for result in search_results[:2]:  # Top 2 results
+                            best_snippets.append(result.content)
+                        
+                        if best_snippets:
+                            combined_snippet = "\n".join(best_snippets)
+                            logger.info(f"✅ Enhanced search found {len(search_results)} relevant sections in summary")
+                            full_context += f"Summary: {combined_snippet}\n"
+                            context_sources += 1
+                    else:
+                        # Fallback to original snippet extraction
+                        snippet = await self.extract_snippet(summarized_text, query)
+                        if snippet:
+                            logger.info("✅ Found snippet in summary (fallback)")
+                            full_context += f"Summary: {snippet}\n"
+                            context_sources += 1
+                            
+                except Exception as e:
+                    logger.warning(f"Enhanced summarized text search failed: {e}, using fallback")
+                    # Fallback to original snippet extraction
+                    snippet = await self.extract_snippet(summarized_text, query)
+                    if snippet:
+                        logger.info("✅ Found snippet in summary (fallback)")
+                        full_context += f"Summary: {snippet}\n"
+                        context_sources += 1
+            else:
+                # Original snippet extraction
+                snippet = await self.extract_snippet(summarized_text, query)
+                if snippet:
+                    logger.info("✅ Found snippet in summary")
+                    full_context += f"Summary: {snippet}\n"
+                    context_sources += 1
 
         # Emergency context prioritization when too much context
         if len(full_context) > 1500 and context_sources > 1:
@@ -6180,6 +6324,53 @@ class ChatBot:
         except Exception as e:
             logger.error(f"❌ Even fallback response generation failed: {e}")
             return "I'm here to help with information about our school. Please try rephrasing your question."
+    
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get comprehensive performance metrics"""
+        metrics = {
+            "response_cache_size": len(self.response_cache.cache) if hasattr(self, 'response_cache') else 0,
+            "enhanced_search_optimizer_available": ENHANCED_SEARCH_OPTIMIZER_AVAILABLE,
+            "performance_optimizer_available": PERFORMANCE_OPTIMIZER_AVAILABLE
+        }
+        
+        # Get enhanced search optimizer metrics
+        if ENHANCED_SEARCH_OPTIMIZER_AVAILABLE:
+            try:
+                search_metrics = enhanced_search_optimizer.get_performance_metrics()
+                metrics["search_optimizer"] = search_metrics
+            except Exception as e:
+                logger.warning(f"Failed to get search optimizer metrics: {e}")
+        
+        # Get performance optimizer metrics
+        if PERFORMANCE_OPTIMIZER_AVAILABLE:
+            try:
+                perf_metrics = performance_optimizer.get_performance_summary()
+                metrics["performance_optimizer"] = perf_metrics
+            except Exception as e:
+                logger.warning(f"Failed to get performance optimizer metrics: {e}")
+        
+        return metrics
+    
+    def clear_all_caches(self):
+        """Clear all caches including enhanced optimizers"""
+        if hasattr(self, 'response_cache'):
+            self.response_cache.clear()
+            logger.info("🧹 Response cache cleared")
+        
+        # Clear enhanced optimizer caches if available
+        if ENHANCED_SEARCH_OPTIMIZER_AVAILABLE:
+            try:
+                enhanced_search_optimizer.clear_cache()
+                logger.info("🧹 Enhanced search optimizer cache cleared")
+            except Exception as e:
+                logger.warning(f"Failed to clear search optimizer cache: {e}")
+        
+        if PERFORMANCE_OPTIMIZER_AVAILABLE:
+            try:
+                performance_optimizer.clear_cache()
+                logger.info("🧹 Performance optimizer cache cleared")
+            except Exception as e:
+                logger.warning(f"Failed to clear performance optimizer cache: {e}")
 
 if __name__ == "__main__":
     import asyncio

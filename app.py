@@ -31,7 +31,7 @@ chatbot = ChatBot(groq_key=GROQ_API_KEY)
 # -----------------------
 app = FastAPI()
 
-# ✅ Enhanced CORS config for production
+# ✅ Enhanced CORS config for production and development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -39,12 +39,14 @@ app.add_middleware(
         "http://localhost:3000", 
         "http://localhost:8080",
         "http://localhost:5000",
+        "http://localhost:8000",
         "http://127.0.0.1",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:8080", 
         "http://127.0.0.1:5000",
+        "http://127.0.0.1:8000",
         "https://tomaschatbot.onrender.com",
-        "*"  # Allow all origins for now
+        "*"  # Allow all origins for development
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -317,6 +319,9 @@ async def clear_all_caches():
             },
             status_code=500
         )
+@app.route('/health', methods=['GET'])
+def health_check():
+    return {"status": "healthy", "message": "Chatbot API is running"}
 
 # -----------------------
 # Server startup
