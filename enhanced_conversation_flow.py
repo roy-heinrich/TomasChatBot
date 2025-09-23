@@ -398,17 +398,33 @@ class EnhancedConversationFlow:
                 "I can see you're really interested in this topic. "
             ]
         elif state.user_engagement_level == "low":
-            engagement_phrases = [
-                "Let me know if you need more details. ",
-                "Feel free to ask if you have other questions. ",
-                "Is there anything specific you'd like to know? "
-            ]
+            # Language-aware engagement phrases
+            if hasattr(contextual_intent, 'language') and contextual_intent.language in ['tl', 'akl']:
+                engagement_phrases = [
+                    "Sabihin mo lang kung kailangan mo ng karagdagang detalye. ",
+                    "Huwag mag-atubiling magtanong kung may iba pang katanungan. ",
+                    "May iba pa ba kayong gustong malaman? "
+                ]
+            else:
+                engagement_phrases = [
+                    "Let me know if you need more details. ",
+                    "Feel free to ask if you have other questions. ",
+                    "Is there anything specific you'd like to know? "
+                ]
         else:
-            engagement_phrases = [
-                "I hope this helps! ",
-                "Let me know if you need clarification. ",
-                "Feel free to ask follow-up questions. "
-            ]
+            # Language-aware engagement phrases
+            if hasattr(contextual_intent, 'language') and contextual_intent.language in ['tl', 'akl']:
+                engagement_phrases = [
+                    "Sana nakatulong ito! ",
+                    "Sabihin mo lang kung may katanungan pa. ",
+                    "Huwag mag-atubiling magtanong kung may iba pa. "
+                ]
+            else:
+                engagement_phrases = [
+                    "I hope this helps! ",
+                    "Let me know if you need clarification. ",
+                    "Feel free to ask follow-up questions. "
+                ]
         
         import random
         engagement = random.choice(engagement_phrases)

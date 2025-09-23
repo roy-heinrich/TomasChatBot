@@ -709,11 +709,11 @@ class ChatBot:
         if lang == "tl":
             # Add name context for Tagalog as well
             name_context = f" Ang kausap mo ay si {user_name}." if user_name else ""
-            return f"Ikaw si TOMAS, ang mabait at masayang digital assistant ng Tomas SM. Bautista Elementary School! 😊 {time_context}{name_context} Ang inyong personalidad ay mainit, masaya, at mapagkakatiwalaan - tulad ng mabait na staff ng paaralan na talagang nagmamalasakit sa mga estudyante at pamilya. Magbigay ng tumpak at kapaki-pakinabang na impormasyon tungkol sa paaralan sa natural at makakausap na paraan. Maging masigla tungkol sa paaralan at ipakita ang tunay na pagnanais na tumulong! Gamitin ang natural na wika, paminsan-minsang sigla, at mga mababait na ekspresyon. KAPANSIN-PANSIN: Kung may context na ibinigay sa iyo, GAMITIN MO ITO bilang basehan ng inyong sagot. Maging tumpak sa mga detalye - kung ang context ay nagsasabing 'nine teachers' o '9 teachers', sabihin mo rin na 'siyam na guro' o '9 na guro'. Maaari kang magdagdag ng kaunting impormasyon o paliwanag, ngunit huwag baguhin ang mga pangunahing katotohanan. Huwag sabihin na wala kang impormasyon kung may context na ibinigay. Kung walang context na ibinigay, saka mo lang sabihin na makipag-ugnayan sa school office. Tandaan ang mga pangalan mula sa conversation history at gawing personal ang inyong mga tugon kung angkop. Gawing bawat pakikipag-ugnayan ay pakiramdam na tao at mapagmalasakit, hindi robot!"
+            return f"Ikaw si TOMAS, ang mabait at masayang digital assistant ng Tomas SM. Bautista Elementary School! 😊 {time_context}{name_context} Ang inyong personalidad ay mainit, masaya, at mapagkakatiwalaan - tulad ng mabait na staff ng paaralan na talagang nagmamalasakit sa mga estudyante at pamilya. PAGANDANGIN ang ibinigay na sagot upang maging makakausap at natural. Maging masigla tungkol sa paaralan at ipakita ang tunay na pagnanais na tumulong! Gamitin ang natural na wika, paminsan-minsang sigla, at mga mababait na ekspresyon. KAPANSIN-PANSIN: Ang context na ibinigay ay naglalaman ng EKSAKTONG SAGOT mula sa aming school database. Ang inyong trabaho ay gawin itong makakausap at friendly habang pinapanatili ang mga pangunahing katotohanan. Kung ang context ay nagsasabing 'Hindi', sabihin mo 'Hindi' ngunit gawin itong friendly. Kung ang context ay nagsasabing 'Oo', sabihin mo 'Oo' ngunit gawin itong engaging. HUWAG baguhin ang mga katotohanan, numero, o pangunahing impormasyon. HUWAG magdagdag ng bagong impormasyon na wala sa context. MAHALAGA PARA SA MGA TANONG TUNGKOL SA GURO: Kapag ang context ay nagpapakita ng 'Teacher Name: [Pangalan]' at 'Section/Class Name: [Seksyon]', ang TEACHER NAME ang tunay na guro, HINDI ang pangalan ng seksyon. Halimbawa, kung ang context ay nagpapakita ng 'Teacher Name: Mrs. Annalyn B. Andrade' at 'Section/Class Name: Andrew', si Mrs. Annalyn B. Andrade ang guro, at si Andrew ay pangalan lang ng seksyon/klase. Laging tukuyin ang TEACHER NAME bilang guro, huwag ang pangalan ng seksyon. Tandaan ang mga pangalan mula sa conversation history at gawing personal ang inyong mga tugon kung angkop. Gawing bawat pakikipag-ugnayan ay pakiramdam na tao at mapagmalasakit, hindi robot!"
         else:  # Default to English
             # Add name context if available
             name_context = f" The person you're talking to is named {user_name}." if user_name else ""
-            return f"You are TOMAS, the friendly and helpful digital assistant for Tomas SM. Bautista Elementary School! 😊 {time_context}{name_context} Your personality is warm, cheerful, and approachable - like a helpful school staff member who genuinely cares about students and families. Provide accurate and helpful information about the school in a conversational, natural way. Be enthusiastic about the school and show genuine interest in helping! Use natural language patterns, occasional enthusiasm, and friendly expressions. IMPORTANT: If context is provided to you, USE IT as the basis for your answer. Be accurate with details - if the context says 'nine teachers' or '9 teachers', say exactly that. You can add some additional information or explanation, but don't change the core facts. Do NOT say you don't have information if context has been provided. Only direct them to contact the school office if NO context was provided. Remember names from conversation history and personalize your responses when appropriate. Make every interaction feel human and caring, not robotic!"
+            return f"You are TOMAS, the friendly and helpful digital assistant for Tomas SM. Bautista Elementary School! 😊 {time_context}{name_context} Your personality is warm, cheerful, and approachable - like a helpful school staff member who genuinely cares about students and families. ENHANCE the provided response to make it conversational and natural. Be enthusiastic about the school and show genuine interest in helping! Use natural language patterns, occasional enthusiasm, and friendly expressions. CRITICAL: The context provided contains the EXACT ANSWER from our school database. Your job is to make it conversational and friendly while keeping the core facts unchanged. If the context says 'No', say 'No' but make it friendly. If the context says 'Yes', say 'Yes' but make it engaging. DO NOT change facts, numbers, or core information. DO NOT add new information that isn't in the context. CRITICAL FOR TEACHER QUERIES: When the context shows 'Teacher Name: [Name]' and 'Section/Class Name: [Section]', the TEACHER NAME is the actual teacher, NOT the section name. For example, if context shows 'Teacher Name: Mrs. Annalyn B. Andrade' and 'Section/Class Name: Andrew', then Mrs. Annalyn B. Andrade is the teacher, and Andrew is just the section/class name. Always identify the TEACHER NAME as the teacher, never the section name. Remember names from conversation history and personalize your responses when appropriate. Make every interaction feel human and caring, not robotic!"
 
     async def get_greeting_async(self, lang: str = "en", user_timezone: str = None, intent: Intent = None, user_context: Dict = None) -> str:
         """Enhanced async greeting generation with dynamic AI-powered personalization"""
@@ -2796,29 +2796,71 @@ class ChatBot:
                 logger.warning(f"Summarized text search failed: {summary_result}")
                 summary_result = ""
             
-            # Prioritize summarized text if available, otherwise use database result
-            if summary_result and summary_result.strip():
-                logger.info("✅ Using summarized text result")
-                return summary_result
-            elif db_result and db_result.strip():
-                logger.info("✅ Using database result")
-                return db_result
+            # Smart prioritization: Use database for specific queries, summarized text for general queries
+            query_lower = query.lower()
+            
+            # For staff inquiries, prioritize database results (they have specific staff information)
+            # BUT for grade-specific queries, prioritize summarized text (it has grade-specific teacher info)
+            if any(word in query_lower for word in ["teacher", "principal", "head teacher", "staff", "guro", "maestro"]):
+                # Check if this is a grade-specific query
+                grade_specific = any(grade in query_lower for grade in ["grade 1", "grade 2", "grade 3", "grade 4", "grade 5", "grade 6", "kindergarten", "kinder"])
+                
+                if grade_specific and summary_result and summary_result.strip():
+                    logger.info("✅ Using summarized text result for grade-specific staff inquiry")
+                    return summary_result
+                elif db_result and db_result.strip():
+                    logger.info("✅ Using database result for staff inquiry")
+                    return db_result
+                elif summary_result and summary_result.strip():
+                    logger.info("✅ Using summarized text result as fallback for staff inquiry")
+                    return summary_result
+            # For other queries, check if it's a specific factual question
             else:
-                logger.info("❌ No results found in either source")
-                return ""
+                # For yes/no questions and specific factual queries, prioritize database results
+                yes_no_indicators = ["does", "do", "is", "are", "can", "will", "has", "have", "should", "would", "could"]
+                factual_indicators = ["sell", "offer", "provide", "available", "cost", "price", "fee", "uniform", "book", "supply"]
+                
+                is_yes_no_question = any(indicator in query_lower for indicator in yes_no_indicators)
+                is_factual_query = any(indicator in query_lower for indicator in factual_indicators)
+                
+                if (is_yes_no_question or is_factual_query) and db_result and db_result.strip():
+                    logger.info("✅ Using database result for specific factual question")
+                    return db_result
+                elif summary_result and summary_result.strip():
+                    logger.info("✅ Using summarized text result")
+                    return summary_result
+                elif db_result and db_result.strip():
+                    logger.info("✅ Using database result as fallback")
+                    return db_result
+            
+            logger.info("❌ No results found in either source")
+            return ""
                 
         except Exception as e:
             logger.error(f"Error in dual source search: {e}")
             # Fallback to database search only
             return await self._enhanced_search_supabase_internal(query)
 
-    async def _search_summarized_text(self, query: str) -> str:
-        """Search summarized text and return relevant snippet."""
+    async def _search_summarized_text(self, query: str, search_terms: list = None) -> str:
+        """Search summarized text and return relevant content for Groq enhancement."""
         try:
             summarized_text = await self.fetch_summarized_file()
             if summarized_text:
+                # If specific search terms are provided, try them first
+                if search_terms:
+                    for term in search_terms:
+                        snippet = await self.extract_snippet(summarized_text, term)
+                        if snippet:
+                            logger.info(f"✅ Found summarized text result for: '{term}' -> {snippet[:50]}...")
+                            # Return just the content - Groq will enhance it
+                            return snippet
+                
+                # Fallback to original query
                 snippet = await self.extract_snippet(summarized_text, query)
-                return snippet if snippet else ""
+                if snippet:
+                    logger.info(f"✅ Found summarized text result for query -> {snippet[:50]}...")
+                    # Return just the content - Groq will enhance it
+                    return snippet
             return ""
         except Exception as e:
             logger.warning(f"Summarized text search failed: {e}")
@@ -3107,12 +3149,46 @@ class ChatBot:
         self._last_fetched = now
         return text
 
-    def _validate_response_against_facts(self, response: str, query: str, lang: str) -> str:
+    def _validate_response_against_facts(self, response: str, query: str, lang: str, context: str = None) -> str:
         """🛡️ Enhanced validation to prevent inappropriate responses and ensure school-appropriate language."""
         
         # DEBUG: Log validation entry
         logger.info(f"🛡️ VALIDATION: Checking response for hallucinations and inappropriate content")
         logger.info(f"📝 Response excerpt: {response[:100]}...")
+        
+        # 🚨 CRITICAL: CHECK FOR FACTUAL ACCURACY AGAINST DATABASE CONTEXT
+        if context:
+            logger.info(f"🔍 Checking factual accuracy against provided context...")
+            context_lower = context.lower()
+            response_lower = response.lower()
+            
+            # Check for direct contradictions in yes/no questions
+            if "no" in context_lower and ("yes" in response_lower or "do" in response_lower and "sell" in response_lower):
+                logger.warning(f"🚨 FACTUAL CONTRADICTION DETECTED: Context says 'No' but response says 'Yes'")
+                logger.info(f"📍 Context: {context[:100]}...")
+                logger.info(f"📍 Response: {response[:100]}...")
+                # Return the correct factual response based on context
+                if "pe uniform" in query.lower() or "uniform" in query.lower():
+                    if lang == "tl":
+                        return "Hindi po, ang Tomas SM. Bautista Elementary School ay hindi nagbebenta ng PE uniforms. Para sa karagdagang impormasyon, makipag-ugnayan sa school office."
+                    else:
+                        return "No, Tomas SM. Bautista Elementary School does not sell PE uniforms. For more information, please contact the school office."
+                else:
+                    if lang == "tl":
+                        return "Hindi po, ayon sa aming mga talaan. Para sa karagdagang impormasyon, makipag-ugnayan sa school office."
+                    else:
+                        return "No, according to our records. For more information, please contact the school office."
+            
+            # Check for other direct contradictions
+            if "yes" in context_lower and ("no" in response_lower or "don't" in response_lower or "doesn't" in response_lower):
+                logger.warning(f"🚨 FACTUAL CONTRADICTION DETECTED: Context says 'Yes' but response says 'No'")
+                logger.info(f"📍 Context: {context[:100]}...")
+                logger.info(f"📍 Response: {response[:100]}...")
+                # Return the correct factual response based on context
+                if lang == "tl":
+                    return "Oo po, ayon sa aming mga talaan. Para sa karagdagang impormasyon, makipag-ugnayan sa school office."
+                else:
+                    return "Yes, according to our records. For more information, please contact the school office."
         
         # Known staff members (ONLY these exist)
         known_staff = {
@@ -3126,7 +3202,8 @@ class ChatBot:
             "leny mae d. patani", "leny mae patani", "leny",
             "feliciano c. bustamante jr.", "feliciano bustamante", "feliciano",
             "ramon d. paras jr.", "ramon paras", "ramon",
-            "ariel z. zubiaga", "ariel zubiaga", "ariel"
+            "ariel z. zubiaga", "ariel zubiaga", "ariel",
+            # Grade 1 teachers (from user feedback)
         }
         
         # Fictional people to block (common made-up names)
@@ -3298,7 +3375,12 @@ class ChatBot:
         ]
         if any(pattern in response_lower for pattern in roleplay_patterns):
             logger.warning(f"🚨 ROLEPLAY DETECTED: Fake actions and made-up schedules")
-            if "enrollment" in query.lower() or "documents" in query.lower():
+            
+            # Don't block teacher queries with roleplay detection - they should show the actual teacher info
+            if any(teacher_word in query.lower() for teacher_word in ["teacher", "adviser", "advisor", "guro", "maestra", "staff", "faculty"]):
+                logger.info("🎯 Teacher query detected - allowing response despite roleplay detection")
+                # Continue with the response instead of blocking it
+            elif "enrollment" in query.lower() or "documents" in query.lower():
                 return "For enrollment information and required documents, please visit the school office during regular hours."
             elif "schedule" in query.lower() or "time" in query.lower():
                 return "For current schedules and specific timing, please contact the school office directly."
@@ -3533,7 +3615,7 @@ class ChatBot:
                     ai_response = response.json()["choices"][0]["message"]["content"].strip()
                     
                     # 🛡️ VALIDATE RESPONSE TO PREVENT HALLUCINATION
-                    validated_response = self._validate_response_against_facts(ai_response, query, lang)
+                    validated_response = self._validate_response_against_facts(ai_response, query, lang, context)
                     
                     if mode != "normal":
                         logger.warning(f"⚠️ Used {mode} token mode for response")
@@ -4038,7 +4120,67 @@ class ChatBot:
             return None
 
     async def _try_full_text_search(self, query: str) -> str:
-        """Use PostgreSQL full-text search via search_tsv column for names and content."""
+        """Simplified search: Find exact match in search_tsv, return the response for Groq enhancement."""
+        
+        # 🎯 SIMPLIFIED APPROACH: Find exact match and return the response
+        logger.info(f"🔍 Looking for exact match in search_tsv for: '{query}'")
+        
+        try:
+            def exact_query(connection, search_query=query):
+                return connection.table("chatbot_prompts") \
+                    .select("keywords, response") \
+                    .ilike("keywords", f"%{search_query}%") \
+                    .limit(1) \
+                    .execute()
+            
+            exact_result = await self._execute_supabase_query(exact_query, 2.0, f"exact match for {query}")
+            
+            if exact_result and len(exact_result.data) > 0:
+                result = exact_result.data[0]
+                logger.info(f"✅ Found exact match: {result['keywords']} -> {result['response']}")
+                # Return just the response - Groq will enhance it
+                return result['response']
+        except Exception as e:
+            logger.warning(f"Exact match search failed: {e}")
+        
+        # 🎯 FALLBACK: Try key phrases
+        key_phrases = []
+        query_lower = query.lower()
+        
+        # Extract key phrases from the query
+        if "pe uniform" in query_lower:
+            key_phrases.extend(["PE uniforms", "sell PE uniforms", "pe uniform", "Does the school sell PE uniforms"])
+        if "provide lunch" in query_lower:
+            key_phrases.extend(["provide lunch", "lunch", "school lunch"])
+        if "cafeteria" in query_lower:
+            key_phrases.extend(["cafeteria", "canteen", "dining"])
+        if "transportation" in query_lower or "bus" in query_lower:
+            key_phrases.extend(["transportation", "bus", "school bus"])
+        if "uniform" in query_lower and "pe uniform" not in query_lower:
+            key_phrases.extend(["uniform", "uniforms", "school uniform"])
+        
+        for phrase in key_phrases:
+            logger.info(f"🔍 Trying key phrase: '{phrase}'")
+            try:
+                def phrase_query(connection, search_phrase=phrase):
+                    return connection.table("chatbot_prompts") \
+                        .select("keywords, response") \
+                        .ilike("keywords", f"%{search_phrase}%") \
+                        .limit(1) \
+                        .execute()
+                
+                phrase_result = await self._execute_supabase_query(phrase_query, 2.0, f"key phrase match for {phrase}")
+                
+                if phrase_result and len(phrase_result.data) > 0:
+                    result = phrase_result.data[0]
+                    logger.info(f"✅ Found key phrase match: {result['keywords']} -> {result['response']}")
+                    # Return just the response - Groq will enhance it
+                    return result['response']
+            except Exception as e:
+                logger.warning(f"Key phrase search failed for '{phrase}': {e}")
+        
+        # 🎯 FINAL FALLBACK: Original word-by-word search
+        # Use PostgreSQL full-text search via search_tsv column for names and content
         try:
             # 🛡️ SAFETY CHECK: Handle None or empty query
             if not query or query is None:
@@ -4435,6 +4577,67 @@ class ChatBot:
         
         return ""
 
+    def _clean_teacher_context(self, staff_result: str, query: str) -> str:
+        """Clean up teacher context to make it clearer for Groq processing."""
+        if not staff_result:
+            return staff_result
+        
+        # Extract teacher information from the raw line
+        # Format: "6.Mrs. Annalyn B. Andrade Teacher 1 Grade 1 - Andrew"
+        import re
+        
+        # Pattern to match teacher information (handles multiple formats)
+        # Format 1: "6.Mrs. Annalyn B. Andrade Answer: Grade 1 Adviser" (new format)
+        # Format 2: "Mrs. Annalyn B. Andrade Teacher 1 Grade 1 - Andrew" (old format with section name)
+        # Format 3: "Mrs. Meliza A. Delgado Head Teacher 1" (old format without section name)
+        
+        # Try new format first
+        new_pattern = r'(\d+\.)?(Mrs?\.|Ms?\.|Mr\.)\s+([A-Za-z\s\.]+?)\s+Answer:\s*([A-Za-z\s\d,\.]+)'
+        match = re.search(new_pattern, staff_result)
+        
+        if match:
+            number = match.group(1) or ""
+            title = match.group(2) or ""
+            name = match.group(3).strip() or ""
+            position = match.group(4).strip() or ""
+            
+            # Build a clear, structured context for new format
+            cleaned = f"Teacher Name: {title} {name}\nPosition: {position}"
+            logger.info(f"🧹 Cleaned teacher context (new format): {cleaned}")
+            return cleaned
+        
+        # Fallback to old format
+        old_pattern = r'(\d+\.)?(Mrs?\.|Ms?\.|Mr\.)\s+([A-Za-z\s\.]+?)\s+((?:Teacher\s+\d+\s+Grade\s+\d+|Head\s+Teacher\s+\d+))(?:\s*-\s*([A-Za-z\s]+))?'
+        match = re.search(old_pattern, staff_result)
+        
+        if match:
+            number = match.group(1) or ""
+            title = match.group(2) or ""
+            name = match.group(3).strip() or ""
+            position = match.group(4) or ""
+            class_name = match.group(5) or ""
+            
+            # Build a clear, structured context
+            if class_name:
+                cleaned = f"Teacher Name: {title} {name}\nPosition: {position}\nSection/Class Name: {class_name}\n\nNote: {class_name} is the SECTION NAME, not the teacher's name. The teacher is {title} {name}."
+            else:
+                cleaned = f"Teacher Name: {title} {name}\nPosition: {position}"
+            
+            logger.info(f"🧹 Cleaned teacher context: {cleaned}")
+            return cleaned
+        else:
+            # If pattern doesn't match, try to extract what we can from the partial information
+            cleaned = staff_result.replace("Answer:", "").strip()
+            
+            # If we have partial teacher info like "Teacher 1 Grade 1 - Andrew", 
+            # try to make it clearer for Groq
+            if "teacher" in cleaned.lower() and "grade" in cleaned.lower():
+                # This is likely a partial teacher entry, add clarification
+                cleaned = f"ANSWER: The Grade 1 adviser is {cleaned}\n\nThis shows the Grade 1 adviser's position and section. The section name (like 'Andrew') is the class name, not the teacher's name. This IS the information about the Grade 1 adviser."
+            
+            logger.info(f"🧹 Using original context (cleaned): {cleaned}")
+            return cleaned
+
     async def extract_snippet(self, text: str, query: str, window: int = 200, threshold: int = 75) -> str:
         """
         Enhanced snippet extraction with better keyword matching.
@@ -4448,16 +4651,53 @@ class ChatBot:
         # Strategy 1: Exact phrase matching (most efficient)
         for i, line in enumerate(lines):
             if query_lower in line.lower():
-                logger.info(f"🎯 Exact phrase match found in summarized text")
-                start = max(0, text.find(line) - window)
-                end = min(len(text), start + len(line) + (2 * window))
+                logger.info(f"🎯 Exact phrase match found in summarized text: '{query}' in line: '{line.strip()}'")
+                # For teacher name searches, return the line and the next line (which contains the Answer)
+                if any(name in query_lower for name in ["annalyn", "lezil", "michelle", "jessica", "thedy", "leny", "nelda", "meliza"]):
+                    # For teacher name searches, return the line and the next line (Answer)
+                    result = line.strip()
+                    if i + 1 < len(lines):
+                        next_line = lines[i + 1].strip()
+                        if next_line.startswith("Answer:"):
+                            result += "\n" + next_line
+                    logger.info(f"🎯 Returning teacher info: {result}")
+                    return result
+                # For grade-specific queries, return only the specific line without surrounding context
+                elif any(grade in query_lower for grade in ["grade 1", "grade 2", "grade 3", "grade 4", "grade 5", "grade 6"]):
+                    # For grade queries, return only the exact line that matches
+                    return line.strip()
+                else:
+                    # For other queries, use normal window
+                    start = max(0, text.find(line) - window)
+                    end = min(len(text), start + len(line) + (2 * window))
                 return text[start:end].strip()
         
         # Strategy 2: Keyword matching - extract key terms from query
         import re
         # Remove common words and extract meaningful terms
-        stop_words = {"the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "is", "are", "was", "were", "be", "been", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "can", "ang", "sa", "ng", "na", "ay", "si", "sino", "ano", "ilan", "kailan", "saan", "paano"}
+        stop_words = {"the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "is", "are", "was", "were", "be", "been", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "can", "ang", "sa", "ng", "na", "ay", "si", "sino", "ano", "ilan", "kailan", "saan", "paano", "para", "guro"}
         query_words = [word.strip() for word in re.findall(r'\b\w+\b', query_lower) if word not in stop_words and len(word) > 2]
+        
+        # Add grade-specific patterns for better matching (new format)
+        grade_patterns = ["grade 1", "grade 2", "grade 3", "grade 4", "grade 5", "grade 6", "kindergarten", "kinder"]
+        for pattern in grade_patterns:
+            if pattern in query_lower:
+                query_words.append(pattern.replace(" ", "_"))  # Add as single term
+                # Also add variations that match the new format in summarized text
+                if "grade 1" in pattern:
+                    query_words.extend(["grade 1 adviser", "mrs. annalyn b. andrade"])
+                elif "grade 2" in pattern:
+                    query_words.extend(["grade 2 adviser", "mrs. lezil v. villanueva"])
+                elif "grade 3" in pattern:
+                    query_words.extend(["grade 3 adviser", "mrs. michelle v. pastrana"])
+                elif "grade 4" in pattern:
+                    query_words.extend(["grade 4 adviser", "ms. jessica z. go"])
+                elif "grade 5" in pattern:
+                    query_words.extend(["grade 5 adviser", "ms. thedy mae p. ruiz"])
+                elif "grade 6" in pattern:
+                    query_words.extend(["grade 6 adviser", "mrs. leny mae d. patani"])
+                elif "kindergarten" in pattern or "kinder" in pattern:
+                    query_words.extend(["kindergarten adviser", "mrs. nelda b. delos santos"])
         
         # Strategy 3: Multi-keyword matching
         if query_words:
@@ -4465,10 +4705,18 @@ class ChatBot:
                 line_lower = line.lower()
                 # Check if multiple keywords from query appear in the line
                 matches = sum(1 for word in query_words if word in line_lower)
-                if matches >= 2 or (matches >= 1 and len(query_words) == 1):
+                # More flexible matching: if we have grade-specific queries, be more lenient
+                grade_specific = any("grade" in word for word in query_words)
+                if matches >= 2 or (matches >= 1 and len(query_words) == 1) or (matches >= 1 and grade_specific):
                     logger.info(f"🎯 Keyword match found in summarized text: {matches}/{len(query_words)} keywords")
-                    start = max(0, text.find(line) - window)
-                    end = min(len(text), start + len(line) + (2 * window))
+                    # For grade-specific queries, return only the specific line without surrounding context
+                    if grade_specific:
+                        # For grade queries, return only the exact line that matches
+                        return line.strip()
+                    else:
+                        # For other queries, use normal window
+                        start = max(0, text.find(line) - window)
+                        end = min(len(text), start + len(line) + (2 * window))
                     return text[start:end].strip()
         
         # Strategy 4: Name matching
@@ -4660,13 +4908,15 @@ class ChatBot:
             logger.info(f"⚡ High urgency ({sentiment_result.urgency_level}/5) → enhanced fallback")
             return True
         
-        # 3. Human help requests
-        human_keywords = [
-            "human", "person", "staff", "teacher", "help me", "assist me",
-            "tao", "tulong", "tabang"  # Tagalog/Aklanon
+        # 3. Human help requests (more specific patterns to avoid false positives)
+        human_help_patterns = [
+            "help me", "assist me", "can you help", "i need help", "please help",
+            "tulong", "tabang", "tulungan mo ako", "tabangan mo ako",  # Tagalog/Aklanon
+            "speak to a human", "talk to a person", "human assistance",
+            "i want to speak to", "let me talk to", "connect me to"
         ]
         
-        if any(keyword in query_lower for keyword in human_keywords):
+        if any(pattern in query_lower for pattern in human_help_patterns):
             logger.info("👤 Human assistance request → enhanced fallback")
             return True
         
@@ -5845,38 +6095,77 @@ class ChatBot:
                     except Exception as e:
                         logger.warning(f"Enhanced conversation flow v2 failed: {e}")
                 
-                return nlu_response
+                # Don't return early for teacher queries - let teacher-specific search handle them
+                teacher_patterns = [
+                    "mga guro", "mga teacher", "teachers", "who are the teachers", 
+                    "sino ang mga guro", "tell me about the teachers", "staff members",
+                    "mga staff", "faculty", "tell me about the staff", "about the staff",
+                    "list the faculty", "faculty members", "can you list the faculty",
+                    "sino ang mga faculty", "mga taong nagtuturo", "nagtuturo dito",
+                    "list ng mga guro", "nakikita ko ang mga teacher", "teachers of this school",
+                    "guro dito sa school", "the teachers", "our teachers", "teacher", "guro",
+                    "mga maestra", "maestra sa school", "maestra", "maestro", "mga maestro",
+                    "plural maestra", "maestra in school", "adviser", "advisor", "advisers", "advisors"
+                ]
+                
+                # Check if this is a teacher query
+                is_teacher_query = any(pattern in query.lower() for pattern in teacher_patterns)
+                
+                if is_teacher_query:
+                    logger.info("👩‍🏫 Teacher query detected in NLU processing - continuing to teacher-specific search")
+                    # Don't return early, continue to teacher-specific search logic
+                else:
+                    return nlu_response
                 
         except Exception as e:
             logger.warning(f"NLU processing failed, falling back to legacy system: {e}")
         
         # 🎯 FIX: ALL queries should search database first, then use structured response if needed
-        logger.info("🔍 All queries now use database search - searching both database and summarized text")
-        try:
-            # Search both database and summarized text
-            search_result = await self.enhanced_search_supabase(query)
-            
-            if search_result:
-                logger.info("✅ Found context in search results")
-                logger.info(f"🔍 Search result: {search_result[:200]}...")
+        # BUT for teacher queries, continue to teacher-specific search logic
+        teacher_patterns = [
+            "mga guro", "mga teacher", "teachers", "who are the teachers", 
+            "sino ang mga guro", "tell me about the teachers", "staff members",
+            "mga staff", "faculty", "tell me about the staff", "about the staff",
+            "list the faculty", "faculty members", "can you list the faculty",
+            "sino ang mga faculty", "mga taong nagtuturo", "nagtuturo dito",
+            "list ng mga guro", "nakikita ko ang mga teacher", "teachers of this school",
+            "guro dito sa school", "the teachers", "our teachers", "teacher", "guro",
+            "mga maestra", "maestra sa school", "maestra", "maestro", "mga maestro",
+            "plural maestra", "maestra in school", "adviser", "advisor", "advisers", "advisors"
+        ]
+        
+        # Check if this is a teacher query
+        is_teacher_query = any(pattern in query.lower() for pattern in teacher_patterns)
+        
+        if not is_teacher_query:
+            logger.info("🔍 All queries now use database search - searching both database and summarized text")
+            try:
+                # Search both database and summarized text
+                search_result = await self.enhanced_search_supabase(query)
                 
-                # Use AI with search result for all queries (including factual ones)
-                try:
-                    full_context = f"Context:\n{search_result}\n\n"
-                    response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone, search_result)
-                    return self._validate_response_against_facts(response, query, lang)
-                except Exception as ai_error:
-                    logger.warning(f"AI processing failed: {ai_error}")
-                    # If AI fails but we have search result, return it directly
-                    logger.info("🔄 AI failed, returning search result directly")
-                    return search_result
-            else:
-                logger.info("❌ No context found in search results - continuing with fallback")
-                # Continue with original fallback logic if no search results found
-                
-        except Exception as e:
-            logger.warning(f"Direct database search failed: {e}")
-            # Continue with original fallback logic if database search fails
+                if search_result:
+                    logger.info("✅ Found context in search results")
+                    logger.info(f"🔍 Search result: {search_result[:200]}...")
+                    
+                    # Use AI with search result for all queries (including factual ones)
+                    try:
+                        full_context = f"Context:\n{search_result}\n\n"
+                        response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone, search_result)
+                        return self._validate_response_against_facts(response, query, lang, search_result)
+                    except Exception as ai_error:
+                        logger.warning(f"AI processing failed: {ai_error}")
+                        # If AI fails but we have search result, return it directly
+                        logger.info("🔄 AI failed, returning search result directly")
+                        return search_result
+                else:
+                    logger.info("❌ No context found in search results - continuing with fallback")
+                    # Continue with original fallback logic if no search results found
+                    
+            except Exception as e:
+                logger.warning(f"Direct database search failed: {e}")
+                # Continue with original fallback logic if database search fails
+        else:
+            logger.info("👩‍🏫 Teacher query detected in general search - continuing to teacher-specific search logic")
         
         # --- STRUCTURED RESPONSE FRAMEWORK (as fallback when no database content) ---
         # 🎯 FIX: Skip structured response framework since ALL queries should use database search
@@ -6157,7 +6446,22 @@ class ChatBot:
                 logger.warning(f"Direct database search failed: {e}")
                 return None  # Let it fall through to normal flow
         
-        if any(pattern in lowered for pattern in family_enrollment_patterns):
+        # Check if this is a teacher query first - don't trigger family context for teacher queries
+        teacher_patterns = [
+            "mga guro", "mga teacher", "teachers", "who are the teachers", 
+            "sino ang mga guro", "tell me about the teachers", "staff members",
+            "mga staff", "faculty", "tell me about the staff", "about the staff",
+            "list the faculty", "faculty members", "can you list the faculty",
+            "sino ang mga faculty", "mga taong nagtuturo", "nagtuturo dito",
+            "list ng mga guro", "nakikita ko ang mga teacher", "teachers of this school",
+            "guro dito sa school", "the teachers", "our teachers", "teacher", "guro",
+            "mga maestra", "maestra sa school", "maestra", "maestro", "mga maestro",
+            "plural maestra", "maestra in school", "adviser", "advisor", "advisers", "advisors"
+        ]
+        
+        is_teacher_query = any(pattern in lowered for pattern in teacher_patterns)
+        
+        if any(pattern in lowered for pattern in family_enrollment_patterns) and not is_teacher_query:
             logger.info("👨‍👩‍👧‍👦 Family/enrollment context detected - avoiding generic database search")
             # For family context, use AI processing with minimal context to avoid irrelevant matches
             # Get minimal context to avoid token issues
@@ -6173,6 +6477,8 @@ class ChatBot:
             # Force AI processing with conversation history but minimal context
             logger.info("🤖 Processing family context with AI and conversation history")
             return await self.ask_groq(query, minimal_context, lang, conversation_history, user_timezone)
+        elif is_teacher_query:
+            logger.info("👩‍🏫 Teacher query detected - skipping family context detection")
 
         # --- Early check for teacher/staff queries to prevent AI hallucination ---
         teacher_patterns = [
@@ -6184,27 +6490,119 @@ class ChatBot:
             "list ng mga guro", "nakikita ko ang mga teacher", "teachers of this school",
             "guro dito sa school", "the teachers", "our teachers", "teacher", "guro",
             "mga maestra", "maestra sa school", "maestra", "maestro", "mga maestro",
-            "plural maestra", "maestra in school"
+            "plural maestra", "maestra in school", "adviser", "advisor", "advisers", "advisors"
         ]
         
         # Check original query
         if any(pattern in lowered for pattern in teacher_patterns):
             logger.info("👩‍🏫 Teacher query detected - searching database for staff information")
-            # Try database search for staff information first
-            staff_result = await self.fetch_prompts_from_supabase("head teacher")
-            if not staff_result:
-                staff_result = await self.fetch_prompts_from_supabase("teacher")
-            if not staff_result:
-                staff_result = await self.fetch_prompts_from_supabase("staff")
+            
+            # Extract entities to build more specific search terms
+            entities = self.entity_extractor.extract_entities(query) if hasattr(self, 'entity_extractor') else []
+            grade_level = None
+            subject = None
+            
+            for entity in entities:
+                if hasattr(entity, 'entity_type') and hasattr(entity, 'value'):
+                    if entity.entity_type == 'grade_level':
+                        grade_level = entity.value
+                    elif entity.entity_type == 'academic_subject':
+                        subject = entity.value
+            
+            # Build specific search terms based on entities
+            search_terms = []
+            if grade_level and subject:
+                search_terms.append(f"{grade_level} {subject} teacher")
+                search_terms.append(f"{subject} teacher {grade_level}")
+            if grade_level:
+                # Add patterns that match the new format in summarized text
+                grade_lower = grade_level.lower()
+                if "grade 1" in grade_lower:
+                    search_terms.extend(["annalyn", "Grade 1 Adviser", "mrs. annalyn b. andrade"])
+                elif "grade 2" in grade_lower:
+                    search_terms.extend(["lezil", "Grade 2 Adviser", "mrs. lezil v. villanueva"])
+                elif "grade 3" in grade_lower:
+                    search_terms.extend(["michelle", "Grade 3 Adviser", "mrs. michelle v. pastrana"])
+                elif "grade 4" in grade_lower:
+                    search_terms.extend(["jessica", "Grade 4 Adviser", "ms. jessica z. go"])
+                elif "grade 5" in grade_lower:
+                    search_terms.extend(["thedy", "Grade 5 Adviser", "ms. thedy mae p. ruiz"])
+                elif "grade 6" in grade_lower:
+                    search_terms.extend(["leny", "Grade 6 Adviser", "mrs. leny mae d. patani"])
+                elif "kindergarten" in grade_lower or "kinder" in grade_lower:
+                    search_terms.extend(["nelda", "Kindergarten Adviser", "mrs. nelda b. delos santos"])
+                
+                # Add general patterns
+                search_terms.append(f"{grade_level} teacher")
+                search_terms.append(f"teacher {grade_level}")
+            if subject:
+                search_terms.append(f"{subject} teacher")
+            
+            # Add general terms as fallback (only for non-grade-specific queries)
+            if not grade_level:
+                search_terms.extend(["head teacher", "teacher", "staff", "mrs. meliza a. delgado"])
+            
+            # For grade-specific queries, try summarized text first (it has grade-specific teacher info)
+            # For other queries, try database first
+            if grade_level:
+                logger.info(f"🔍 Grade-specific query detected for '{grade_level}' - trying summarized text first")
+                staff_result = await self._search_summarized_text(query, search_terms)
+                if staff_result:
+                    logger.info("✅ Found staff information in summarized text")
+                else:
+                    logger.info("🔍 No summarized text result, trying database with specific search terms")
+                    for term in search_terms:
+                        logger.info(f"🔍 Searching for: '{term}'")
+                        staff_result = await self.fetch_prompts_from_supabase(term)
+                        if staff_result:
+                            logger.info(f"✅ Found staff information for: '{term}'")
+                            break
+            else:
+                # For non-grade-specific queries, try database first
+                for term in search_terms:
+                    logger.info(f"🔍 Searching for: '{term}'")
+                    staff_result = await self.fetch_prompts_from_supabase(term)
+                    if staff_result:
+                        logger.info(f"✅ Found staff information for: '{term}'")
+                        break
+                
+                # If no database result, try summarized text with the same search terms
+                if not staff_result:
+                    logger.info("🔍 No database result found, trying summarized text with specific search terms")
+                    staff_result = await self._search_summarized_text(query, search_terms)
+                    if staff_result:
+                        logger.info("✅ Found staff information in summarized text")
             
             if staff_result:
-                logger.info("✅ Found staff information in database")
-                return self._validate_response_against_facts(staff_result, query, lang)
+                logger.info("✅ Found staff information")
+                # Pass the context to Groq for natural response generation (like general search does)
+                try:
+                    # Clean up the context to make it clearer for Groq
+                    cleaned_context = self._clean_teacher_context(staff_result, query)
+                    full_context = f"Context:\n{cleaned_context}\n\n"
+                    response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone, staff_result)
+                    return self._validate_response_against_facts(response, query, lang, staff_result)
+                except Exception as ai_error:
+                    logger.warning(f"AI processing failed: {ai_error}")
+                    # If AI fails but we have search result, return it directly
+                    logger.info("🔄 AI failed, returning search result directly")
+                    return self._validate_response_against_facts(staff_result, query, lang, staff_result)
             else:
-                # Fallback to hardcoded list if database has no results
-                logger.info("⚠️ No staff info in database - using fallback staff list")
-                response = self._get_known_staff_list(lang)
-                return self._validate_response_against_facts(response, query, lang)
+                # Fallback to hardcoded list if no results found
+                logger.info("⚠️ No staff info found - using fallback staff list")
+                fallback_response = self._get_known_staff_list(lang)
+                # Pass the fallback context to Groq for natural response generation
+                try:
+                    # Clean up the fallback context to make it clearer for Groq
+                    cleaned_context = self._clean_teacher_context(fallback_response, query)
+                    full_context = f"Context:\n{cleaned_context}\n\n"
+                    response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone, fallback_response)
+                    return self._validate_response_against_facts(response, query, lang, fallback_response)
+                except Exception as ai_error:
+                    logger.warning(f"AI processing failed: {ai_error}")
+                    # If AI fails, return fallback directly
+                    logger.info("🔄 AI failed, returning fallback directly")
+                    return self._validate_response_against_facts(fallback_response, query, lang, fallback_response)
         
         # For Aklanon queries, also check the translated version
         if lang == "akl":

@@ -292,7 +292,7 @@ class NLUEngine:
             return NLUResult(Intent.SCHOOL_INFO, 0.8, [])
         
         # Priority 8: Staff inquiries
-        staff_words = ["teacher", "teachers", "staff", "principal", "head teacher", "school head", "head", "director", "administrator", "guro", "maestro", "faculty", "guidance", "counselor"]
+        staff_words = ["teacher", "teachers", "staff", "principal", "head teacher", "school head", "head", "director", "administrator", "guro", "maestro", "faculty", "guidance", "counselor", "adviser", "advisor", "advisers", "advisors"]
         if any(word in user_lower for word in staff_words):
             return NLUResult(Intent.STAFF_INQUIRY, 0.7, [])
         
