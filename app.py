@@ -61,9 +61,17 @@ except Exception as e:
     raise
 
 # -----------------------
-#    key
+# Groq API Key
 # -----------------------
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+# Debug Groq API key
+logger.info(f"GROQ_API_KEY: {'SET' if GROQ_API_KEY else 'NOT SET'}")
+if GROQ_API_KEY:
+    logger.info(f"GROQ_API_KEY format: {GROQ_API_KEY[:10]}...")
+    if not GROQ_API_KEY.startswith('gsk_'):
+        logger.warning("⚠️ GROQ_API_KEY should start with 'gsk_'")
+
 chatbot = ChatBot(groq_key=GROQ_API_KEY)
 
 # -----------------------

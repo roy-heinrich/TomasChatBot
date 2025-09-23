@@ -13,12 +13,21 @@ class ResponseGenerator:
     def __init__(self, groq_key: str):
         self.groq_key = groq_key
         self.groq_client = None
-        if groq_key:
-            try:
-                from groq import Groq
-                self.groq_client = Groq(api_key=groq_key)
-            except ImportError:
-                logger.warning("Groq not available")
+        
+        if not groq_key:
+            logger.warning("Groq API key not provided")
+            return
+            
+        try:
+            from groq import Groq
+            self.groq_client = Groq(api_key=groq_key)
+            logger.info("✅ Groq client initialized successfully")
+        except ImportError as e:
+            logger.error(f"❌ Groq library not installed: {e}")
+            logger.warning("Install with: pip install groq")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Groq client: {e}")
+            logger.warning("Check your GROQ_API_KEY environment variable")
     
     def get_system_prompt(self, lang: str, user_name: str = "", nlu_info: Dict = None) -> str:
         """Generate language-specific system prompt with explicit tone instructions"""
