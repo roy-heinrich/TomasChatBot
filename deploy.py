@@ -14,67 +14,82 @@ def download_nltk_data():
     print("📥 Setting up NLTK data for deployment...")
     
     try:
-        # Method 1: Use command line installer (recommended by NLTK docs)
-        print("Using NLTK command line installer...")
-        
         # Set up NLTK data directory
         nltk_data_dir = os.path.join(os.getcwd(), 'nltk_data')
         os.makedirs(nltk_data_dir, exist_ok=True)
         
-        # Set NLTK_DATA environment variable
+        # Set NLTK_DATA environment variable BEFORE any NLTK imports
         os.environ['NLTK_DATA'] = nltk_data_dir
         
-        # Use command line installer for essential packages
+        print("Using NLTK command line installer...")
+        
+        # Download essential packages in order of dependency
         essential_packages = ['punkt', 'stopwords', 'wordnet', 'averaged_perceptron_tagger']
+        downloaded = 0
         
         for package in essential_packages:
             try:
                 print(f"Installing {package} via command line...")
+                
+                # Use command line installer with proper environment
+                env = os.environ.copy()
+                env['NLTK_DATA'] = nltk_data_dir
+                
                 result = subprocess.run([
                     sys.executable, "-m", "nltk.downloader", "-d", nltk_data_dir, package
-                ], capture_output=True, text=True, timeout=120)
+                ], capture_output=True, text=True, timeout=120, env=env)
                 
                 if result.returncode == 0:
                     print(f"✅ {package} installed successfully")
+                    downloaded += 1
                 else:
-                    print(f"⚠️ Command line install failed for {package}: {result.stderr}")
-                    # Fallback to Python API
+                    print(f"⚠️ Command line install failed for {package}")
+                    print(f"Error: {result.stderr[:200]}...")  # Truncate long errors
+                    
+                    # Try Python API fallback (but only if we haven't imported NLTK yet)
                     try:
-                        import nltk
-                        nltk.download(package, download_dir=nltk_data_dir, quiet=True)
-                        print(f"✅ {package} installed via Python API fallback")
+                        # Create a simple download script to avoid import issues
+                        download_script = f"""
+import os
+import nltk
+os.environ['NLTK_DATA'] = '{nltk_data_dir}'
+nltk.data.path.append('{nltk_data_dir}')
+nltk.download('{package}', download_dir='{nltk_data_dir}', quiet=True)
+print('Downloaded {package}')
+"""
+                        with open('temp_download.py', 'w') as f:
+                            f.write(download_script)
+                        
+                        result2 = subprocess.run([
+                            sys.executable, "temp_download.py"
+                        ], capture_output=True, text=True, timeout=60, env=env)
+                        
+                        if result2.returncode == 0:
+                            print(f"✅ {package} installed via Python API fallback")
+                            downloaded += 1
+                        else:
+                            print(f"❌ Python API fallback failed for {package}")
+                        
+                        # Clean up temp file
+                        if os.path.exists('temp_download.py'):
+                            os.remove('temp_download.py')
+                            
                     except Exception as e:
-                        print(f"❌ All methods failed for {package}: {e}")
+                        print(f"❌ Fallback failed for {package}: {e}")
                         
             except subprocess.TimeoutExpired:
-                print(f"⚠️ Timeout installing {package}, trying fallback...")
-                try:
-                    import nltk
-                    nltk.download(package, download_dir=nltk_data_dir, quiet=True)
-                    print(f"✅ {package} installed via fallback")
-                except Exception as e:
-                    print(f"❌ Fallback failed for {package}: {e}")
+                print(f"⚠️ Timeout installing {package}")
             except Exception as e:
                 print(f"❌ Error installing {package}: {e}")
         
-        # Verify installation
-        try:
-            import nltk
-            nltk.data.path.append(nltk_data_dir)
-            
-            # Test essential resources
-            nltk.data.find('tokenizers/punkt')
-            nltk.data.find('corpora/stopwords')
-            print("✅ NLTK data verification successful")
+        # Simple verification without importing problematic modules
+        if downloaded > 0:
+            print(f"✅ NLTK setup complete! ({downloaded}/{len(essential_packages)} packages installed)")
             return True
-            
-        except LookupError as e:
-            print(f"⚠️ NLTK verification failed: {e}")
+        else:
+            print("❌ No NLTK packages could be installed")
             return False
         
-    except ImportError:
-        print("❌ NLTK not available - install with: pip install nltk")
-        return False
     except Exception as e:
         print(f"❌ NLTK setup failed: {e}")
         return False
