@@ -31,7 +31,10 @@ class ResponseTemplates:
     def get_template(self, template_name: str, language: str = "english", **kwargs) -> str:
         """Get a formatted template response."""
         if template_name in self.templates:
-            return self.templates[template_name](language, **kwargs)
+            result = self.templates[template_name](language, **kwargs)
+            if result is None:  # None means use database search instead
+                return None
+            return result
         return self._create_generic_template(language, **kwargs)
     
     def _create_enrollment_template(self, language: str = "english", **kwargs) -> str:
@@ -815,13 +818,9 @@ class ResponseTemplates:
             return "Thank you very much! 😊 I'm TOMAS, the chatbot representative of Tomas SM. Bautista Elementary School. How can I help you today?"
     
     def _create_staff_template(self, language: str = "english", **kwargs) -> str:
-        """Create staff information response template."""
-        if language.lower() in ['tagalog', 'filipino']:
-            return "Ang aming paaralan ay pinamumunuan ng aming principal at sinusuportahan ng mga kwalipikadong guro at staff. Para sa tiyak na impormasyon tungkol sa mga guro at head ng paaralan, maaari kayong pumunta sa school office o tumawag sa the school office."
-        elif language.lower() in ['aklanon', 'akl']:
-            return "Ang amon eskuelahan ginapamunuan sang amon principal kag ginasuportahan sang mga kwalipikado nga mga maestro kag staff. Para sa tiyak nga impormasyon parte sa mga maestro kag head sang eskuelahan, makadto kamo sa school office ukon tumawag sa the school office."
-        else:
-            return "Our school is led by our principal and supported by qualified teachers and staff. For specific information about our teachers and school head, please contact our school office at the school office."
+        """Create staff information response template - now uses database search instead of hardcoded responses."""
+        # Return None to force database search instead of hardcoded response
+        return None
     
     def _create_generic_template(self, language: str = "english", **kwargs) -> str:
         """Create a generic structured template."""

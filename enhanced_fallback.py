@@ -179,6 +179,7 @@ class EnhancedFallbackHandler:
             'intent.greeting_formal': 'greeting',
             'greeting_casual': 'greeting',
             'intent.greeting_casual': 'greeting',
+            'off_topic_inquiry': 'off_topic',
             'non_existent_inquiry': 'non_existent',
             'unknown': 'general'
         }
@@ -187,6 +188,24 @@ class EnhancedFallbackHandler:
     def _simple_intent_analysis(self, query: str) -> Dict:
         """Simple keyword-based intent detection as fallback."""
         query_lower = query.lower()
+        
+        # Off-topic queries (highest priority)
+        off_topic_keywords = [
+            # Weather
+            'weather', 'rain', 'sunny', 'cloudy', 'temperature', 'forecast', 'umulan', 'init', 'lamig',
+            # Sports
+            'basketball', 'football', 'soccer', 'sports', 'game', 'team', 'player', 'championship',
+            # Politics
+            'president', 'election', 'vote', 'government', 'politics', 'mayor', 'governor',
+            # Entertainment
+            'movie', 'music', 'song', 'actor', 'actress', 'celebrity', 'tv show', 'netflix',
+            # Technology
+            'computer', 'phone', 'internet', 'wifi', 'software', 'app', 'website',
+            # General knowledge
+            'history', 'science', 'math', 'recipe', 'cooking', 'travel', 'vacation'
+        ]
+        if any(keyword in query_lower for keyword in off_topic_keywords):
+            return {'intent': 'off_topic_inquiry', 'confidence': 0.9, 'category': 'off_topic'}
         
         # Check for non-existence indicators first (higher priority) - be more specific
         non_existence_words = ['doesn\'t exist', 'does not exist', 'don\'t exist', 'not exist', 'doesn\'t work', 'not real', 'fake', 'fictional', 'imaginary', 'made up', 'wala ba', 'way ba']
@@ -319,6 +338,30 @@ class EnhancedFallbackHandler:
                 return f"{tone_prefix}Para sa enrollment at admission, pumunta sa admin office o tumawag sa (123) 456-7890."
             else:
                 return f"{tone_prefix}For enrollment and admission information, please visit the admin office or call (123) 456-7890."
+        
+        elif intent == 'off_topic_inquiry':
+            # Handle completely off-topic queries
+            if language.startswith('akl'):
+                return (
+                    f"{tone_prefix}Pasensya, pero ako isa ka school assistant para sa Tomas SM. Bautista Elementary School. "
+                    "Indi ko matubag ang mga pamangkot nga wala sa school. "
+                    "Kon may pamangkot kamo parte sa school, enrollment, teachers, ukon school activities, "
+                    "pwede ko kamo matabangan. Ano ang gusto nyo mahibaluan parte sa amon school?"
+                )
+            elif language.startswith('tl'):
+                return (
+                    f"{tone_prefix}Pasensya na po, pero ako ay school assistant para sa Tomas SM. Bautista Elementary School. "
+                    "Hindi ko masasagot ang mga tanong na hindi tungkol sa school. "
+                    "Kung may tanong kayo tungkol sa school, enrollment, mga guro, o school activities, "
+                    "makakatulong ako sa inyo. Ano ang gusto ninyong malaman tungkol sa aming school?"
+                )
+            else:
+                return (
+                    f"{tone_prefix}I'm sorry, but I'm a school assistant for Tomas SM. Bautista Elementary School. "
+                    "I can't answer questions that aren't related to our school. "
+                    "If you have questions about our school, enrollment, teachers, or school activities, "
+                    "I'd be happy to help you. What would you like to know about our school?"
+                )
         
         elif intent == 'non_existent_inquiry':
             # Handle queries about non-existent things

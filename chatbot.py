@@ -260,10 +260,23 @@ class ResponseCache:
             context_str = f"|ctx:{context.get('language', '')}|tone:{context.get('tone', '')}|intent:{context.get('intent', '')}"
         
         # Add query length and first few characters to make keys more unique
-        query_signature = f"{len(normalized_query)}:{normalized_query[:20]}"
+        query_signature = f"{len(normalized_query)}:{normalized_query[:30]}"
+        
+        # Add key terms from query to make it more specific
+        key_terms = []
+        if "baitang" in normalized_query or "grade" in normalized_query or "grado" in normalized_query:
+            key_terms.append("GRADE_QUERY")
+        if "batas" in normalized_query or "rules" in normalized_query or "id" in normalized_query:
+            key_terms.append("RULES_QUERY")
+        if "sino" in normalized_query or "who" in normalized_query or "teacher" in normalized_query:
+            key_terms.append("PERSON_QUERY")
+        if "activities" in normalized_query or "buwan ng wika" in normalized_query:
+            key_terms.append("ACTIVITIES_QUERY")
+        
+        key_terms_str = "|".join(key_terms) if key_terms else "GENERAL_QUERY"
         
         # Create hash with more unique components
-        key_string = f"{query_signature}{context_str}"
+        key_string = f"{query_signature}|{key_terms_str}{context_str}"
         cache_key = hashlib.md5(key_string.encode()).hexdigest()
         
         return cache_key
@@ -335,7 +348,7 @@ class ResponseCache:
                 if key in self.access_times:
                     del self.access_times[key]
                 logger.info(f"🗑️ Cache entry invalidated for query: {query[:30]}...")
-
+    
     def get_stats(self):
         """Get cache statistics."""
         with self.lock:
@@ -582,16 +595,33 @@ class ChatBot:
         response_lower = cached_response.lower()
         
         # Check for obvious mismatches
-        if "baitang" in query_lower or "grade" in query_lower:
+        if "baitang" in query_lower or "grade" in query_lower or "grado" in query_lower:
             # Query is about grade levels
-            if "buwan ng wika" in response_lower or "nutrition month" in response_lower or "scout" in response_lower:
-                # Response is about school activities - mismatch
+            if any(term in response_lower for term in ["buwan ng wika", "nutrition month", "scout", "kilala", "taong iyon", "staff", "person"]):
+                # Response is about school activities or unknown person - mismatch
                 return False
         
         if "activities" in query_lower or "buwan ng wika" in query_lower:
             # Query is about activities
             if "kindergarten" in response_lower and "grade" in response_lower and "activities" not in response_lower:
                 # Response is about grade levels - mismatch
+                return False
+        
+        # Check for person/staff queries vs non-person responses
+        if any(term in query_lower for term in ["sino", "who", "teacher", "principal", "staff", "guro"]):
+            # Query is about people
+            if any(term in response_lower for term in ["kilala", "taong iyon", "don't know", "hindi ko kilala"]):
+                # Response is about not knowing someone - this might be appropriate
+                pass
+            elif any(term in response_lower for term in ["grade", "baitang", "grado", "kindergarten"]):
+                # Response is about grade levels - mismatch
+                return False
+        
+        # Check for ID/rules queries vs person responses
+        if any(term in query_lower for term in ["batas", "rules", "id", "pagsuot", "wearing"]):
+            # Query is about rules/ID
+            if any(term in response_lower for term in ["kilala", "taong iyon", "don't know", "hindi ko kilala"]):
+                # Response is about not knowing someone - mismatch
                 return False
         
         # If no obvious mismatch, consider it appropriate
@@ -679,11 +709,11 @@ class ChatBot:
         if lang == "tl":
             # Add name context for Tagalog as well
             name_context = f" Ang kausap mo ay si {user_name}." if user_name else ""
-            return f"Ikaw si TOMAS, ang mabait at masayang digital assistant ng Tomas SM. Bautista Elementary School! 😊 {time_context}{name_context} Ang inyong personalidad ay mainit, masaya, at mapagkakatiwalaan - tulad ng mabait na staff ng paaralan na talagang nagmamalasakit sa mga estudyante at pamilya. Magbigay ng tumpak at kapaki-pakinabang na impormasyon tungkol sa paaralan sa natural at makakausap na paraan. Maging masigla tungkol sa paaralan at ipakita ang tunay na pagnanais na tumulong! Gamitin ang natural na wika, paminsan-minsang sigla, at mga mababait na ekspresyon. Ngunit, magbahagi lamang ng impormasyon base sa context na ibinigay - huwag kailanman mag-imbento ng mga detalye, oras, o pamamaraan. Kung wala kang tiyak na impormasyon, pakiusap na makipag-ugnayan sa school office para sa kumpletong detalye. Tandaan ang mga pangalan mula sa conversation history at gawing personal ang inyong mga tugon kung angkop. Gawing bawat pakikipag-ugnayan ay pakiramdam na tao at mapagmalasakit, hindi robot!"
+            return f"Ikaw si TOMAS, ang mabait at masayang digital assistant ng Tomas SM. Bautista Elementary School! 😊 {time_context}{name_context} Ang inyong personalidad ay mainit, masaya, at mapagkakatiwalaan - tulad ng mabait na staff ng paaralan na talagang nagmamalasakit sa mga estudyante at pamilya. Magbigay ng tumpak at kapaki-pakinabang na impormasyon tungkol sa paaralan sa natural at makakausap na paraan. Maging masigla tungkol sa paaralan at ipakita ang tunay na pagnanais na tumulong! Gamitin ang natural na wika, paminsan-minsang sigla, at mga mababait na ekspresyon. KAPANSIN-PANSIN: Kung may context na ibinigay sa iyo, GAMITIN MO ITO bilang basehan ng inyong sagot. Maging tumpak sa mga detalye - kung ang context ay nagsasabing 'nine teachers' o '9 teachers', sabihin mo rin na 'siyam na guro' o '9 na guro'. Maaari kang magdagdag ng kaunting impormasyon o paliwanag, ngunit huwag baguhin ang mga pangunahing katotohanan. Huwag sabihin na wala kang impormasyon kung may context na ibinigay. Kung walang context na ibinigay, saka mo lang sabihin na makipag-ugnayan sa school office. Tandaan ang mga pangalan mula sa conversation history at gawing personal ang inyong mga tugon kung angkop. Gawing bawat pakikipag-ugnayan ay pakiramdam na tao at mapagmalasakit, hindi robot!"
         else:  # Default to English
             # Add name context if available
             name_context = f" The person you're talking to is named {user_name}." if user_name else ""
-            return f"You are TOMAS, the friendly and helpful digital assistant for Tomas SM. Bautista Elementary School! 😊 {time_context}{name_context} Your personality is warm, cheerful, and approachable - like a helpful school staff member who genuinely cares about students and families. Provide accurate and helpful information about the school in a conversational, natural way. Be enthusiastic about the school and show genuine interest in helping! Use natural language patterns, occasional enthusiasm, and friendly expressions. However, only share information based on the context provided - never make up details, times, or procedures. If you don't have specific information, kindly direct them to contact the school office for complete details. Remember names from conversation history and personalize your responses when appropriate. Make every interaction feel human and caring, not robotic!"
+            return f"You are TOMAS, the friendly and helpful digital assistant for Tomas SM. Bautista Elementary School! 😊 {time_context}{name_context} Your personality is warm, cheerful, and approachable - like a helpful school staff member who genuinely cares about students and families. Provide accurate and helpful information about the school in a conversational, natural way. Be enthusiastic about the school and show genuine interest in helping! Use natural language patterns, occasional enthusiasm, and friendly expressions. IMPORTANT: If context is provided to you, USE IT as the basis for your answer. Be accurate with details - if the context says 'nine teachers' or '9 teachers', say exactly that. You can add some additional information or explanation, but don't change the core facts. Do NOT say you don't have information if context has been provided. Only direct them to contact the school office if NO context was provided. Remember names from conversation history and personalize your responses when appropriate. Make every interaction feel human and caring, not robotic!"
 
     async def get_greeting_async(self, lang: str = "en", user_timezone: str = None, intent: Intent = None, user_context: Dict = None) -> str:
         """Enhanced async greeting generation with dynamic AI-powered personalization"""
@@ -2727,26 +2757,72 @@ class ChatBot:
         return header + staff_list + footer
 
     async def enhanced_search_supabase(self, query: str) -> str:
-        """Enhanced search strategy with performance optimization and timeout handling."""
+        """Enhanced search strategy that searches BOTH database and summarized text."""
         try:
             # 🚨 PERFORMANCE FIX: Increased timeout and added retry logic
             for attempt in range(3):  # Max 3 attempts
                 try:
                     return await asyncio.wait_for(
-                        self._enhanced_search_supabase_internal(query),
+                        self._enhanced_search_both_sources(query),
                         timeout=25.0  # 🚀 INCREASED: from 15.0 to 25.0 seconds for high load
                     )
                 except asyncio.TimeoutError:
                     if attempt < 2:  # Don't log on final attempt
-                        logger.warning(f"⏰ Database search timeout on attempt {attempt + 1}, retrying...")
+                        logger.warning(f"⏰ Search timeout on attempt {attempt + 1}, retrying...")
                         await asyncio.sleep(1.0)  # Wait before retry
                         continue
                     else:
-                        logger.error(f"⏰ Database search timed out after 15 seconds and 3 attempts for query: '{query[:50]}...'")
+                        logger.error(f"⏰ Search timed out after 25 seconds and 3 attempts for query: '{query[:50]}...'")
                         return "Search timed out after multiple attempts. Please try a simpler question."
         except Exception as e:
-            logger.error(f"❌ Database search failed: {e}")
-            return "Database search failed. Please try again."
+            logger.error(f"❌ Search failed: {e}")
+            return "Search failed. Please try again."
+
+    async def _enhanced_search_both_sources(self, query: str) -> str:
+        """Search both database and summarized text, returning the best result."""
+        try:
+            # Search both sources in parallel
+            db_task = asyncio.create_task(self._enhanced_search_supabase_internal(query))
+            summary_task = asyncio.create_task(self._search_summarized_text(query))
+            
+            # Wait for both results
+            db_result, summary_result = await asyncio.gather(db_task, summary_task, return_exceptions=True)
+            
+            # Handle exceptions
+            if isinstance(db_result, Exception):
+                logger.warning(f"Database search failed: {db_result}")
+                db_result = ""
+            if isinstance(summary_result, Exception):
+                logger.warning(f"Summarized text search failed: {summary_result}")
+                summary_result = ""
+            
+            # Prioritize summarized text if available, otherwise use database result
+            if summary_result and summary_result.strip():
+                logger.info("✅ Using summarized text result")
+                return summary_result
+            elif db_result and db_result.strip():
+                logger.info("✅ Using database result")
+                return db_result
+            else:
+                logger.info("❌ No results found in either source")
+                return ""
+                
+        except Exception as e:
+            logger.error(f"Error in dual source search: {e}")
+            # Fallback to database search only
+            return await self._enhanced_search_supabase_internal(query)
+
+    async def _search_summarized_text(self, query: str) -> str:
+        """Search summarized text and return relevant snippet."""
+        try:
+            summarized_text = await self.fetch_summarized_file()
+            if summarized_text:
+                snippet = await self.extract_snippet(summarized_text, query)
+                return snippet if snippet else ""
+            return ""
+        except Exception as e:
+            logger.warning(f"Summarized text search failed: {e}")
+            return ""
 
     async def _enhanced_search_supabase_internal(self, query: str) -> str:
         """Internal enhanced search strategy prioritizing full-text search via search_tsv."""
@@ -3232,7 +3308,7 @@ class ChatBot:
         # 🚨 CHECK FOR NON-EXISTENT STAFF MENTIONED
         # First check for specific fictional staff roles
         fictional_staff_patterns = [
-            "guidance counselor", "school counselor", "librarian", "nurse", "security guard"
+            "guidance counselor", "school counselor", "librarian", "nurse"
         ]
         
         # Special handling: Allow "guidance office" but block "guidance counselor"
@@ -3272,6 +3348,15 @@ class ChatBot:
             logger.warning(f"🚨 HALLUCINATION DETECTED: Mentioned non-existent counselor")
             return self._get_safe_response_for_unknown_person(lang)
         
+        # Check for security guard mentions - allow if it mentions Barangay Tanod cooperation
+        if "security guard" in response_lower:
+            if "barangay tanod" in response_lower or "cooperation" in response_lower:
+                # This is legitimate - security through Barangay Tanod cooperation
+                pass
+            else:
+                logger.warning(f"🚨 HALLUCINATION DETECTED: Mentioned non-existent security guard")
+            return self._get_safe_response_for_unknown_person(lang)
+        
         # Then check for unknown staff names - BUT ONLY if response specifically mentions a name with title
         # Don't trigger on generic mentions of "teacher" or general office references
         words = response_lower.split()
@@ -3293,6 +3378,26 @@ class ChatBot:
         else:
             return "I don't have information about that person. For staff information, please contact the school office."
     
+    def _is_factual_query(self, query: str) -> bool:
+        """Check if query is asking for factual information that should come directly from database."""
+        query_lower = query.lower()
+        
+        # Factual query patterns
+        factual_patterns = [
+            # Count/quantity queries
+            "ilan", "how many", "how much", "number of", "count",
+            # Specific information queries
+            "what is", "ano ang", "what are", "ano ang mga",
+            # Location queries
+            "where is", "saan ang", "location", "address",
+            # Time queries
+            "when is", "kailan", "what time", "anong oras",
+            # Staff/people queries
+            "who is", "sino ang", "who are", "sino-sino ang"
+        ]
+        
+        return any(pattern in query_lower for pattern in factual_patterns)
+
     def _get_safe_school_appropriate_response(self, query: str, lang: str) -> str:
         """Generate safe, contextually appropriate response for school setting."""
         query_lower = query.lower()
@@ -3962,11 +4067,12 @@ class ChatBot:
                 return ""
             
             # 🎯 STAFF QUERY PRIORITY: Check if this is a staff-related query
-            staff_keywords = ["head", "teacher", "principal", "guidance", "nurse", "secretary", "director", "admin"]
+            staff_keywords = ["head", "teacher", "principal", "guidance", "nurse", "secretary", "director", "admin", "guro", "teachers"]
             is_staff_query = any(word in staff_keywords for word in search_words)
             
             if is_staff_query:
                 logger.info("🎯 Detected staff query - prioritizing exact staff matches")
+                
                 
                 # For staff queries, prioritize exact matches in keywords field first
                 staff_terms = ["head teacher", "principal", "guidance", "nurse", "secretary"]
@@ -4022,7 +4128,7 @@ class ChatBot:
                             # Fallback to direct search_tsv query
                             return connection.table("chatbot_prompts") \
                                 .select("keywords, response") \
-                                .text_search('search_tsv', search_word) \
+                                    .text_search('search_tsv', search_word) \
                                 .execute()
                     
                     result = await self._execute_supabase_query(query, 2.0, f"full-text search for {term}")
@@ -4054,8 +4160,26 @@ class ChatBot:
                     
                     if result and result.data:
                         logger.info(f"✅ Full-text search succeeded for '{term}' with {len(result.data)} results")
-                        # Return the best match
+                        
+                        # 🔍 DEBUG: Log all results for teacher queries
+                        if any(word in ["teacher", "teachers", "guro", "guro"] for word in search_words):
+                            logger.info(f"🔍 All teacher search results:")
+                            for i, item in enumerate(result.data):
+                                logger.info(f"   Result {i+1}: {item['keywords']} -> {item['response'][:100]}...")
+                        
+                        # 🎯 FIX: For teacher count queries, prioritize entries with specific numbers
+                        if any(word in ["teacher", "teachers", "guro", "guro"] for word in search_words):
+                            # Look for entries that mention specific numbers of teachers
+                            for item in result.data:
+                                response_lower = item['response'].lower()
+                                if any(num in response_lower for num in ["9", "nine", "9 teachers", "nine teachers"]):
+                                    logger.info(f"🎯 Found specific teacher count entry: {item['response'][:100]}...")
+                                    formatted_result = f"Q: {item['keywords']}\nA: {item['response']}"
+                                    return formatted_result
+                        
+                        # Return the best match (first result)
                         best_match = result.data[0]
+                        logger.info(f"🔍 Using first result: {best_match['keywords']} -> {best_match['response'][:100]}...")
                         formatted_result = f"Q: {best_match['keywords']}\nA: {best_match['response']}"
                         return formatted_result
                         
@@ -4313,44 +4437,63 @@ class ChatBot:
 
     async def extract_snippet(self, text: str, query: str, window: int = 200, threshold: int = 75) -> str:
         """
-        Token-efficient snippet extraction.
+        Enhanced snippet extraction with better keyword matching.
         """
         if not text or not query:
             return ""
             
         lines = text.splitlines()
+        query_lower = query.lower()
         
         # Strategy 1: Exact phrase matching (most efficient)
-        query_lower = query.lower()
         for i, line in enumerate(lines):
             if query_lower in line.lower():
-                logger.info(f"🎯 Exact phrase match found")
+                logger.info(f"🎯 Exact phrase match found in summarized text")
                 start = max(0, text.find(line) - window)
                 end = min(len(text), start + len(line) + (2 * window))
                 return text[start:end].strip()
         
-        # Strategy 2: Name matching only (reduced complexity)
+        # Strategy 2: Keyword matching - extract key terms from query
         import re
-        names = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', query)
-        if names:
-            name = names[0]  # Only check first name to save processing
+        # Remove common words and extract meaningful terms
+        stop_words = {"the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "is", "are", "was", "were", "be", "been", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "can", "ang", "sa", "ng", "na", "ay", "si", "sino", "ano", "ilan", "kailan", "saan", "paano"}
+        query_words = [word.strip() for word in re.findall(r'\b\w+\b', query_lower) if word not in stop_words and len(word) > 2]
+        
+        # Strategy 3: Multi-keyword matching
+        if query_words:
             for line in lines:
-                if name.lower() in line.lower():
-                    logger.info(f"🎯 Name match found for '{name}'")
+                line_lower = line.lower()
+                # Check if multiple keywords from query appear in the line
+                matches = sum(1 for word in query_words if word in line_lower)
+                if matches >= 2 or (matches >= 1 and len(query_words) == 1):
+                    logger.info(f"🎯 Keyword match found in summarized text: {matches}/{len(query_words)} keywords")
                     start = max(0, text.find(line) - window)
                     end = min(len(text), start + len(line) + (2 * window))
                     return text[start:end].strip()
         
-        # Strategy 3: Single fuzzy match (simplified)
-        best_match, score, idx = process.extractOne(query, lines, scorer=fuzz.partial_ratio)
+        # Strategy 4: Name matching
+        names = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', query)
+        if names:
+            name = names[0]
+            for line in lines:
+                if name.lower() in line.lower():
+                    logger.info(f"🎯 Name match found in summarized text for '{name}'")
+                    start = max(0, text.find(line) - window)
+                    end = min(len(text), start + len(line) + (2 * window))
+                    return text[start:end].strip()
         
-        if best_match and score >= threshold:
-            logger.info(f"🎯 Fuzzy match found (score: {score})")
-            start = max(0, text.find(best_match) - window)
-            end = min(len(text), start + len(best_match) + (2 * window))
-            return text[start:end].strip()
+        # Strategy 5: Fuzzy match (fallback)
+        try:
+            best_match, score, idx = process.extractOne(query, lines, scorer=fuzz.partial_ratio)
+            if best_match and score >= threshold:
+                logger.info(f"🎯 Fuzzy match found in summarized text (score: {score})")
+                start = max(0, text.find(best_match) - window)
+                end = min(len(text), start + len(best_match) + (2 * window))
+                return text[start:end].strip()
+        except Exception as e:
+            logger.warning(f"Fuzzy matching failed: {e}")
         
-        logger.info(f"⚠️ No match found in summarized text")
+        logger.info(f"⚠️ No match found in summarized text for query: '{query}'")
         return ""
 
     def _analyze_human_request_intent(self, query: str) -> dict:
@@ -4883,8 +5026,11 @@ class ChatBot:
                 intent = await enhanced_accuracy_system.analyze_query_intent(query)
                 if intent.primary_intent in enhanced_accuracy_system.specific_responses:
                     specific_response = enhanced_accuracy_system.specific_responses[intent.primary_intent]
-                    logger.info(f"🎯 Quick response for {intent.primary_intent}")
-                    return specific_response
+                    if specific_response is not None:  # Only return if not None (None means use database search)
+                        logger.info(f"🎯 Quick response for {intent.primary_intent}")
+                        return specific_response
+                    else:
+                        logger.info(f"🎯 {intent.primary_intent} set to use database search instead of quick response")
             except Exception as e:
                 logger.warning(f"Enhanced accuracy quick check failed: {e}")
 
@@ -5063,6 +5209,7 @@ class ChatBot:
                 
                 # 🛡️ CACHE VALIDATION: Check if cached response is appropriate for the query
                 if self._is_cache_response_appropriate(query, cached_response):
+                    logger.info(f"✅ Cache response appropriate for query: '{query[:50]}...' -> '{cached_response[:50]}...'")
                     # 🧠 ENHANCED CONVERSATION FLOW V2: Process conversation turn with advanced flow handling
                     has_conversation_history = bool(conversation_history and len(conversation_history) > 0)
                     has_conversation_keywords = any(word in query.lower() for word in ["enroll", "school", "deadline", "thank", "documents", "when", "what", "how"])
@@ -5085,11 +5232,13 @@ class ChatBot:
                         except Exception as e:
                             logger.warning(f"Enhanced conversation flow v2 failed: {e}")
                     
-                    return cached_response
-                else:
-                    logger.warning(f"🚨 Cache response inappropriate for query, invalidating cache")
-                    # Invalidate the cache entry
-                    self.response_cache.invalidate(query, cache_context)
+                return cached_response
+            else:
+                logger.warning(f"🚨 Cache response inappropriate for query, invalidating cache")
+                logger.warning(f"   Query: '{query[:50]}...'")
+                logger.warning(f"   Cached: '{cached_response[:50]}...'")
+                # Invalidate the cache entry
+                self.response_cache.invalidate(query, cache_context)
         except Exception as e:
             logger.warning(f"Cache retrieval failed: {e}, continuing without cache")
 
@@ -5626,13 +5775,13 @@ class ChatBot:
             # Try intelligent response generation (skip for safety queries)
             if not self._should_skip_conversation_flow(query):
                 intelligent_response = await self._generate_intelligent_response(
-                    intent=nlu_result.intent.value,
-                    user_id=user_id,
-                    query=query,
-                    extracted_entities=entities_for_generator,
-                    conversation_history=conversation_history,
-                    sentiment_result=sentiment_result
-                )
+                intent=nlu_result.intent.value,
+                user_id=user_id,
+                query=query,
+                extracted_entities=entities_for_generator,
+                conversation_history=conversation_history,
+                sentiment_result=sentiment_result
+            )
             else:
                 logger.info("🚨 Safety query detected - skipping intelligent response generation for database search")
                 intelligent_response = None
@@ -5702,40 +5851,28 @@ class ChatBot:
             logger.warning(f"NLU processing failed, falling back to legacy system: {e}")
         
         # 🎯 FIX: ALL queries should search database first, then use structured response if needed
-        logger.info("🔍 All queries now use database search - searching database directly")
+        logger.info("🔍 All queries now use database search - searching both database and summarized text")
         try:
-            # Search Supabase database
-            supabase_result = await self.enhanced_search_supabase(query)
+            # Search both database and summarized text
+            search_result = await self.enhanced_search_supabase(query)
             
-            # Search summarized text
-            summarized_text = await self.fetch_summarized_file()
-            snippet = None
-            if summarized_text:
-                snippet = await self.extract_snippet(summarized_text, query)
-            
-            # Build context
-            full_context = ""
-            if supabase_result:
-                full_context += f"Database Context:\n{supabase_result}\n\n"
-            if snippet:
-                full_context += f"Summary Context:\n{snippet}\n\n"
-            
-            if full_context:
-                logger.info("✅ Found context in database - using AI with context")
-                # Use AI with database context
+            if search_result:
+                logger.info("✅ Found context in search results")
+                logger.info(f"🔍 Search result: {search_result[:200]}...")
+                
+                # Use AI with search result for all queries (including factual ones)
                 try:
-                    # Pass database content as fallback in case AI fails
-                    fallback_content = supabase_result if supabase_result else snippet
-                    response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone, fallback_content)
+                    full_context = f"Context:\n{search_result}\n\n"
+                    response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone, search_result)
                     return self._validate_response_against_facts(response, query, lang)
                 except Exception as ai_error:
                     logger.warning(f"AI processing failed: {ai_error}")
-                    # If AI fails but we have database content, return the database content directly
-                    logger.info("🔄 AI failed, returning database content directly")
-                    return supabase_result if supabase_result else snippet
+                    # If AI fails but we have search result, return it directly
+                    logger.info("🔄 AI failed, returning search result directly")
+                    return search_result
             else:
-                logger.info("❌ No context found in database - continuing with fallback")
-                # Continue with original fallback logic if no database context found
+                logger.info("❌ No context found in search results - continuing with fallback")
+                # Continue with original fallback logic if no search results found
                 
         except Exception as e:
             logger.warning(f"Direct database search failed: {e}")
@@ -5955,33 +6092,21 @@ class ChatBot:
             logger.info("📅 School holidays query detected - searching database directly")
             # Search database directly for school holidays queries
             try:
-                # Search Supabase database
-                supabase_result = await self.enhanced_search_supabase(query)
+                # Search both database and summarized text
+                search_result = await self.enhanced_search_supabase(query)
                 
-                # Search summarized text
-                summarized_text = await self.fetch_summarized_file()
-                snippet = None
-                if summarized_text:
-                    snippet = await self.extract_snippet(summarized_text, query)
-                
-                # Build context
-                full_context = ""
-                if supabase_result:
-                    full_context += f"Database Context:\n{supabase_result}\n\n"
-                if snippet:
-                    full_context += f"Summary Context:\n{snippet}\n\n"
-                
-                if full_context:
-                    logger.info("✅ Found school holidays context in database - using AI with context")
-                    # Use AI with database context
-                    response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone)
+                if search_result:
+                    logger.info("✅ Found school holidays context in search results")
+                    # Use AI with search result
+                    full_context = f"Context:\n{search_result}\n\n"
+                    response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone, search_result)
                     return self._validate_response_against_facts(response, query, lang)
                 else:
-                    logger.info("❌ No school holidays context found in database")
+                    logger.info("❌ No school holidays context found in search results")
                     return None  # Let it fall through to normal flow
                     
             except Exception as e:
-                logger.warning(f"Direct database search failed: {e}")
+                logger.warning(f"School holidays search failed: {e}")
                 return None  # Let it fall through to normal flow
         
         # Check for Kindergarten age requirement queries
@@ -5994,29 +6119,17 @@ class ChatBot:
             logger.info("👶 Kindergarten age query detected - searching database directly")
             # Search database directly for Kindergarten age queries
             try:
-                # Search Supabase database
-                supabase_result = await self.enhanced_search_supabase(query)
+                # Search both database and summarized text
+                search_result = await self.enhanced_search_supabase(query)
                 
-                # Search summarized text
-                summarized_text = await self.fetch_summarized_file()
-                snippet = None
-                if summarized_text:
-                    snippet = await self.extract_snippet(summarized_text, query)
-                
-                # Build context
-                full_context = ""
-                if supabase_result:
-                    full_context += f"Database Context:\n{supabase_result}\n\n"
-                if snippet:
-                    full_context += f"Summary Context:\n{snippet}\n\n"
-                
-                if full_context:
-                    logger.info("✅ Found Kindergarten age context in database - using AI with context")
-                    # Use AI with database context
-                    response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone)
+                if search_result:
+                    logger.info("✅ Found Kindergarten age context in search results")
+                    # Use AI with search result
+                    full_context = f"Context:\n{search_result}\n\n"
+                    response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone, search_result)
                     return self._validate_response_against_facts(response, query, lang)
                 else:
-                    logger.info("❌ No Kindergarten age context found in database")
+                    logger.info("❌ No Kindergarten age context found in search results")
                     return None  # Let it fall through to normal flow
                     
             except Exception as e:
@@ -6027,29 +6140,17 @@ class ChatBot:
             logger.info("🏫 Enrollment query detected - searching database directly")
             # Search database directly for enrollment queries
             try:
-                # Search Supabase database
-                supabase_result = await self.enhanced_search_supabase(query)
+                # Search both database and summarized text
+                search_result = await self.enhanced_search_supabase(query)
                 
-                # Search summarized text
-                summarized_text = await self.fetch_summarized_file()
-                snippet = None
-                if summarized_text:
-                    snippet = await self.extract_snippet(summarized_text, query)
-                
-                # Build context
-                full_context = ""
-                if supabase_result:
-                    full_context += f"Database Context:\n{supabase_result}\n\n"
-                if snippet:
-                    full_context += f"Summary Context:\n{snippet}\n\n"
-                
-                if full_context:
-                    logger.info("✅ Found enrollment context in database - using AI with context")
-                    # Use AI with database context
-                    response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone)
+                if search_result:
+                    logger.info("✅ Found enrollment context in search results")
+                    # Use AI with search result
+                    full_context = f"Context:\n{search_result}\n\n"
+                    response = await self.ask_groq(query, full_context, lang, conversation_history, user_timezone, search_result)
                     return self._validate_response_against_facts(response, query, lang)
                 else:
-                    logger.info("❌ No enrollment context found in database")
+                    logger.info("❌ No enrollment context found in search results")
                     return None  # Let it fall through to normal flow
                     
             except Exception as e:
@@ -6283,11 +6384,11 @@ class ChatBot:
                     supabase_prompts = None
         else:
         # 🚨 CRITICAL FIX: Add timeouts for major operations
-                try:
-                    summarized_text = await asyncio.wait_for(self.fetch_summarized_file(), timeout=3.0)
-                except asyncio.TimeoutError:
-                    logger.warning("⚠️ Summary file fetch timed out")
-                    summarized_text = None
+            try:
+                summarized_text = await asyncio.wait_for(self.fetch_summarized_file(), timeout=3.0)
+            except asyncio.TimeoutError:
+                logger.warning("⚠️ Summary file fetch timed out")
+                summarized_text = None
         
         try:
             supabase_prompts = await asyncio.wait_for(self.enhanced_search_supabase(query), timeout=25.0)  # 🚀 INCREASED: timeout for database operations

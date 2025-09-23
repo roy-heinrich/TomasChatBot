@@ -147,7 +147,7 @@ class EnhancedAccuracySystem:
             "enrollment": "To enroll your child, you'll need to bring the following documents: birth certificate, report card, and 2x2 ID photos. Visit our school office for the complete enrollment process.",
             "fees": "For information about school fees and tuition, please contact our school office at the school office or visit us in person for detailed fee structure.",
             "schedule": "School hours are from 7:00 AM to 5:00 PM, Monday to Friday. Classes start at 7:30 AM and end at 4:30 PM.",
-            "staff": "Our school is led by our principal and supported by qualified teachers and staff. For specific staff information, please contact our school office."
+            "staff": None  # Force database search instead of hardcoded response
         }
         
         # Intents that should trigger database search instead of specific responses

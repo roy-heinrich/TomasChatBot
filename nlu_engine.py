@@ -286,6 +286,11 @@ class NLUEngine:
         if any(word in user_lower for word in schedule_words):
             return NLUResult(Intent.SCHEDULE_INQUIRY, 0.7, [])
         
+        # Priority 7.5: Safety inquiries (moved up to prevent misclassification)
+        safety_words = ["earthquake", "fire", "drill", "safety", "emergency", "disaster", "evacuation", "alarm", "protocol", "procedure", "preparedness", "drills"]
+        if any(word in user_lower for word in safety_words):
+            return NLUResult(Intent.SCHOOL_INFO, 0.8, [])
+        
         # Priority 8: Staff inquiries
         staff_words = ["teacher", "teachers", "staff", "principal", "head teacher", "school head", "head", "director", "administrator", "guro", "maestro", "faculty", "guidance", "counselor"]
         if any(word in user_lower for word in staff_words):
@@ -299,7 +304,10 @@ class NLUEngine:
             # School name and identification queries
             "school called", "school name", "name of school", "what is your school",
             "whats your school", "what's your school", "school's name", "name of your school",
-            "what is the school", "what school", "which school"
+            "what is the school", "what school", "which school",
+            # Grade level queries - HIGH PRIORITY to prevent misclassification as greetings
+            "grades", "grade levels", "what grades", "grade", "kindergarten", "elementary",
+            "what grade levels", "grade level", "levels", "what levels"
         ]
         if any(word in user_lower for word in school_words):
             return NLUResult(Intent.SCHOOL_INFO, 0.8, [])
