@@ -64,9 +64,40 @@ def download_nltk_data():
         print(f"❌ NLTK setup failed: {e}")
         return False
 
+def install_requirements():
+    """Install Python requirements"""
+    print("📦 Installing Python requirements...")
+    
+    try:
+        import subprocess
+        result = subprocess.run([
+            sys.executable, "-m", "pip", "install", "-r", "requirements.txt"
+        ], capture_output=True, text=True, timeout=300)
+        
+        if result.returncode == 0:
+            print("✅ Requirements installed successfully")
+            return True
+        else:
+            print(f"❌ Requirements installation failed: {result.stderr}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        print("❌ Requirements installation timed out")
+        return False
+    except Exception as e:
+        print(f"❌ Requirements installation error: {e}")
+        return False
+
 def main():
     """Main deployment function"""
     print("🚀 Starting Tomas Chatbot Deployment...")
+    
+    # Install requirements first
+    print("📦 Installing requirements...")
+    req_success = install_requirements()
+    
+    if not req_success:
+        print("⚠️ Requirements installation failed, but continuing with deployment...")
     
     # Download NLTK data
     nltk_success = download_nltk_data()
