@@ -80,8 +80,8 @@ def main():
     # Get port from environment or use default
     port = os.environ.get('PORT', '8000')
     
-    # Start uvicorn
-    cmd = f"uvicorn app:app --host 0.0.0.0 --port {port}"
+    # Start uvicorn using python -m
+    cmd = f"python -m uvicorn app:app --host 0.0.0.0 --port {port}"
     print(f"Running: {cmd}")
     
     try:

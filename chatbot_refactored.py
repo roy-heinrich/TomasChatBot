@@ -13,6 +13,7 @@ from core.database_search import DatabaseSearchEngine
 from core.language_detector import LanguageDetector
 from core.response_generator import ResponseGenerator
 from core.keyword_matcher import KeywordMatcher
+from core.conversation_memory import ConversationMemory
 
 # Import existing modules
 from nlu_engine import NLUEngine, Intent, NLUResult
@@ -50,6 +51,9 @@ class ChatBot:
         # Initialize NLP components
         self.nlu_engine = NLUEngine()
         self.entity_extractor = AdvancedEntityExtractor()
+        
+        # Initialize conversation memory
+        self.conversation_memory = ConversationMemory()
         
         logger.info("✅ ChatBot initialized with clean, modular architecture")
     
@@ -97,7 +101,7 @@ class ChatBot:
             entities = self.entity_extractor.extract_entities(query)
             logger.info(f"🔍 Extracted {len(entities)} entities")
             
-            # 2.5. Extract user and child names from conversation history
+            # 2.5. Enhanced memory system - extract user info and update memory
             user_name = ""
             child_name = ""
             if conversation_history:
@@ -105,6 +109,13 @@ class ChatBot:
                 child_name = self._extract_child_name(conversation_history)
                 if user_name:
                     logger.info(f"🔍 Extracted names: user='{user_name}', child='{child_name}'")
+            
+            # Update conversation memory
+            if session_id:
+                user_memory = self.conversation_memory.update_user_memory(
+                    session_id, user_name, query, conversation_history
+                )
+                logger.info(f"🧠 Updated memory for user: {user_memory.name}, topics: {list(user_memory.topics.keys())}")
             
             # 3. Perform database search FIRST to get context for Groq
             search_results = await self.database_search.search_prompts(query, limit=10)
@@ -114,17 +125,27 @@ class ChatBot:
             if search_results:
                 best_result = self.database_search.select_best_result(search_results, query)
             
-            # 5. Generate response using Groq with database context
+            # 5. Generate response using Groq with enhanced context
             if best_result:
                 logger.info("📚 Using database context for Groq response")
                 context = f"Q: {best_result['keywords']}\nA: {best_result['response']}"
             else:
                 logger.info("📝 No database context found, using general context")
-                # Special handling for name queries
-                if "name" in query.lower() and user_name:
-                    context = f"User's name is {user_name}. This is a personal question about remembering the user's name."
-                else:
-                    context = "General school information query"
+                context = "General school information query"
+            
+            # Add personalized memory context
+            if session_id:
+                memory_context = self.conversation_memory.get_conversation_context(session_id, user_name)
+                if memory_context:
+                    context += f"\n\nPersonal Context: {memory_context}"
+                    logger.info(f"🧠 Added memory context: {memory_context}")
+                
+                # Check if this is a greeting/returning user
+                if any(word in query.lower() for word in ["hi", "hello", "hey", "kumusta", "kamusta"]):
+                    personalized_greeting = self.conversation_memory.get_personalized_greeting(session_id, user_name)
+                    if personalized_greeting:
+                        context += f"\n\nPersonalized Greeting: {personalized_greeting}"
+                        logger.info(f"👋 Added personalized greeting: {personalized_greeting}")
             
             # Get NLU info for better context
             nlu_result = await self.nlu_engine.analyze_intent(query)
