@@ -5,9 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from supabase import create_client, Client
 from dotenv import load_dotenv
-from chatbot import ChatBot
+from chatbot_refactored import ChatBot
 from pydantic import BaseModel
-from utils import summarize_and_store
 
 load_dotenv()
 logger = logging.getLogger("chatbot")
@@ -175,56 +174,28 @@ async def chat_endpoint(data: ChatRequest):
         supabase_context = await fetch_supabase_context()
         logger.info("📊 Context fetched from Supabase")
 
-        # Ask ChatBot with the context, conversation history, timezone, and session ID
-        answer = await chatbot.answer(
+        # Ask ChatBot with the new refactored interface
+        chat_response = await chatbot.chat(
             query, 
-            context=supabase_context, 
             conversation_history=data.conversation_history,
             user_timezone=data.user_timezone,
             session_id=data.session_id
         )
         
-        # 🆕 NEW: Extract entities for frontend feedback
-        try:
-            extracted_entities = await chatbot._extract_entities_with_nlu(query)
-            entities_list = extracted_entities.get('entities', [])
-            # Convert to simple format for frontend
-            entities_for_frontend = []
-            for entity in entities_list:
-                entities_for_frontend.append({
-                    'entity_type': entity.entity_type,
-                    'value': entity.value,
-                    'confidence': entity.confidence
-                })
-        except Exception as e:
-            logger.warning(f"Entity extraction for frontend failed: {e}")
-            entities_for_frontend = []
+        # Log response details
+        logger.info(f"✅ Generated response: {chat_response.response[0][:50]}...")
+        logger.info(f"🔍 Full response length: {len(' '.join(chat_response.response))}")
+        logger.info(f"🔍 Full response content: '{' '.join(chat_response.response)}'")
         
-        logger.info(f"✅ Generated response: {answer[:50]}...")
-        logger.info(f"🔍 Full response length: {len(answer)}")
-        logger.info(f"🔍 Full response content: '{answer}'")
-        
-        # 📱 MESSAGE SPLITTING: Check if response was split into multiple messages
-        split_messages = getattr(chatbot, '_last_split_messages', None)
-        if split_messages and len(split_messages) > 1:
-            logger.info(f"📱 Response split into {len(split_messages)} separate messages")
-            return {
-                "response": split_messages,  # Return array of messages
-                "entities": entities_for_frontend,
-                "detected_language": getattr(chatbot, 'last_detected_language', 'en'),
-                "language_confidence": getattr(chatbot, 'last_language_confidence', 0.5),
-                "is_split": True,
-                "message_count": len(split_messages)
-            }
-        else:
-            return {
-                "response": answer,  # Return single message
-                "entities": entities_for_frontend,
-                "detected_language": getattr(chatbot, 'last_detected_language', 'en'),
-                "language_confidence": getattr(chatbot, 'last_language_confidence', 0.5),
-                "is_split": False,
-                "message_count": 1
-            }
+        # Return the clean ChatResponse format
+        return {
+            "response": chat_response.response,
+            "entities": chat_response.entities,
+            "detected_language": chat_response.detected_language,
+            "language_confidence": chat_response.language_confidence,
+            "is_split": chat_response.is_split,
+            "message_count": chat_response.message_count
+        }
     
     except Exception as e:
         logger.error(f"❌ Error in chat endpoint: {str(e)}")
@@ -253,27 +224,6 @@ async def clear_context():
 # Admin endpoints
 # -----------------------
 
-# Admin reload endpoint
-@app.post("/admin/reload")
-async def reload_sources():
-    try:
-        result = await summarize_and_store()
-        return JSONResponse(
-            content={
-                "success": True,
-                "message": "Reload complete",
-                "details": result
-            },
-            status_code=200
-        )
-    except Exception as e:
-        return JSONResponse(
-            content={
-                "success": False,
-                "message": f"Reload failed: {str(e)}"
-            },
-            status_code=500
-        )
 
 # 🚀 NEW: Admin logs endpoint
 @app.get("/admin/logs")

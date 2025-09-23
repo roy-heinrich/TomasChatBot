@@ -296,7 +296,31 @@ class NLUEngine:
         if any(word in user_lower for word in staff_words):
             return NLUResult(Intent.STAFF_INQUIRY, 0.7, [])
         
-        # Priority 9: School information - expanded patterns but lower priority than general_info
+        # Priority 9.5: Financial inquiries (moved up before school info to catch "school fees")
+        financial_patterns = [
+            "tuition", "fee", "fees", "payment", "cost", "price", "bayad", 
+            "magkano", "how much", "pricing", "scholarship", "financial aid",
+            "installment", "bayarin", "singil", "scholarship available"
+        ]
+        if any(pattern in user_lower for pattern in financial_patterns):
+            return NLUResult(Intent.FINANCIAL_INQUIRY, 0.8, [])
+        
+        # Priority 10: Location inquiries - moved up to catch "where is the school"
+        location_patterns = [
+            "where", "direction", "directions", "address", "location", "map",
+            "how to get", "how do i get", "saan", "paano pumunta", "nasaan",
+            "address ninyo", "located", "find you", "school located",
+            # Enhanced Tagalog patterns
+            "saan ang lokasyon", "saan ang paaralan", "lokasyon ng", "address ng",
+            "nasaan ang school", "saan makikita", "paano makarating",
+            # Enhanced Aklanon patterns  
+            "diin ang lokasyon", "diin ang paaralan", "diin nga", "asa ang",
+            "lokasyon sang", "diin makita", "paano maka-abot"
+        ]
+        if any(pattern in user_lower for pattern in location_patterns):
+            return NLUResult(Intent.LOCATION_INQUIRY, 0.8, [])
+        
+        # Priority 11: School information - expanded patterns but lower priority than location
         school_words = [
             "curriculum", "program", "subjects", "classes", "school hours",
             "looking for", "we need information", "help me understand",
@@ -312,16 +336,7 @@ class NLUEngine:
         if any(word in user_lower for word in school_words):
             return NLUResult(Intent.SCHOOL_INFO, 0.8, [])
         
-        # Priority 10.5: Financial inquiries (moved up before facilities for "scholarship available")
-        financial_patterns = [
-            "tuition", "fee", "fees", "payment", "cost", "price", "bayad", 
-            "magkano", "how much", "pricing", "scholarship", "financial aid",
-            "installment", "bayarin", "singil", "scholarship available"
-        ]
-        if any(pattern in user_lower for pattern in financial_patterns):
-            return NLUResult(Intent.FINANCIAL_INQUIRY, 0.8, [])
-        
-        # Priority 10: Facilities inquiries
+        # Priority 12: Facilities inquiries
         facilities_patterns = [
             "cafeteria", "canteen", "library", "gym", "gymnasium", "playground", 
             "computer lab", "science lab", "clinic", "office", "classroom",
@@ -331,7 +346,7 @@ class NLUEngine:
         if any(pattern in user_lower for pattern in facilities_patterns):
             return NLUResult(Intent.FACILITIES_INQUIRY, 0.7, [])
         
-        # Priority 11: General Info inquiries - Enhanced for multilingual
+        # Priority 13: General Info inquiries - Enhanced for multilingual
         general_info_patterns = [
             "about the school", "school overview", "mission", "vision", 
             "history", "background", "tell me about", "describe",
@@ -346,21 +361,6 @@ class NLUEngine:
         ]
         if any(pattern in user_lower for pattern in general_info_patterns):
             return NLUResult(Intent.GENERAL_INFO, 0.8, [])
-        
-        # Priority 13: Location inquiries - Enhanced for multilingual
-        location_patterns = [
-            "where", "direction", "directions", "address", "location", "map",
-            "how to get", "how do i get", "saan", "paano pumunta", "nasaan",
-            "address ninyo", "located", "find you", "school located",
-            # Enhanced Tagalog patterns
-            "saan ang lokasyon", "saan ang paaralan", "lokasyon ng", "address ng",
-            "nasaan ang school", "saan makikita", "paano makarating",
-            # Enhanced Aklanon patterns  
-            "diin ang lokasyon", "diin ang paaralan", "diin nga", "asa ang",
-            "lokasyon sang", "diin makita", "paano maka-abot"
-        ]
-        if any(pattern in user_lower for pattern in location_patterns):
-            return NLUResult(Intent.LOCATION_INQUIRY, 0.8, [])
         
         # Priority 14: Help requests
         help_patterns = [
