@@ -52,10 +52,7 @@ class LanguageDetector:
         """Map detected language to our language codes"""
         # Aklanon detection (priority) - Enhanced word list
         aklanon_words = [
-            "ngaean", "sin-o", "nahanumdom", "nga", "sang", "imo", "unga", "nga", "sang", 
-            "imo", "unga", "ngaean", "sin-o", "nahanumdom", "nga", "sang", "imo", "unga",
-            "ngaean", "sin-o", "nahanumdom", "nga", "sang", "imo", "unga", "nga", "sang",
-            "imo", "unga", "ngaean", "sin-o", "nahanumdom", "nga", "sang", "imo", "unga"
+            "ngaean", "sin-o", "nahanumdom", "nga", "sang", "imo", "unga"
         ]
         if any(word in text_lower for word in aklanon_words):
             return "akl"
@@ -66,7 +63,18 @@ class LanguageDetector:
             "ay", "ko", "mo", "niya", "namin", "ninyo", "nila", "ito", "iyan", "iyon",
             "dito", "doon", "kailan", "bakit", "paano", "saan", "alin", "kanino", "para"
         ]
-        if lang == "tl" or any(word in text_lower for word in tagalog_words):
+        
+        # English words that should override low-confidence Tagalog detection
+        english_words = [
+            "what", "where", "when", "why", "how", "who", "my", "name", "again", "the", "is", "are"
+        ]
+        
+        # If confidence is very low and contains English words, prefer English
+        if confidence < 0.3 and any(word in text_lower for word in english_words):
+            return "en"
+        
+        # If langid detected Tagalog with reasonable confidence OR contains Tagalog words
+        if (lang == "tl" and confidence > 0.4) or any(word in text_lower for word in tagalog_words):
             return "tl"
         
         # Default to English

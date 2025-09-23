@@ -59,12 +59,16 @@ class ChatBot:
             if msg.get("role") == "user":
                 content = msg.get("content", "").lower()
                 # Look for name introduction patterns
-                if "i am" in content or "ako si" in content or "ang pangalan ko" in content:
-                    # Extract name after introduction
+                if "i am" in content or "ako si" in content or "ang pangalan ko" in content or "hi i am" in content:
+                    # Extract name after introduction - improved pattern matching
                     parts = content.split()
                     for i, part in enumerate(parts):
                         if part in ["am", "si", "ko"] and i + 1 < len(parts):
-                            return parts[i + 1].title()
+                            name = parts[i + 1].title()
+                            # Clean up name (remove punctuation)
+                            name = ''.join(c for c in name if c.isalnum())
+                            if name and len(name) > 1:  # Valid name
+                                return name
         return ""
     
     def _extract_child_name(self, conversation_history: List[Dict]) -> str:
@@ -93,6 +97,15 @@ class ChatBot:
             entities = self.entity_extractor.extract_entities(query)
             logger.info(f"🔍 Extracted {len(entities)} entities")
             
+            # 2.5. Extract user and child names from conversation history
+            user_name = ""
+            child_name = ""
+            if conversation_history:
+                user_name = self._extract_user_name(conversation_history)
+                child_name = self._extract_child_name(conversation_history)
+                if user_name:
+                    logger.info(f"🔍 Extracted names: user='{user_name}', child='{child_name}'")
+            
             # 3. Perform database search FIRST to get context for Groq
             search_results = await self.database_search.search_prompts(query, limit=10)
             
@@ -107,7 +120,11 @@ class ChatBot:
                 context = f"Q: {best_result['keywords']}\nA: {best_result['response']}"
             else:
                 logger.info("📝 No database context found, using general context")
-                context = "General school information query"
+                # Special handling for name queries
+                if "name" in query.lower() and user_name:
+                    context = f"User's name is {user_name}. This is a personal question about remembering the user's name."
+                else:
+                    context = "General school information query"
             
             # Get NLU info for better context
             nlu_result = await self.nlu_engine.analyze_intent(query)
@@ -119,7 +136,7 @@ class ChatBot:
             
             # Generate response with Groq (professional, factual, humane, jolly, no roleplay)
             response_text = await self.response_generator.generate_response(
-                query, context, detected_lang, conversation_history, nlu_info
+                query, context, detected_lang, conversation_history, nlu_info, user_name
             )
             
             # 6. Split long responses if needed

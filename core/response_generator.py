@@ -58,13 +58,13 @@ class ResponseGenerator:
     
     async def generate_response(self, query: str, context: str, lang: str, 
                               conversation_history: List[Dict] = None, 
-                              nlu_info: Dict = None) -> str:
+                              nlu_info: Dict = None, user_name: str = "") -> str:
         """Generate response using Groq with proper language handling"""
         if not self.groq_client:
             return self._get_fallback_response(lang)
         
         try:
-            system_prompt = self.get_system_prompt(lang, "", nlu_info)
+            system_prompt = self.get_system_prompt(lang, user_name, nlu_info)
             messages = [{"role": "system", "content": system_prompt}]
             
             # Add conversation history if provided
