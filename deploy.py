@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""
+Deployment script for Tomas Chatbot
+Handles NLTK data download and starts the application
+"""
+
+import os
+import sys
+import subprocess
+import time
+
+def download_nltk_data():
+    """Download NLTK data with robust error handling"""
+    print("📥 Setting up NLTK data for deployment...")
+    
+    try:
+        import nltk
+        
+        # Set up NLTK data directory
+        nltk_data_dir = os.path.join(os.getcwd(), 'nltk_data')
+        os.makedirs(nltk_data_dir, exist_ok=True)
+        
+        # Add to NLTK data path
+        nltk.data.path.append(nltk_data_dir)
+        
+        # Resources to download
+        resources = [
+            'wordnet',
+            'punkt', 
+            'stopwords',
+            'averaged_perceptron_tagger'
+        ]
+        
+        downloaded = 0
+        for resource in resources:
+            try:
+                print(f"Checking {resource}...")
+                nltk.data.find(f'corpora/{resource}' if resource != 'punkt' else f'tokenizers/{resource}')
+                print(f"✅ {resource} already available")
+                downloaded += 1
+            except LookupError:
+                try:
+                    print(f"Downloading {resource}...")
+                    nltk.download(resource, download_dir=nltk_data_dir, quiet=True)
+                    print(f"✅ {resource} downloaded successfully")
+                    downloaded += 1
+                except Exception as e:
+                    print(f"⚠️ Failed to download {resource}: {e}")
+                    # Try default location
+                    try:
+                        nltk.download(resource, quiet=True)
+                        print(f"✅ {resource} downloaded to default location")
+                        downloaded += 1
+                    except Exception as e2:
+                        print(f"❌ Could not download {resource}: {e2}")
+        
+        print(f"🎉 NLTK setup complete! ({downloaded}/{len(resources)} resources available)")
+        return downloaded > 0
+        
+    except ImportError:
+        print("⚠️ NLTK not available")
+        return False
+    except Exception as e:
+        print(f"❌ NLTK setup failed: {e}")
+        return False
+
+def main():
+    """Main deployment function"""
+    print("🚀 Starting Tomas Chatbot Deployment...")
+    
+    # Download NLTK data
+    nltk_success = download_nltk_data()
+    
+    if not nltk_success:
+        print("⚠️ NLTK data download failed, but continuing with deployment...")
+    
+    # Start the application
+    print("🌐 Starting web server...")
+    
+    # Get port from environment or use default
+    port = os.environ.get('PORT', '8000')
+    
+    # Start uvicorn
+    cmd = f"uvicorn app:app --host 0.0.0.0 --port {port}"
+    print(f"Running: {cmd}")
+    
+    try:
+        os.system(cmd)
+    except KeyboardInterrupt:
+        print("\n🛑 Deployment stopped by user")
+    except Exception as e:
+        print(f"❌ Deployment failed: {e}")
+
+if __name__ == "__main__":
+    main()
