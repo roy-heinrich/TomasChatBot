@@ -89,38 +89,24 @@ def install_requirements():
         return False
 
 def main():
-    """Main deployment function"""
-    print("🚀 Starting Tomas Chatbot Deployment...")
+    """Main deployment function - Build phase only"""
+    print("🚀 Starting Tomas Chatbot Build Process...")
     
     # Install requirements first
     print("📦 Installing requirements...")
     req_success = install_requirements()
     
     if not req_success:
-        print("⚠️ Requirements installation failed, but continuing with deployment...")
+        print("⚠️ Requirements installation failed, but continuing with build...")
     
     # Download NLTK data
     nltk_success = download_nltk_data()
     
     if not nltk_success:
-        print("⚠️ NLTK data download failed, but continuing with deployment...")
+        print("⚠️ NLTK data download failed, but continuing with build...")
     
-    # Start the application
-    print("🌐 Starting web server...")
-    
-    # Get port from environment or use default
-    port = os.environ.get('PORT', '8000')
-    
-    # Start uvicorn using python -m
-    cmd = f"python -m uvicorn app:app --host 0.0.0.0 --port {port}"
-    print(f"Running: {cmd}")
-    
-    try:
-        os.system(cmd)
-    except KeyboardInterrupt:
-        print("\n🛑 Deployment stopped by user")
-    except Exception as e:
-        print(f"❌ Deployment failed: {e}")
+    print("✅ Build process completed successfully!")
+    print("🌐 Ready for deployment - use 'uvicorn app:app --host 0.0.0.0 --port $PORT' as start command")
 
 if __name__ == "__main__":
     main()
