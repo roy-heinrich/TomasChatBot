@@ -21,12 +21,28 @@ from datetime import datetime, timedelta
 import calendar
 
 # Set up NLTK data path BEFORE any imports
-nltk_data_dir = os.path.join(os.getcwd(), 'nltk_data')
-if os.path.exists(nltk_data_dir):
+# Try multiple possible locations for nltk_data
+possible_paths = [
+    os.path.join(os.getcwd(), 'nltk_data'),
+    os.path.join(os.path.dirname(__file__), 'nltk_data'),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'nltk_data'),
+    '/opt/render/project/src/nltk_data',  # Render deployment path
+    '/opt/render/nltk_data'  # Alternative Render path
+]
+
+nltk_data_dir = None
+for path in possible_paths:
+    if os.path.exists(path):
+        nltk_data_dir = path
+        break
+
+if nltk_data_dir:
     # Set NLTK data path globally before any NLTK imports
     import nltk
     nltk.data.path.insert(0, nltk_data_dir)  # Insert at beginning to prioritize local data
     print(f"✅ NLTK data path set to: {nltk_data_dir}")
+else:
+    print("⚠️ NLTK data folder not found in any expected location")
 
 # NLTK will be imported lazily to avoid deployment issues
 NLTK_AVAILABLE = False
