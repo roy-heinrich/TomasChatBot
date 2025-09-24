@@ -31,20 +31,35 @@ import calendar
 NLTK_AVAILABLE = False
 NLTK_INITIALIZED = False
 
+# Initialize NLTK functions as None - will be set during initialization
+word_tokenize = None
+sent_tokenize = None
+pos_tag = None
+ne_chunk = None
+Tree = None
+
 def _initialize_nltk():
     """Initialize NLTK safely with error handling"""
     global NLTK_AVAILABLE, NLTK_INITIALIZED
+    global word_tokenize, sent_tokenize, pos_tag, ne_chunk, Tree
     
     if NLTK_INITIALIZED:
         return NLTK_AVAILABLE
     
     try:
         import nltk
-        from nltk.tokenize import word_tokenize, sent_tokenize
+        from nltk.tokenize import word_tokenize as _word_tokenize, sent_tokenize as _sent_tokenize
         from nltk.corpus import stopwords
-        from nltk.tag import pos_tag
-        from nltk.chunk import ne_chunk
-        from nltk.tree import Tree
+        from nltk.tag import pos_tag as _pos_tag
+        from nltk.chunk import ne_chunk as _ne_chunk
+        from nltk.tree import Tree as _Tree
+        
+        # Set global variables
+        word_tokenize = _word_tokenize
+        sent_tokenize = _sent_tokenize
+        pos_tag = _pos_tag
+        ne_chunk = _ne_chunk
+        Tree = _Tree
         
         NLTK_AVAILABLE = True
         NLTK_INITIALIZED = True
@@ -137,7 +152,13 @@ class AdvancedEntityExtractor:
         """Enhanced entity extraction using NLTK"""
         entities = []
         
-        if not NLTK_AVAILABLE:
+        # Initialize NLTK if not already done
+        if not _initialize_nltk():
+            return entities
+        
+        # Check if NLTK functions are available
+        if not all([word_tokenize, pos_tag, ne_chunk, Tree]):
+            logger.warning("NLTK functions not properly initialized")
             return entities
         
         try:
