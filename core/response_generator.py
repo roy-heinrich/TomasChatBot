@@ -29,19 +29,75 @@ class ResponseGenerator:
             logger.error(f"❌ Failed to initialize Groq client: {e}")
             logger.warning("Check your GROQ_API_KEY environment variable")
     
-    def get_system_prompt(self, lang: str, user_name: str = "", nlu_info: Dict = None) -> str:
+    def get_system_prompt(self, lang: str, user_name: str = "", nlu_info: Dict = None, 
+                         entities: List = None, confidence: float = 0.0) -> str:
         """Generate language-specific system prompt with explicit tone instructions"""
         time_context = self._get_time_context()
         name_context = f" Ang kausap mo ay si {user_name}." if user_name and lang == "tl" else f" The person you're talking to is named {user_name}." if user_name else ""
         
+        # Enhanced NLP/NLU context
         nlu_context = ""
         if nlu_info:
-            nlu_context = f" NLU Intent: {nlu_info.get('intent', 'unknown')} (confidence: {nlu_info.get('confidence', 0.0):.2f})."
+            intent = nlu_info.get('intent', 'unknown')
+            nlu_confidence = nlu_info.get('confidence', 0.0)
+            nlu_context = f" NLU Analysis: Intent={intent} (confidence: {nlu_confidence:.2f})."
+        
+        # Add entity information
+        entity_context = ""
+        if entities:
+            entity_list = [f"{e.entity_type}: {e.value}" for e in entities if hasattr(e, 'entity_type')]
+            if entity_list:
+                entity_context = f" Extracted Entities: {', '.join(entity_list)}."
+        
+        # Add language confidence
+        lang_confidence_context = f" Language Detection Confidence: {confidence:.2f}." if confidence > 0 else ""
         
         if lang == "tl" or lang == "akl":
-            return f"Ikaw si TOMAS, ang friendly na digital assistant ng Tomas SM. Bautista Elementary School. {time_context}{name_context}{nlu_context} MAHALAGA: SUMAGOT LAMANG SA TAGALOG/FILIPINO. TONE: Maging friendly, conversational, at natural na parang kausap mo ang isang kaibigan. Gumamit ng casual na tono pero propesyonal pa rin. NAME INTRODUCTION HANDLING: Kung ang user ay nagpapakilala ng kanilang pangalan, sumagot ng friendly greeting tulad ng 'Hi Maria! Nice to meet you. What can I help you with today?' KAPANSIN-PANSIN: Ang context na ibinigay ay naglalaman ng EKSAKTONG SAGOT mula sa aming school database. Ipakita ang impormasyong ito nang natural at conversational habang pinapanatili ang lahat ng katotohanan. HUWAG baguhin ang mga katotohanan, numero, o pangunahing impormasyon."
+            return f"""Ikaw si TOMAS, ang friendly na digital assistant ng Tomas SM. Bautista Elementary School. {time_context}{name_context}{nlu_context}{entity_context}{lang_confidence_context}
+
+MAHALAGA: SUMAGOT LAMANG SA TAGALOG/FILIPINO.
+
+TONE: Maging friendly, conversational, at natural na parang kausap mo ang isang kaibigan. Gumamit ng casual na tono pero propesyonal pa rin.
+
+STRICT RULES:
+1. DATABASE CONTEXT ANG PINAKAMAHALAGA - gamitin ang impormasyon mula sa database context kung available
+2. HUWAG MAG-INVENT ng mga pangalan, numero, o impormasyon na wala sa context
+3. HUWAG MAG-ROLEPLAY - ikaw ay digital assistant, hindi tao
+4. KUNG WALANG SAGOT sa context, sabihin na "Hindi ko alam ang sagot, pero maaari kayong magpunta sa school office para sa dagdag na detalye"
+5. GAMITIN LAMANG ang impormasyon na nasa context - HUWAG magdagdag ng sariling kaalaman
+6. KUNG may pangalan sa context, gamitin ang eksaktong pangalan na nasa context
+7. KUNG walang pangalan sa context, HUWAG mag-invent ng pangalan
+8. MANATILING SCHOOL-FOCUSED - laging i-redirect sa school-related topics at services
+9. PANATILIHING MAIKLI ang mga sagot - under 100 words maliban kung nagbibigay ng detailed school information
+10. PARA SA EMOTIONAL EXPRESSIONS - acknowledge briefly, suggest speaking with the guidance counselor (HUWAG mag-invent ng pangalan), offer school help
+11. GAMITIN ANG NLP/NLU ANALYSIS para sa mas mahusay na pag-unawa sa user intent at entities
+
+NAME INTRODUCTION HANDLING: Kung ang user ay nagpapakilala ng kanilang pangalan, sumagot ng friendly greeting tulad ng 'Hi Maria! Nice to meet you. What can I help you with today?'
+
+KAPANSIN-PANSIN: Ang context na ibinigay ay naglalaman ng EKSAKTONG SAGOT mula sa aming school database. Ipakita ang impormasyong ito nang natural at conversational habang pinapanatili ang lahat ng katotohanan. HUWAG baguhin ang mga katotohanan, numero, o pangunahing impormasyon."""
         else:
-            return f"You are TOMAS, the friendly digital assistant for Tomas SM. Bautista Elementary School. {time_context}{name_context}{nlu_context} IMPORTANT: RESPOND ONLY IN ENGLISH. TONE: Be friendly, conversational, and natural like you're talking to a friend. Use a casual but professional tone. NAME INTRODUCTION HANDLING: If the user introduces their name, respond with a friendly greeting like 'Hi John! Nice to meet you. What can I help you with today?' CRITICAL: The context provided contains the EXACT ANSWER from our school database. Present this information naturally and conversationally while keeping all facts unchanged. DO NOT change facts, numbers, or core information."
+            return f"""You are TOMAS, the friendly digital assistant for Tomas SM. Bautista Elementary School. {time_context}{name_context}{nlu_context}{entity_context}{lang_confidence_context}
+
+IMPORTANT: RESPOND ONLY IN ENGLISH.
+
+TONE: Be friendly, conversational, and natural like you're talking to a friend. Use a casual but professional tone.
+
+STRICT RULES:
+1. DATABASE CONTEXT IS HIGHEST PRIORITY - use information from database context when available
+2. DO NOT INVENT names, numbers, or information not in the context
+3. DO NOT ROLEPLAY - you are a digital assistant, not a human
+4. IF NO ANSWER in context, say "I don't know the answer, but you can visit the school office for more details"
+5. USE ONLY information in the context - DO NOT add your own knowledge
+6. IF there's a name in context, use the exact name from context
+7. IF no name in context, DO NOT invent names
+8. STAY SCHOOL-FOCUSED - always redirect to school-related topics and services
+9. KEEP RESPONSES CONCISE - under 100 words unless providing detailed school information
+10. FOR EMOTIONAL EXPRESSIONS - acknowledge briefly, suggest speaking with the guidance counselor (DO NOT invent names), offer school help
+11. USE NLP/NLU ANALYSIS for better understanding of user intent and entities
+
+NAME INTRODUCTION HANDLING: If the user introduces their name, respond with a friendly greeting like 'Hi John! Nice to meet you. What can I help you with today?'
+
+CRITICAL: The context provided contains the EXACT ANSWER from our school database. Present this information naturally and conversationally while keeping all facts unchanged. DO NOT change facts, numbers, or core information."""
     
     def _get_time_context(self) -> str:
         """Get time-aware context for responses"""
@@ -58,13 +114,14 @@ class ResponseGenerator:
     
     async def generate_response(self, query: str, context: str, lang: str, 
                               conversation_history: List[Dict] = None, 
-                              nlu_info: Dict = None, user_name: str = "") -> str:
+                              nlu_info: Dict = None, user_name: str = "", 
+                              entities: List = None, confidence: float = 0.0) -> str:
         """Generate response using Groq with proper language handling"""
         if not self.groq_client:
             return self._get_fallback_response(lang)
         
         try:
-            system_prompt = self.get_system_prompt(lang, user_name, nlu_info)
+            system_prompt = self.get_system_prompt(lang, user_name, nlu_info, entities, confidence)
             messages = [{"role": "system", "content": system_prompt}]
             
             # Add conversation history if provided
@@ -76,15 +133,59 @@ class ResponseGenerator:
                         "content": msg.get("content", "")
                     })
             
-            # Add current query with context
-            user_message = f"Context: {context}\nQuestion: {query}" if context else query
+            # Enhanced user message with comprehensive NLP/NLU context
+            nlu_analysis = ""
+            if nlu_info:
+                intent = nlu_info.get('intent', 'unknown')
+                nlu_confidence = nlu_info.get('confidence', 0.0)
+                nlu_analysis = f"\nNLP/NLU ANALYSIS: Intent={intent} (confidence: {nlu_confidence:.2f})"
+            
+            entity_analysis = ""
+            if entities:
+                entity_list = [f"{e.entity_type}: {e.value}" for e in entities if hasattr(e, 'entity_type')]
+                if entity_list:
+                    entity_analysis = f"\nEXTRACTED ENTITIES: {', '.join(entity_list)}"
+            
+            lang_analysis = f"\nLANGUAGE: {lang} (confidence: {confidence:.2f})" if confidence > 0 else f"\nLANGUAGE: {lang}"
+            
+            # Add current query with enhanced context - DATABASE CONTEXT TAKES PRIORITY
+            if context and context != "General school information query":
+                if context == "User is introducing themselves with their name":
+                    user_message = f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+
+INSTRUCTIONS: The user is introducing themselves with their name. Respond with a friendly greeting using their name, like "Hi [Name]! Nice to meet you. What can I help you with today?" Be warm and welcoming. Use the NLP analysis to understand their intent better."""
+                elif context == "User is expressing their emotional state":
+                    user_message = f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+
+INSTRUCTIONS: The user is expressing their emotional state. Respond briefly and professionally in 1-2 sentences. Acknowledge their feeling but immediately redirect to school services. If they seem to need support, suggest speaking with the guidance counselor (DO NOT invent names - just say "guidance counselor"). Always offer to help with school-related questions. Keep response under 80 words and school-focused. Use the NLP analysis to understand their emotional state better."""
+                elif context == "User is expressing appreciation or thanks":
+                    user_message = f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+
+INSTRUCTIONS: The user is expressing appreciation or thanks. Respond warmly and acknowledge their thanks. Be friendly and offer to help with any school-related questions they might have. Keep response under 60 words and school-focused. Use the NLP analysis to understand their appreciation better."""
+                elif context == "User is giving a simple greeting":
+                    user_message = f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+
+INSTRUCTIONS: The user is giving a simple greeting. Respond with a friendly greeting back and offer to help with school-related questions. Be warm and welcoming. Keep response under 50 words and school-focused. Use the NLP analysis to understand their greeting better."""
+                else:
+                    # DATABASE CONTEXT TAKES HIGHEST PRIORITY
+                    user_message = f"""DATABASE CONTEXT (USE THIS INFORMATION - HIGHEST PRIORITY):
+{context}
+
+USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+
+INSTRUCTIONS: Answer the user's question using ONLY the information provided in the database context above. The database context contains the EXACT ANSWER. Present this information naturally and conversationally while keeping all facts unchanged. Use the NLP analysis to understand the user's intent and entities better, but ALWAYS prioritize the database context for factual information."""
+            else:
+                user_message = f"""USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+
+INSTRUCTIONS: Answer the user's question. Use the NLP analysis to understand the user's intent and entities better. If you don't know the answer, say you don't know and suggest visiting the school office."""
+            
             messages.append({"role": "user", "content": user_message})
             
             # Call Groq API with timeout
             response = self.groq_client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=messages,
-                max_tokens=600,
+                max_tokens=150,  # Reduced for more concise responses
                 temperature=0.7
             )
             
@@ -101,25 +202,48 @@ class ResponseGenerator:
         else:
             return "Sorry, there was a problem processing your question. Please try again later."
     
-    def split_long_response(self, response: str, max_length: int = 250) -> List[str]:
-        """Split long responses into multiple messages"""
+    def split_long_response(self, response: str, max_length: int = 200) -> List[str]:
+        """Split long responses into multiple messages for better chat bubble display"""
         if len(response) <= max_length:
             return [response]
         
-        # Split by sentences first
+        # Split by sentences first, then by words if needed
         sentences = response.split('. ')
         messages = []
         current_message = ""
         
         for sentence in sentences:
-            if len(current_message + sentence) <= max_length:
-                current_message += sentence + ". "
+            # Add period back if it was removed by split
+            if not sentence.endswith('.') and not sentence.endswith('!') and not sentence.endswith('?'):
+                sentence += '.'
+            
+            # Check if adding this sentence would exceed max_length
+            test_message = current_message + sentence + " " if current_message else sentence + " "
+            
+            if len(test_message.strip()) <= max_length:
+                current_message = test_message
             else:
-                if current_message:
+                # If current message has content, save it
+                if current_message.strip():
                     messages.append(current_message.strip())
-                current_message = sentence + ". "
+                
+                # If the sentence itself is too long, split it by words
+                if len(sentence) > max_length:
+                    words = sentence.split()
+                    temp_message = ""
+                    for word in words:
+                        if len(temp_message + word + " ") <= max_length:
+                            temp_message += word + " "
+                        else:
+                            if temp_message.strip():
+                                messages.append(temp_message.strip())
+                            temp_message = word + " "
+                    current_message = temp_message
+                else:
+                    current_message = sentence + " "
         
-        if current_message:
+        # Add the last message if it has content
+        if current_message.strip():
             messages.append(current_message.strip())
         
         return messages

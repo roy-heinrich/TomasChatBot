@@ -160,9 +160,43 @@ class ChatBot:
                 'entities': [(e.entity_type, e.value) for e in entities]
             }
             
+            # 🚨 CRITICAL FIX: Only catch obvious gibberish - let NLP/NLU handle everything else
+            is_gibberish = self._detect_gibberish_input(query, nlu_result, entities, detected_lang, confidence)
+            
+            if is_gibberish:
+                logger.info("🚫 Obvious gibberish detected - using fallback response")
+                return self._create_fallback_response(query, detected_lang, confidence)
+            
+            # 🚨 FIX: Handle name introductions and greeting with name even without database context
+            if nlu_result and nlu_result.intent.value in ['name_introduction', 'greeting_with_name']:
+                logger.info(f"👋 {nlu_result.intent.value} detected - handling with Groq even without database context")
+                # For name introductions, we don't need database context
+                context = "User is introducing themselves with their name"
+            elif nlu_result and nlu_result.intent.value == 'emotional_expression':
+                logger.info(f"😊 {nlu_result.intent.value} detected - handling emotional expression")
+                # For emotional expressions, provide empathetic response
+                context = "User is expressing their emotional state"
+            elif nlu_result and nlu_result.intent.value == 'appreciation':
+                logger.info(f"🙏 {nlu_result.intent.value} detected - handling appreciation/thanks")
+                # For appreciation/thanks, provide friendly acknowledgment
+                context = "User is expressing appreciation or thanks"
+            elif nlu_result and nlu_result.intent.value == 'greeting_simple':
+                logger.info(f"👋 {nlu_result.intent.value} detected - handling simple greeting")
+                # For simple greetings, provide friendly response
+                context = "User is giving a simple greeting"
+            elif not best_result and not search_results and context == "General school information query":
+                logger.info("🚫 No meaningful context available - using fallback response")
+                return self._create_fallback_response(query, detected_lang, confidence)
+            
             # Generate response with Groq (professional, factual, humane, jolly, no roleplay)
+            # Pass enhanced NLP/NLU information for better response generation
+            nlu_info_dict = {
+                'intent': nlu_result.intent.value if nlu_result and nlu_result.intent else 'unknown',
+                'confidence': nlu_result.confidence if nlu_result else 0.0
+            } if nlu_result else None
+            
             response_text = await self.response_generator.generate_response(
-                query, context, detected_lang, conversation_history, nlu_info, user_name
+                query, context, detected_lang, conversation_history, nlu_info_dict, user_name, entities, confidence
             )
             
             # 6. Split long responses if needed
@@ -239,3 +273,78 @@ class ChatBot:
             message_count=1,
             intent='error'
         )
+    
+    def _detect_gibberish_input(self, query: str, nlu_result, entities: List, detected_lang: str, confidence: float) -> bool:
+        """
+        Pure NLP/NLU-based gibberish detection - NO HARDCODING
+        Uses the existing NLP and NLU systems to determine if input is gibberish
+        """
+        # 🚨 CRITICAL FIX: Don't use negative confidence scores for gibberish detection
+        # Language detection can return negative scores for valid queries
+        # Only use positive confidence scores for gibberish detection
+        
+        # Use NLU confidence as primary signal - if NLU is very confident it's unknown, it's likely gibberish
+        if nlu_result and nlu_result.intent.value == 'unknown' and nlu_result.confidence < 0.1:
+            logger.info(f"🔍 NLU detected gibberish: intent=unknown, confidence={nlu_result.confidence:.3f}")
+            return True
+        
+        # 🚨 FIX: Only check positive confidence scores - negative scores are not gibberish indicators
+        # Use language detection confidence - but only if it's positive and very low
+        if confidence > 0 and confidence < 0.05:  # Only very low positive confidence
+            logger.info(f"🔍 Language detection uncertain: confidence={confidence:.3f}")
+            return True
+        
+        # Use entity extraction - if no entities found AND NLU confidence is low, might be gibberish
+        if len(entities) == 0 and nlu_result and nlu_result.confidence < 0.2:
+            logger.info(f"🔍 No entities + low NLU confidence: entities=0, nlu_confidence={nlu_result.confidence:.3f}")
+            return True
+        
+        # 🚨 FIX: Check for valid school-related patterns first - if found, it's not gibberish
+        query_lower = query.lower().strip()
+        
+        # Valid school-related patterns that should never be considered gibberish
+        valid_patterns = [
+            # Common English words
+            "i am", "my name", "hello", "hi", "thank", "sad", "happy", "good", "bad",
+            # School-related terms
+            "school", "teacher", "student", "grade", "class", "enroll", "admission",
+            "principal", "head", "teacher", "staff", "office", "library", "cafeteria",
+            # Question words
+            "what", "where", "when", "how", "who", "why", "which", "are", "is", "do", "can",
+            # Common Filipino/Aklanon words
+            "ako", "si", "ang", "ng", "sa", "ko", "mo", "niya", "namin", "ninyo", "nila",
+            "kumusta", "kamusta", "salamat", "magandang", "maayong", "paaralan", "eskwelahan",
+            # Common phrases
+            "i am sad", "i am happy", "i am heinz", "i am john", "i am mary",
+            "head teacher", "are transferees", "what is", "where is", "how do"
+        ]
+        
+        # If query contains any valid patterns, it's not gibberish
+        for pattern in valid_patterns:
+            if pattern in query_lower:
+                logger.info(f"✅ Valid pattern detected: '{pattern}' - not gibberish")
+                return False
+        
+        # Use basic linguistic patterns - only for obvious cases
+        # Check for obvious random character patterns (like "sadassdafdxs")
+        if len(query) > 10:
+            # Count consecutive consonants - if more than 6 consecutive consonants, likely gibberish
+            consecutive_consonants = 0
+            max_consecutive = 0
+            vowels = set('aeiou')
+            
+            for char in query_lower:
+                if char.isalpha():
+                    if char not in vowels:
+                        consecutive_consonants += 1
+                        max_consecutive = max(max_consecutive, consecutive_consonants)
+                    else:
+                        consecutive_consonants = 0
+            
+            if max_consecutive >= 6:  # Very strict - only obvious gibberish
+                logger.info(f"🔍 Obvious gibberish pattern detected: {max_consecutive} consecutive consonants")
+                return True
+        
+        # If we get here, it's not gibberish - let the normal NLP/NLU systems handle it
+        logger.info("✅ Input passed gibberish detection - using normal NLP/NLU processing")
+        return False

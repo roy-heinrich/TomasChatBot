@@ -49,10 +49,20 @@ class LanguageDetector:
             return "en", 0.5
     
     def _map_language(self, lang: str, text_lower: str, confidence: float) -> str:
-        """Map detected language to our language codes"""
+        """Map detected language to our language codes with improved pattern matching"""
+        import re
+        
+        # 🎯 FIX: English emotional expressions - highest priority
+        if re.search(r'\b(i am|i\'m|im)\s+(sad|happy|worried|excited|tired|angry|nervous|scared|confused|frustrated|anxious|depressed|lonely|stressed|overwhelmed|disappointed|proud|grateful|relieved|surprised|shocked|amazed|lost|found|here|there|ready|busy|free|available|unavailable|online|offline|studying|enrollment|school|grades|classes|homework|exams|tests)\b', text_lower):
+            return "en"
+        
+        # 🎯 FIX: Strong English patterns
+        if re.search(r'\b(how do|how can|how to|what is|what are|where is|when is|who is|hello|hi|goodbye|bye|thank you|thanks|help|yes|no|ok|okay|my name is)\b', text_lower):
+            return "en"
+        
         # Aklanon detection (priority) - Enhanced word list
         aklanon_words = [
-            "ngaean", "sin-o", "nahanumdom", "nga", "sang", "imo", "unga"
+            "ngaean", "sin-o", "nahanumdom", "nga", "sang", "imo", "unga", "maayong adlaw", "maayong gabii", "maayong buntag", "salamat gid", "damo nga salamat", "huo", "indi", "sige", "tama", "mali", "diin", "siin", "ngaa", "wara", "mayo", "ro", "eon", "aton", "inyo", "ila"
         ]
         if any(word in text_lower for word in aklanon_words):
             return "akl"
@@ -61,17 +71,9 @@ class LanguageDetector:
         tagalog_words = [
             "sino", "ano", "saan", "kumusta", "salamat", "mga", "ang", "ng", "sa", "na", 
             "ay", "ko", "mo", "niya", "namin", "ninyo", "nila", "ito", "iyan", "iyon",
-            "dito", "doon", "kailan", "bakit", "paano", "saan", "alin", "kanino", "para"
+            "dito", "doon", "kailan", "bakit", "paano", "saan", "alin", "kanino", "para",
+            "ako si", "pangalan ko", "naaalala mo", "ano ang", "sino ang", "kumusta", "kamusta", "anong", "baitang", "paaralan", "bukas", "para sa", "malungkot ako", "masaya ako", "nag-aalala ako", "natutuwa ako", "pagod ako", "galit ako", "nervous ako", "takot ako", "nalilito ako", "naiinis ako", "nag-aalala ako", "nalulungkot ako", "nalulungkot", "nag-aalala", "natutuwa", "pagod", "galit", "nervous", "takot", "nalilito", "naiinis", "magandang umaga", "magandang hapon", "magandang gabi", "salamat", "maraming salamat", "paumanhin", "patawad", "oo", "hindi", "sige", "tama", "mali"
         ]
-        
-        # English words that should override low-confidence Tagalog detection
-        english_words = [
-            "what", "where", "when", "why", "how", "who", "my", "name", "again", "the", "is", "are"
-        ]
-        
-        # If confidence is very low and contains English words, prefer English
-        if confidence < 0.3 and any(word in text_lower for word in english_words):
-            return "en"
         
         # If langid detected Tagalog with reasonable confidence OR contains Tagalog words
         if (lang == "tl" and confidence > 0.4) or any(word in text_lower for word in tagalog_words):

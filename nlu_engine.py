@@ -1,10 +1,13 @@
 import os
 import nltk
 
-# Point NLTK to the folder where Render installed the data
-nltk_data_path = "/opt/render/nltk_data"
-os.environ["NLTK_DATA"] = nltk_data_path
-nltk.data.path.append(nltk_data_path)
+# Point NLTK to the local nltk_data folder first, then Render path for deployment
+local_nltk_path = os.path.join(os.path.dirname(__file__), "..", "nltk_data")
+render_nltk_path = "/opt/render/nltk_data"
+
+# Add local path first (for development), then Render path (for deployment)
+nltk.data.path.insert(0, local_nltk_path)
+nltk.data.path.append(render_nltk_path)
 
 import json
 import logging
@@ -83,6 +86,7 @@ class Intent(Enum):
     LOCATION_INQUIRY = "location_inquiry"  # New: directions, address, campus map
     HELP_REQUEST = "help_request"  # New: general help, assistance
     APPRECIATION = "appreciation"  # New: thank you, thanks
+    EMOTIONAL_EXPRESSION = "emotional_expression"  # New: i am sad, i am happy, etc.
     CLARIFICATION = "clarification"
     DENIAL = "denial"
     GOODBYE = "goodbye"
@@ -315,6 +319,13 @@ class NLUEngine:
             "hola": (Intent.GREETING_SIMPLE, 0.8),
             "konnichiwa": (Intent.GREETING_SIMPLE, 0.8),
             
+            # Aklanon greetings and thanks
+            "salamat gid": (Intent.APPRECIATION, 0.95),
+            "damo nga salamat": (Intent.APPRECIATION, 0.95),
+            "maayong adlaw": (Intent.GREETING_SIMPLE, 0.9),
+            "maayong gabii": (Intent.GREETING_SIMPLE, 0.9),
+            "maayong buntag": (Intent.GREETING_SIMPLE, 0.9),
+            
             # Tagalog location phrases
             "saan ang lokasyon ng paaralan": (Intent.LOCATION_INQUIRY, 0.95),
             "saan ang paaralan": (Intent.LOCATION_INQUIRY, 0.9),
@@ -359,6 +370,18 @@ class NLUEngine:
         if staff_score > 0.6:
             return NLUResult(Intent.STAFF_INQUIRY, staff_score, [])
         
+        # Enhanced emotional expression detection for Tagalog/Aklanon
+        emotional_patterns = [
+            "malungkot ako", "masaya ako", "nag-aalala ako", "natutuwa ako", 
+            "pagod ako", "galit ako", "nervous ako", "takot ako", "nalilito ako", 
+            "naiinis ako", "nag-aalala ako", "nalulungkot ako"
+        ]
+        
+        for pattern in emotional_patterns:
+            if pattern in user_lower:
+                logger.info(f"🎯 Tagalog/Aklanon emotional expression detected: '{pattern}'")
+                return NLUResult(Intent.EMOTIONAL_EXPRESSION, 0.9, [])
+        
         # Continue with priority-based classification for other intents
         # DO NOT return early - let it fall through to Priority rules
         
@@ -369,32 +392,60 @@ class NLUEngine:
         if any(phrase in user_lower for phrase in ["i meant", "what i mean", "clarify", "correction"]):
             return NLUResult(Intent.CLARIFICATION, 0.8, [])
         
-        # Priority 2: Enhanced greeting classification with mood/style detection
-        greeting_keywords = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", "good afternoon", "good evening", "magandang umaga", "magandang hapon", "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", "evening", "greetings", "hiya", "wassup", "howdy", "sup", "yo"]
-        # Priority 3: Name introductions - higher priority than greetings
+        # Priority 2: Name introductions - HIGHEST PRIORITY for greetings + names
         # This catches "hi i am john" as name_introduction rather than greeting_with_name
         name_intro_patterns = [
             "my name is", "i am", "i'm", "im ", "ako si", "ako ay", "called",
             "ngaean ko si", "ngaean ko", "ngaean", "ngaean si"  # Aklanon patterns
         ]
+        
+        # 🚨 FIX: Check for name introduction patterns FIRST, but be more specific
         for pattern in name_intro_patterns:
             if pattern in user_lower:
                 # Check if there's an actual name after the pattern (not just the pattern alone)
                 pattern_pos = user_lower.find(pattern)
                 text_after = user_lower[pattern_pos + len(pattern):].strip()
+                
+                # 🚨 FIX: More specific validation - exclude emotional states and common adjectives
+                emotional_states = ['sad', 'happy', 'worried', 'excited', 'tired', 'angry', 'nervous', 'scared', 'confused', 'frustrated', 'anxious', 'depressed', 'lonely', 'stressed', 'overwhelmed', 'disappointed', 'proud', 'grateful', 'relieved', 'surprised', 'shocked', 'amazed', 'confused', 'lost', 'found', 'here', 'there', 'ready', 'busy', 'free', 'available', 'unavailable', 'online', 'offline', 'studying', 'enrollment', 'school', 'grades', 'classes', 'homework', 'exams', 'tests', 'about', 'for', 'with', 'of']
+                
                 if len(text_after) > 0 and not text_after.startswith("asking") and not text_after.startswith("not"):
-                    return NLUResult(Intent.NAME_INTRODUCTION, 0.95, [])
+                    # Check if the text after "i am" is likely a name (not an emotional state)
+                    first_word = text_after.split()[0].lower() if text_after.split() else ""
+                    
+                    # Check if it's a multi-word emotional expression
+                    words = text_after.split()
+                    is_emotional_expression = False
+                    
+                    # Check if any word in the text is an emotional state
+                    for word in words:
+                        if word.lower() in emotional_states:
+                            is_emotional_expression = True
+                            break
+                    
+                    # Also check for common emotional phrases
+                    emotional_phrases = ['excited for', 'worried about', 'happy about', 'sad about', 'tired of', 'angry at', 'nervous about', 'scared of', 'confused about', 'frustrated with', 'anxious about', 'proud of', 'grateful for', 'relieved about', 'surprised by', 'shocked by', 'amazed by']
+                    for phrase in emotional_phrases:
+                        if phrase in text_after.lower():
+                            is_emotional_expression = True
+                            break
+                    
+                    if is_emotional_expression:
+                        logger.info(f"🎯 Emotional expression detected: pattern='{pattern}', text_after='{text_after}'")
+                        return NLUResult(Intent.EMOTIONAL_EXPRESSION, 0.9, [])
+                    elif first_word not in emotional_states and len(first_word) > 1:
+                        logger.info(f"🎯 Name introduction detected: pattern='{pattern}', text_after='{text_after}', first_word='{first_word}'")
+                        return NLUResult(Intent.NAME_INTRODUCTION, 0.95, [])
+                    else:
+                        logger.info(f"🎯 Emotional state detected (not name): pattern='{pattern}', text_after='{text_after}', first_word='{first_word}'")
+                        return NLUResult(Intent.EMOTIONAL_EXPRESSION, 0.8, [])
 
+        # Priority 3: Enhanced greeting classification with mood/style detection
+        greeting_keywords = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", "good afternoon", "good evening", "magandang umaga", "magandang hapon", "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", "evening", "greetings", "hiya", "wassup", "howdy", "sup", "yo"]
+        
         if any(greet in user_lower for greet in greeting_keywords):
-            # Now only classify as greeting_with_name if it's a pure greeting without introduction intent
-            # This should catch cases like "hello, my name is john" where greeting comes first
-            if any(pattern in user_lower for pattern in ["my name is", "i am", "i'm", "im ", "ako si", "ngaean ko si", "ngaean ko"]):
-                # But if it's clearly a name introduction, it was already caught above
-                # This is for cases where greeting is the primary intent
-                return NLUResult(Intent.GREETING_WITH_NAME, 0.85, [])
-            
             # Detect greeting style/mood for dynamic personalization
-            elif any(word in user_lower for word in ["awesome", "great", "fantastic", "wonderful", "amazing", "excited", "!!!", "super", "really good"]):
+            if any(word in user_lower for word in ["awesome", "great", "fantastic", "wonderful", "amazing", "excited", "!!!", "super", "really good"]):
                 return NLUResult(Intent.GREETING_EXCITED, 0.9, [])
             elif any(word in user_lower for word in ["sir", "ma'am", "please", "good day", "greetings", "salutations", "formal"]):
                 return NLUResult(Intent.GREETING_FORMAL, 0.9, [])

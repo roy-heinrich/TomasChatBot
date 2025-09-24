@@ -6,10 +6,13 @@ Supports English, Tagalog, and Aklanon with semantic understanding
 import os
 import nltk
 
-# Point NLTK to the folder where Render installed the data
-nltk_data_path = "/opt/render/nltk_data"
-os.environ["NLTK_DATA"] = nltk_data_path
-nltk.data.path.append(nltk_data_path)
+# Point NLTK to the local nltk_data folder first, then Render path for deployment
+local_nltk_path = os.path.join(os.path.dirname(__file__), "nltk_data")
+render_nltk_path = "/opt/render/nltk_data"
+
+# Add local path first (for development), then Render path (for deployment)
+nltk.data.path.insert(0, local_nltk_path)
+nltk.data.path.append(render_nltk_path)
 
 import logging
 import json
@@ -328,11 +331,15 @@ class MultilingualNLPEngine:
             final_lang = "en"  # Force English for safety terms
             confidence = 0.95  # High confidence for rule-based detection
         # 🎯 FIX: Common English words that should always be English
-        elif re.search(r'\b(hello|hi|goodbye|bye|thank you|thanks|help|yes|no|ok|okay)\b', text_lower):
+        elif re.search(r'\b(hello|hi|goodbye|bye|thank you|thanks|help|yes|no|ok|okay|my name is)\b', text_lower):
             final_lang = "en"  # Force English for common English words
             confidence = 0.95  # High confidence for rule-based detection
+        # 🎯 FIX: English emotional expressions - highest priority
+        if re.search(r'\b(i am|i\'m|im)\s+(sad|happy|worried|excited|tired|angry|nervous|scared|confused|frustrated|anxious|depressed|lonely|stressed|overwhelmed|disappointed|proud|grateful|relieved|surprised|shocked|amazed|lost|found|here|there|ready|busy|free|available|unavailable|online|offline|studying|enrollment|school|grades|classes|homework|exams|tests)\b', text_lower):
+            final_lang = "en"  # Force English for emotional expressions
+            confidence = 0.98  # Very high confidence for emotional expressions
         # Strong Tagalog patterns (override everything)
-        elif re.search(r'\b(ako si|pangalan ko|naaalala mo|ano ang|sino ang|kumusta|kamusta|anong|baitang|paaralan|bukas|para sa)\b', text_lower):
+        elif re.search(r'\b(ako si|pangalan ko|naaalala mo|ano ang|sino ang|kumusta|kamusta|anong|baitang|paaralan|bukas|para sa|malungkot ako|masaya ako|nag-aalala ako|natutuwa ako|pagod ako|galit ako|nervous ako|takot ako|nalilito ako|naiinis ako|nag-aalala ako|nalulungkot ako|nalulungkot|nag-aalala|natutuwa|pagod|galit|nervous|takot|nalilito|naiinis|magandang umaga|magandang hapon|magandang gabi|salamat|maraming salamat|paumanhin|patawad|oo|hindi|sige|tama|mali)\b', text_lower):
             final_lang = "tl"  # Force Tagalog for clear Tagalog patterns
             confidence = 0.95  # High confidence for rule-based detection
         # 🎯 FIX: Specific Tagalog greeting patterns
@@ -340,7 +347,7 @@ class MultilingualNLPEngine:
             final_lang = "tl"  # Force Tagalog for "kumusta, ako si" patterns
             confidence = 0.95  # High confidence for rule-based detection
         # Strong Aklanon patterns (override everything)
-        elif re.search(r'\b(maayong adlaw|maayong gabii|maayong buntag)\b', text_lower):
+        elif re.search(r'\b(maayong adlaw|maayong gabii|maayong buntag|ngaean ko si|ngaean ko|ngaean|ngaean si|salamat gid|damo nga salamat|huo|indi|sige|tama|mali|sin-o|diin|siin|ngaa|wara|mayo|ro|eon|aton|inyo|ila)\b', text_lower):
             final_lang = "akl"  # Force Aklanon for clear Aklanon patterns
             confidence = 0.95  # High confidence for rule-based detection
         # Fallback to hybrid detection

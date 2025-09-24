@@ -1,10 +1,21 @@
 import os
 import nltk
 
-# Point NLTK to the folder where Render installed the data
-nltk_data_path = "/opt/render/nltk_data"
-os.environ["NLTK_DATA"] = nltk_data_path
-nltk.data.path.append(nltk_data_path)
+# Point NLTK to the local nltk_data folder first, then Render path for deployment
+local_nltk_path = os.path.join(os.path.dirname(__file__), "nltk_data")
+render_nltk_path = "/opt/render/nltk_data"
+
+# Add local path first (for development), then Render path (for deployment)
+nltk.data.path.insert(0, local_nltk_path)
+nltk.data.path.append(render_nltk_path)
+
+# Set environment variable to local path for development
+os.environ["NLTK_DATA"] = local_nltk_path
+
+print(f"✅ NLTK data paths configured:")
+print(f"   Local: {local_nltk_path}")
+print(f"   Render: {render_nltk_path}")
+print(f"   Current NLTK paths: {nltk.data.path[:3]}...")
 
 import httpx
 import logging

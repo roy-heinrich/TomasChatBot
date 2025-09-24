@@ -15,10 +15,13 @@ to identify and extract meaningful information from user queries including:
 import os
 import nltk
 
-# Point NLTK to the folder where Render installed the data
-nltk_data_path = "/opt/render/nltk_data"
-os.environ["NLTK_DATA"] = nltk_data_path
-nltk.data.path.append(nltk_data_path)
+# Point NLTK to the local nltk_data folder first, then Render path for deployment
+local_nltk_path = os.path.join(os.path.dirname(__file__), "nltk_data")
+render_nltk_path = "/opt/render/nltk_data"
+
+# Add local path first (for development), then Render path (for deployment)
+nltk.data.path.insert(0, local_nltk_path)
+nltk.data.path.append(render_nltk_path)
 
 import re
 import logging
@@ -27,7 +30,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import calendar
 
-# NLTK will be imported lazily to avoid deployment issues
+# Initialize NLTK immediately like in the earlier working builds
 NLTK_AVAILABLE = False
 NLTK_INITIALIZED = False
 
@@ -152,13 +155,9 @@ class AdvancedEntityExtractor:
         """Enhanced entity extraction using NLTK"""
         entities = []
         
-        # Initialize NLTK if not already done
-        if not _initialize_nltk():
-            return entities
-        
-        # Check if NLTK functions are available
-        if not all([word_tokenize, pos_tag, ne_chunk, Tree]):
-            logger.warning("NLTK functions not properly initialized")
+        # NLTK should be initialized at module import, but check just in case
+        if not NLTK_AVAILABLE or not all([word_tokenize, pos_tag, ne_chunk, Tree]):
+            logger.warning("NLTK functions not available for entity extraction")
             return entities
         
         try:
@@ -204,23 +203,24 @@ class AdvancedEntityExtractor:
             except Exception as e:
                 logger.warning(f"NLTK NER failed: {e}")
             
-            # Extract proper nouns using POS tagging
+            # Extract proper nouns using POS tagging - but be more conservative
             proper_nouns = []
             for token, pos in pos_tags:
-                if pos == 'NNP' and len(token) > 1:  # Proper noun
+                if pos == 'NNP' and len(token) > 2:  # Proper noun, at least 3 characters
                     proper_nouns.append(token)
             
-            # Check if proper nouns are likely person names
+            # Check if proper nouns are likely person names - with stricter validation
             for noun in proper_nouns:
                 if noun.istitle() and len(noun) > 2:
-                    # Simple heuristic: capitalized words that could be names
-                    entities.append(ExtractedEntity(
-                        entity_type='person_name',
-                        value=noun,
-                        confidence=0.6,
-                        start_pos=text.find(noun),
-                        end_pos=text.find(noun) + len(noun)
-                    ))
+                    # 🚨 FIX: Use the same validation as rule-based extraction
+                    if self._is_valid_name(noun):
+                        entities.append(ExtractedEntity(
+                            entity_type='person_name',
+                            value=noun,
+                            confidence=0.6,
+                            start_pos=text.find(noun),
+                            end_pos=text.find(noun) + len(noun)
+                        ))
             
             logger.info(f"🔍 NLTK extracted {len(entities)} entities")
             
@@ -664,13 +664,40 @@ class AdvancedEntityExtractor:
         if not name or len(name) < 2:
             return False
         
-        # Exclude common false positives
+        # 🚨 CRITICAL FIX: Expanded list of false positives to prevent common words being extracted as names
         false_positives = [
+            # Common English words
             "super", "excited", "back", "again", "really", "very", "quite",
             "the", "and", "or", "but", "for", "with", "from", "about",
             "good", "great", "nice", "fine", "okay", "yes", "no",
             "interested", "in", "who", "what", "when", "where", "how",
-            "this", "that", "these", "those", "all", "some", "many"
+            "this", "that", "these", "those", "all", "some", "many",
+            # Common emotions and states
+            "sad", "happy", "angry", "tired", "sick", "well", "fine", "ok",
+            "excited", "nervous", "worried", "scared", "afraid", "confused",
+            # Common question words and verbs
+            "are", "is", "was", "were", "be", "been", "being", "have", "has", "had",
+            "do", "does", "did", "will", "would", "could", "should", "can", "may",
+            "must", "shall", "might", "want", "need", "like", "love", "hate",
+            # Common school-related words that shouldn't be names
+            "school", "teacher", "student", "class", "grade", "principal", "head",
+            "staff", "office", "library", "cafeteria", "gym", "playground",
+            "enrollment", "admission", "registration", "application", "form",
+            # Common Filipino/Aklanon words
+            "ako", "si", "ang", "ng", "sa", "ko", "mo", "niya", "namin", "ninyo", "nila",
+            "kumusta", "kamusta", "salamat", "magandang", "maayong", "paaralan", "eskwelahan",
+            "baitang", "klase", "guro", "maestro", "direktor", "administrador",
+            # Common articles and prepositions
+            "a", "an", "the", "of", "to", "in", "on", "at", "by", "for", "with",
+            "up", "down", "out", "off", "over", "under", "through", "during",
+            # Common adjectives
+            "big", "small", "old", "new", "young", "old", "hot", "cold", "warm", "cool",
+            "fast", "slow", "high", "low", "long", "short", "wide", "narrow",
+            "clean", "dirty", "safe", "dangerous", "easy", "hard", "simple", "complex",
+            # Common nouns that aren't names
+            "time", "day", "night", "morning", "afternoon", "evening", "week", "month", "year",
+            "house", "home", "car", "bus", "train", "plane", "book", "paper", "pen", "pencil",
+            "food", "water", "money", "work", "job", "family", "friend", "child", "parent"
         ]
         
         # Check for name-like characteristics
@@ -681,8 +708,17 @@ class AdvancedEntityExtractor:
             # Names should be mostly alphabetic
             if not word.replace("'", "").replace("-", "").isalpha():
                 return False
-            # Names should be valid (we'll capitalize them later)
-            # Don't require capital letters since we handle both cases
+            # 🚨 FIX: Names should be at least 2 characters long
+            if len(word) < 2:
+                return False
+            # 🚨 FIX: Names shouldn't be all lowercase common words
+            if word.islower() and word in false_positives:
+                return False
+        
+        # 🚨 FIX: Additional validation - names should have at least one character that's not a common word
+        # This prevents single common words from being extracted as names
+        if len(words) == 1 and words[0].lower() in false_positives:
+            return False
         
         return True
     
@@ -778,3 +814,7 @@ class AdvancedEntityExtractor:
                 resolved.append(entity)
         
         return sorted(resolved, key=lambda e: e.confidence, reverse=True)
+
+# 🚨 CRITICAL FIX: Initialize NLTK immediately when module is imported
+# This ensures NLTK is ready before any entity extraction happens
+_initialize_nltk()
