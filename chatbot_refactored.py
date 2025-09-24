@@ -59,21 +59,36 @@ class ChatBot:
         logger.info("✅ ChatBot initialized with clean, modular architecture")
     
     def _extract_user_name(self, conversation_history: List[Dict]) -> str:
-        """Extract user name from conversation history - let NLU handle intent detection"""
+        """Extract user name from conversation history using NLP entity extraction"""
         for msg in reversed(conversation_history):
             if msg.get("role") == "user":
-                content = msg.get("content", "").lower()
-                # Look for name introduction patterns
-                if "i am" in content or "ako si" in content or "ang pangalan ko" in content or "hi i am" in content:
-                    # Extract name after introduction - let NLU engine handle intent classification
-                    parts = content.split()
-                    for i, part in enumerate(parts):
-                        if part in ["am", "si", "ko"] and i + 1 < len(parts):
-                            name = parts[i + 1].title()
-                            # Clean up name (remove punctuation)
-                            name = ''.join(c for c in name if c.isalnum())
-                            if name and len(name) > 1:  # Valid name
-                                return name
+                content = msg.get("content", "")
+                # Use the entity extractor to find PERSON entities
+                entities = self.entity_extractor.extract_entities(content)
+                
+                # Look for PERSON entities that could be names
+                for entity in entities:
+                    if entity.entity_type == "PERSON" and entity.confidence > 0.7:
+                        # Clean up the name (remove punctuation, capitalize properly)
+                        name = ''.join(c for c in entity.value if c.isalnum() or c.isspace()).strip()
+                        if name and len(name) > 1 and len(name) < 50:  # Reasonable name length
+                            return name.title()
+                
+                # If no PERSON entities found, try to extract from common name introduction patterns
+                # but only if the content looks like a genuine name introduction
+                content_lower = content.lower()
+                if any(pattern in content_lower for pattern in ["my name is", "i'm called", "call me"]):
+                    # Extract the part after the introduction phrase
+                    for pattern in ["my name is", "i'm called", "call me"]:
+                        if pattern in content_lower:
+                            # Get the text after the pattern
+                            after_pattern = content_lower.split(pattern, 1)[1].strip()
+                            # Take the first word/phrase as potential name
+                            potential_name = after_pattern.split()[0] if after_pattern.split() else ""
+                            # Clean and validate
+                            clean_name = ''.join(c for c in potential_name if c.isalnum()).strip()
+                            if clean_name and len(clean_name) > 1 and len(clean_name) < 30:
+                                return clean_name.title()
         return ""
     
     def _extract_child_name(self, conversation_history: List[Dict]) -> str:

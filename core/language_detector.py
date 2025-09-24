@@ -57,7 +57,7 @@ class LanguageDetector:
             return "en"
         
         # 🎯 FIX: Strong English patterns
-        if re.search(r'\b(how do|how can|how to|what is|what are|where is|when is|who is|hello|hi|goodbye|bye|thank you|thanks|help|yes|no|ok|okay|my name is)\b', text_lower):
+        if re.search(r'\b(how do|how can|how to|what is|what are|where is|when is|who is|hello|hi|goodbye|bye|thank you|thanks|help|yes|no|ok|okay|my name is|tell me|everything about|about the|school|information|need|want|know)\b', text_lower):
             return "en"
         
         # Aklanon detection (priority) - Enhanced word list

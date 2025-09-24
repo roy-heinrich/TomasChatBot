@@ -37,42 +37,9 @@ class ConversationMemory:
         self.session_topics: Dict[str, List[str]] = {}  # session_id -> topics
         
     def extract_user_name(self, conversation_history: List[Dict]) -> Optional[str]:
-        """Extract user name from conversation history using intelligent pattern matching"""
-        for msg in reversed(conversation_history):
-            if msg.get("role") == "user":
-                content = msg.get("content", "").lower()
-                # Enhanced name extraction patterns
-                patterns = [
-                    r"hi i am (\w+)",
-                    r"hello i am (\w+)",
-                    r"i am (\w+)",
-                    r"ako si (\w+)",
-                    r"ang pangalan ko ay (\w+)",
-                    r"my name is (\w+)",
-                    r"call me (\w+)"
-                ]
-                
-                import re
-                for pattern in patterns:
-                    match = re.search(pattern, content)
-                    if match:
-                        potential_name = match.group(1).lower()
-                        
-                        # Skip common non-name words using basic heuristics
-                        non_name_words = {
-                            "here", "there", "back", "new", "old", "young", "tall", "short",
-                            "good", "bad", "great", "fine", "okay", "ok", "well", "better",
-                            "best", "worst", "nice", "cool", "awesome", "amazing", "wonderful"
-                        }
-                        
-                        if potential_name in non_name_words:
-                            continue
-                            
-                        name = match.group(1).title()
-                        # Clean up name (remove punctuation)
-                        name = ''.join(c for c in name if c.isalnum())
-                        if name and len(name) > 1:
-                            return name
+        """Extract user name from conversation history using NLP entity extraction"""
+        # This method should be called with proper entity extraction from the main chatbot
+        # For now, return None to avoid hardcoded pattern matching
         return None
     
     def extract_topics_from_query(self, query: str) -> List[str]:

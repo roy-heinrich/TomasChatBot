@@ -697,7 +697,10 @@ class AdvancedEntityExtractor:
             # Common nouns that aren't names
             "time", "day", "night", "morning", "afternoon", "evening", "week", "month", "year",
             "house", "home", "car", "bus", "train", "plane", "book", "paper", "pen", "pencil",
-            "food", "water", "money", "work", "job", "family", "friend", "child", "parent"
+            "food", "water", "money", "work", "job", "family", "friend", "child", "parent",
+            # 🚨 NEW: Common abbreviations and contractions that shouldn't be names
+            "tho", "though", "btw", "lol", "omg", "wtf", "jk", "tbh", "imo", "fyi",
+            "etc", "vs", "aka", "asap", "rsvp", "p.s", "p.s.", "n/a", "tba", "tbd"
         ]
         
         # Check for name-like characteristics
@@ -719,6 +722,12 @@ class AdvancedEntityExtractor:
         # This prevents single common words from being extracted as names
         if len(words) == 1 and words[0].lower() in false_positives:
             return False
+        
+        # 🚨 NEW: Smart validation for multi-word names
+        # If any word in the name is a common abbreviation or contraction, reject the whole name
+        for word in words:
+            if word.lower() in ["tho", "though", "btw", "lol", "omg", "wtf", "jk", "tbh", "imo", "fyi"]:
+                return False
         
         return True
     
