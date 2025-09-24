@@ -14,6 +14,14 @@ import os
 
 logger = logging.getLogger(__name__)
 
+# Set up NLTK data path BEFORE any imports
+nltk_data_dir = os.path.join(os.getcwd(), 'nltk_data')
+if os.path.exists(nltk_data_dir):
+    # Set NLTK data path globally before any NLTK imports
+    import nltk
+    nltk.data.path.insert(0, nltk_data_dir)  # Insert at beginning to prioritize local data
+    logger.info(f"✅ NLTK data path set to: {nltk_data_dir}")
+
 # Lightweight NLP alternatives - defer imports to avoid wordnet issues
 NLTK_AVAILABLE = False
 TEXTBLOB_AVAILABLE = False
@@ -117,13 +125,7 @@ class MultilingualNLPEngine:
                 from nltk.corpus import stopwords
                 from nltk.stem import PorterStemmer
                 
-                # Set up NLTK data path to use local nltk_data folder
-                nltk_data_dir = os.path.join(os.getcwd(), 'nltk_data')
-                if os.path.exists(nltk_data_dir):
-                    nltk.data.path.append(nltk_data_dir)
-                    logger.info(f"✅ Using local NLTK data from: {nltk_data_dir}")
-                else:
-                    logger.warning("⚠️ Local nltk_data folder not found, using default paths")
+                # NLTK data path already set at module level
                 
                 # Verify essential NLTK resources are available
                 try:

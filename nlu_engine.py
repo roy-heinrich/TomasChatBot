@@ -8,24 +8,47 @@ from enum import Enum
 
 logger = logging.getLogger(__name__)
 
-# Import NLTK for enhanced text processing
-try:
+# Set up NLTK data path BEFORE any imports
+nltk_data_dir = os.path.join(os.getcwd(), 'nltk_data')
+if os.path.exists(nltk_data_dir):
+    # Set NLTK data path globally before any NLTK imports
     import nltk
-    from nltk.tokenize import word_tokenize, sent_tokenize
-    from nltk.corpus import stopwords
-    from nltk.stem import PorterStemmer
-    from nltk.tag import pos_tag
+    nltk.data.path.insert(0, nltk_data_dir)  # Insert at beginning to prioritize local data
+    logger.info(f"✅ NLTK data path set to: {nltk_data_dir}")
+
+# NLTK will be imported lazily to avoid deployment issues
+NLTK_AVAILABLE = False
+NLTK_INITIALIZED = False
+
+def _initialize_nltk():
+    """Initialize NLTK safely with error handling"""
+    global NLTK_AVAILABLE, NLTK_INITIALIZED
     
-    # Set up NLTK data path
-    nltk_data_dir = os.path.join(os.getcwd(), 'nltk_data')
-    if os.path.exists(nltk_data_dir):
-        nltk.data.path.append(nltk_data_dir)
-        logger.info(f"✅ NLU Engine using local NLTK data from: {nltk_data_dir}")
+    if NLTK_INITIALIZED:
+        return NLTK_AVAILABLE
     
-    NLTK_AVAILABLE = True
-except ImportError:
-    NLTK_AVAILABLE = False
-    logger.warning("NLTK not available for NLU engine")
+    try:
+        import nltk
+        from nltk.tokenize import word_tokenize, sent_tokenize
+        from nltk.corpus import stopwords
+        from nltk.stem import PorterStemmer
+        from nltk.tag import pos_tag
+        
+        NLTK_AVAILABLE = True
+        NLTK_INITIALIZED = True
+        logger.info("✅ NLTK initialized successfully for NLU engine")
+        return True
+        
+    except ImportError:
+        NLTK_AVAILABLE = False
+        NLTK_INITIALIZED = True
+        logger.warning("NLTK not available for NLU engine")
+        return False
+    except Exception as e:
+        NLTK_AVAILABLE = False
+        NLTK_INITIALIZED = True
+        logger.warning(f"NLTK initialization failed: {e}")
+        return False
 
 # Import the new multilingual NLP engine
 try:
@@ -109,8 +132,10 @@ class NLUEngine:
         # Initialize NLTK components for enhanced text processing
         self.stemmer = None
         self.stop_words = set()
-        if NLTK_AVAILABLE:
+        if _initialize_nltk():
             try:
+                from nltk.stem import PorterStemmer
+                from nltk.corpus import stopwords
                 self.stemmer = PorterStemmer()
                 self.stop_words = set(stopwords.words('english'))
                 logger.info(f"✅ NLU Engine initialized with {len(self.stop_words)} stopwords")
@@ -120,10 +145,11 @@ class NLUEngine:
     
     def _preprocess_text(self, text: str) -> str:
         """Enhanced text preprocessing using NLTK"""
-        if not NLTK_AVAILABLE:
+        if not _initialize_nltk():
             return text.lower().strip()
         
         try:
+            from nltk.tokenize import word_tokenize
             # Tokenize and clean text
             tokens = word_tokenize(text.lower())
             
@@ -142,10 +168,12 @@ class NLUEngine:
     
     def _extract_key_phrases(self, text: str) -> List[str]:
         """Extract key phrases using NLTK POS tagging"""
-        if not NLTK_AVAILABLE:
+        if not _initialize_nltk():
             return text.split()
         
         try:
+            from nltk.tokenize import word_tokenize
+            from nltk.tag import pos_tag
             tokens = word_tokenize(text)
             pos_tags = pos_tag(tokens)
             
@@ -162,7 +190,7 @@ class NLUEngine:
     
     def _calculate_semantic_similarity(self, text1: str, text2: str) -> float:
         """Calculate semantic similarity between two texts"""
-        if not NLTK_AVAILABLE:
+        if not _initialize_nltk():
             # Simple word overlap similarity
             words1 = set(text1.lower().split())
             words2 = set(text2.lower().split())

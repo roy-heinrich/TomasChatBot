@@ -20,25 +20,48 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import calendar
 
-# Import NLTK for enhanced entity extraction
-try:
+# Set up NLTK data path BEFORE any imports
+nltk_data_dir = os.path.join(os.getcwd(), 'nltk_data')
+if os.path.exists(nltk_data_dir):
+    # Set NLTK data path globally before any NLTK imports
     import nltk
-    from nltk.tokenize import word_tokenize, sent_tokenize
-    from nltk.corpus import stopwords
-    from nltk.tag import pos_tag
-    from nltk.chunk import ne_chunk
-    from nltk.tree import Tree
+    nltk.data.path.insert(0, nltk_data_dir)  # Insert at beginning to prioritize local data
+    print(f"✅ NLTK data path set to: {nltk_data_dir}")
+
+# NLTK will be imported lazily to avoid deployment issues
+NLTK_AVAILABLE = False
+NLTK_INITIALIZED = False
+
+def _initialize_nltk():
+    """Initialize NLTK safely with error handling"""
+    global NLTK_AVAILABLE, NLTK_INITIALIZED
     
-    # Set up NLTK data path
-    nltk_data_dir = os.path.join(os.getcwd(), 'nltk_data')
-    if os.path.exists(nltk_data_dir):
-        nltk.data.path.append(nltk_data_dir)
-        print(f"✅ Entity Extractor using local NLTK data from: {nltk_data_dir}")
+    if NLTK_INITIALIZED:
+        return NLTK_AVAILABLE
     
-    NLTK_AVAILABLE = True
-except ImportError:
-    NLTK_AVAILABLE = False
-    print("NLTK not available for entity extraction")
+    try:
+        import nltk
+        from nltk.tokenize import word_tokenize, sent_tokenize
+        from nltk.corpus import stopwords
+        from nltk.tag import pos_tag
+        from nltk.chunk import ne_chunk
+        from nltk.tree import Tree
+        
+        NLTK_AVAILABLE = True
+        NLTK_INITIALIZED = True
+        print("✅ NLTK initialized successfully for entity extraction")
+        return True
+        
+    except ImportError:
+        NLTK_AVAILABLE = False
+        NLTK_INITIALIZED = True
+        print("NLTK not available for entity extraction")
+        return False
+    except Exception as e:
+        NLTK_AVAILABLE = False
+        NLTK_INITIALIZED = True
+        print(f"NLTK initialization failed: {e}")
+        return False
 
 # Import the new multilingual NLP engine
 try:
