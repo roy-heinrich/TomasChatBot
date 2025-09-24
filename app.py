@@ -5,6 +5,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from supabase import create_client, Client
 from dotenv import load_dotenv
+
+# Force NLTK to use your committed data folder BEFORE any NLTK imports
+import nltk
+nltk_data_path = os.path.join(os.path.dirname(__file__), "nltk_data")
+os.environ["NLTK_DATA"] = nltk_data_path
+nltk.data.path.append(nltk_data_path)
+print(f"✅ NLTK data path set to: {nltk_data_path}")
+
 from chatbot_refactored import ChatBot
 from pydantic import BaseModel
 
