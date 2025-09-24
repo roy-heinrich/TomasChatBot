@@ -12,15 +12,20 @@ to identify and extract meaningful information from user queries including:
 - Contact information
 """
 
+import os
+import nltk
+
+# Point NLTK to the folder where Render installed the data
+nltk_data_path = "/opt/render/nltk_data"
+os.environ["NLTK_DATA"] = nltk_data_path
+nltk.data.path.append(nltk_data_path)
+
 import re
 import logging
-import os
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import calendar
-
-# NLTK data path is set globally in app.py before any imports
 
 # NLTK will be imported lazily to avoid deployment issues
 NLTK_AVAILABLE = False

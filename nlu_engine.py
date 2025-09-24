@@ -1,14 +1,19 @@
+import os
+import nltk
+
+# Point NLTK to the folder where Render installed the data
+nltk_data_path = "/opt/render/nltk_data"
+os.environ["NLTK_DATA"] = nltk_data_path
+nltk.data.path.append(nltk_data_path)
+
 import json
 import logging
-import os
 import re
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from enum import Enum
 
 logger = logging.getLogger(__name__)
-
-# NLTK data path is set globally in app.py before any imports
 
 # NLTK will be imported lazily to avoid deployment issues
 NLTK_AVAILABLE = False

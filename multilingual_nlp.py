@@ -3,6 +3,14 @@ Advanced Multilingual NLP Engine for the TOMAS Chatbot
 Supports English, Tagalog, and Aklanon with semantic understanding
 """
 
+import os
+import nltk
+
+# Point NLTK to the folder where Render installed the data
+nltk_data_path = "/opt/render/nltk_data"
+os.environ["NLTK_DATA"] = nltk_data_path
+nltk.data.path.append(nltk_data_path)
+
 import logging
 import json
 import re
@@ -10,11 +18,8 @@ from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
 import asyncio
-import os
 
 logger = logging.getLogger(__name__)
-
-# NLTK data path is set globally in app.py before any imports
 
 # Lightweight NLP alternatives - defer imports to avoid wordnet issues
 NLTK_AVAILABLE = False
