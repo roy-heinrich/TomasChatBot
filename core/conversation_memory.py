@@ -37,7 +37,7 @@ class ConversationMemory:
         self.session_topics: Dict[str, List[str]] = {}  # session_id -> topics
         
     def extract_user_name(self, conversation_history: List[Dict]) -> Optional[str]:
-        """Extract user name from conversation history"""
+        """Extract user name from conversation history using intelligent pattern matching"""
         for msg in reversed(conversation_history):
             if msg.get("role") == "user":
                 content = msg.get("content", "").lower()
@@ -56,6 +56,18 @@ class ConversationMemory:
                 for pattern in patterns:
                     match = re.search(pattern, content)
                     if match:
+                        potential_name = match.group(1).lower()
+                        
+                        # Skip common non-name words using basic heuristics
+                        non_name_words = {
+                            "here", "there", "back", "new", "old", "young", "tall", "short",
+                            "good", "bad", "great", "fine", "okay", "ok", "well", "better",
+                            "best", "worst", "nice", "cool", "awesome", "amazing", "wonderful"
+                        }
+                        
+                        if potential_name in non_name_words:
+                            continue
+                            
                         name = match.group(1).title()
                         # Clean up name (remove punctuation)
                         name = ''.join(c for c in name if c.isalnum())

@@ -59,13 +59,13 @@ class ChatBot:
         logger.info("✅ ChatBot initialized with clean, modular architecture")
     
     def _extract_user_name(self, conversation_history: List[Dict]) -> str:
-        """Extract user name from conversation history"""
+        """Extract user name from conversation history - let NLU handle intent detection"""
         for msg in reversed(conversation_history):
             if msg.get("role") == "user":
                 content = msg.get("content", "").lower()
                 # Look for name introduction patterns
                 if "i am" in content or "ako si" in content or "ang pangalan ko" in content or "hi i am" in content:
-                    # Extract name after introduction - improved pattern matching
+                    # Extract name after introduction - let NLU engine handle intent classification
                     parts = content.split()
                     for i, part in enumerate(parts):
                         if part in ["am", "si", "ko"] and i + 1 < len(parts):
@@ -102,14 +102,21 @@ class ChatBot:
             entities = self.entity_extractor.extract_entities(query)
             logger.info(f"🔍 Extracted {len(entities)} entities")
             
-            # 2.5. Enhanced memory system - extract user info and update memory
+            # 3. Get NLU analysis FIRST to determine intent
+            nlu_result = await self.nlu_engine.analyze_intent(query)
+            
+            # 4. Enhanced memory system - extract user info and update memory
             user_name = ""
             child_name = ""
             if conversation_history:
-                user_name = self._extract_user_name(conversation_history)
-                child_name = self._extract_child_name(conversation_history)
-                if user_name:
-                    logger.info(f"🔍 Extracted names: user='{user_name}', child='{child_name}'")
+                # Only extract names if NLU detects name introduction intent
+                if nlu_result and nlu_result.intent.value in ['name_introduction', 'greeting_with_name']:
+                    user_name = self._extract_user_name(conversation_history)
+                    child_name = self._extract_child_name(conversation_history)
+                    if user_name:
+                        logger.info(f"🔍 Extracted names: user='{user_name}', child='{child_name}'")
+                else:
+                    logger.info(f"🔍 Skipping name extraction - intent is '{nlu_result.intent.value if nlu_result else 'unknown'}'")
             
             # Update conversation memory
             if session_id:
@@ -152,8 +159,7 @@ class ChatBot:
                         context += f"\n\nPersonalized Greeting: {personalized_greeting}"
                         logger.info(f"👋 Added personalized greeting: {personalized_greeting}")
             
-            # Get NLU info for better context
-            nlu_result = await self.nlu_engine.analyze_intent(query)
+            # Get NLU info for better context (already analyzed above)
             nlu_info = {
                 'intent': nlu_result.intent.value if nlu_result else 'unknown',
                 'confidence': nlu_result.confidence if nlu_result else 0.0,
