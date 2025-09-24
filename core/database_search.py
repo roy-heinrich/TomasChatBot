@@ -262,6 +262,18 @@ class DatabaseSearchEngine:
         elif query_lower in keywords_lower:
             score += 150
         
+        # 1.1. Semantic relevance boost - prioritize results that match the intent
+        # If user asks "where can i find", prioritize results with "where is" or "location"
+        if 'where' in query_lower and 'find' in query_lower:
+            if 'where' in keywords_lower and ('is' in keywords_lower or 'location' in keywords_lower):
+                score += 200  # Very high boost for semantic match
+        elif 'how can i contact' in query_lower:
+            if 'contact' in keywords_lower or 'reach' in keywords_lower:
+                score += 200  # Very high boost for semantic match
+        elif 'what is' in query_lower or 'what are' in query_lower:
+            if 'what' in keywords_lower:
+                score += 200  # Very high boost for semantic match
+        
         # 1.5. Exact phrase matching for specific queries
         clean_query = re.sub(r'^(who|what|where|when|why|how|sino|ano|saan|kailan|bakit|paano)\s+is\s+the\s+', '', query_lower)
         clean_query = re.sub(r'\?$', '', clean_query)
@@ -389,6 +401,18 @@ class DatabaseSearchEngine:
                 score += 200
             elif query_lower in keywords_lower:
                 score += 150
+            
+            # 1.1. Semantic relevance boost - prioritize results that match the intent
+            # If user asks "where can i find", prioritize results with "where is" or "location"
+            if 'where' in query_lower and 'find' in query_lower:
+                if 'where' in keywords_lower and ('is' in keywords_lower or 'location' in keywords_lower):
+                    score += 200  # Very high boost for semantic match
+            elif 'how can i contact' in query_lower:
+                if 'contact' in keywords_lower or 'reach' in keywords_lower:
+                    score += 200  # Very high boost for semantic match
+            elif 'what is' in query_lower or 'what are' in query_lower:
+                if 'what' in keywords_lower:
+                    score += 200  # Very high boost for semantic match
             
             # 1.5. Exact phrase matching for specific queries
             # Remove question words and punctuation for better matching
