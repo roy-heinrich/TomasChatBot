@@ -14,10 +14,31 @@ to identify and extract meaningful information from user queries including:
 
 import re
 import logging
+import os
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import calendar
+
+# Import NLTK for enhanced entity extraction
+try:
+    import nltk
+    from nltk.tokenize import word_tokenize, sent_tokenize
+    from nltk.corpus import stopwords
+    from nltk.tag import pos_tag
+    from nltk.chunk import ne_chunk
+    from nltk.tree import Tree
+    
+    # Set up NLTK data path
+    nltk_data_dir = os.path.join(os.getcwd(), 'nltk_data')
+    if os.path.exists(nltk_data_dir):
+        nltk.data.path.append(nltk_data_dir)
+        print(f"✅ Entity Extractor using local NLTK data from: {nltk_data_dir}")
+    
+    NLTK_AVAILABLE = True
+except ImportError:
+    NLTK_AVAILABLE = False
+    print("NLTK not available for entity extraction")
 
 # Import the new multilingual NLP engine
 try:
@@ -77,12 +98,91 @@ class AdvancedEntityExtractor:
         entities.extend(self._extract_ages(text, text_lower))
         entities.extend(self._extract_staff_roles(text, text_lower))
         
+        # Enhanced extraction using NLTK
+        nltk_entities = self._extract_entities_with_nltk(text)
+        entities.extend(nltk_entities)
+        
         # Sort by confidence and remove overlaps
         entities = self._resolve_entity_conflicts(entities)
         
         logger.info(f"🔍 Rule-based extracted {len(entities)} entities from: '{text[:50]}...'")
         for entity in entities:
             logger.info(f"   📍 {entity.entity_type}: '{entity.value}' (confidence: {entity.confidence:.2f})")
+        
+        return entities
+    
+    def _extract_entities_with_nltk(self, text: str) -> List[ExtractedEntity]:
+        """Enhanced entity extraction using NLTK"""
+        entities = []
+        
+        if not NLTK_AVAILABLE:
+            return entities
+        
+        try:
+            # Tokenize and tag the text
+            tokens = word_tokenize(text)
+            pos_tags = pos_tag(tokens)
+            
+            # Named Entity Recognition
+            try:
+                # Try to use NLTK's named entity chunker
+                chunked = ne_chunk(pos_tags)
+                
+                for chunk in chunked:
+                    if isinstance(chunk, Tree):
+                        entity_type = chunk.label()
+                        entity_text = ' '.join([token for token, pos in chunk.leaves()])
+                        
+                        # Map NLTK entity types to our types
+                        if entity_type == 'PERSON':
+                            entities.append(ExtractedEntity(
+                                entity_type='person_name',
+                                value=entity_text,
+                                confidence=0.8,
+                                start_pos=text.find(entity_text),
+                                end_pos=text.find(entity_text) + len(entity_text)
+                            ))
+                        elif entity_type in ['GPE', 'LOCATION']:
+                            entities.append(ExtractedEntity(
+                                entity_type='location',
+                                value=entity_text,
+                                confidence=0.7,
+                                start_pos=text.find(entity_text),
+                                end_pos=text.find(entity_text) + len(entity_text)
+                            ))
+                        elif entity_type == 'ORGANIZATION':
+                            entities.append(ExtractedEntity(
+                                entity_type='organization',
+                                value=entity_text,
+                                confidence=0.7,
+                                start_pos=text.find(entity_text),
+                                end_pos=text.find(entity_text) + len(entity_text)
+                            ))
+            except Exception as e:
+                logger.warning(f"NLTK NER failed: {e}")
+            
+            # Extract proper nouns using POS tagging
+            proper_nouns = []
+            for token, pos in pos_tags:
+                if pos == 'NNP' and len(token) > 1:  # Proper noun
+                    proper_nouns.append(token)
+            
+            # Check if proper nouns are likely person names
+            for noun in proper_nouns:
+                if noun.istitle() and len(noun) > 2:
+                    # Simple heuristic: capitalized words that could be names
+                    entities.append(ExtractedEntity(
+                        entity_type='person_name',
+                        value=noun,
+                        confidence=0.6,
+                        start_pos=text.find(noun),
+                        end_pos=text.find(noun) + len(noun)
+                    ))
+            
+            logger.info(f"🔍 NLTK extracted {len(entities)} entities")
+            
+        except Exception as e:
+            logger.warning(f"NLTK entity extraction failed: {e}")
         
         return entities
     
@@ -198,7 +298,12 @@ class AdvancedEntityExtractor:
             # Filipino patterns - handle both uppercase and lowercase names
             r"ako si ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+at|\s*,|\s*$)",
             r"anak ko si ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+at|\s*,|\s*$)",
-            r"pangalan (?:niya|niya) ay ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+at|\s*,|\s*$)"
+            r"pangalan (?:niya|niya) ay ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+at|\s*,|\s*$)",
+            
+            # Aklanon patterns - handle both uppercase and lowercase names
+            r"ngaean ko si ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+at|\s*,|\s*$)",
+            r"ngaean ko ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+at|\s*,|\s*$)",
+            r"ngaean si ([A-Za-z]+(?:\s+[A-Za-z]+)*?)(?:\s+at|\s*,|\s*$)"
         ]
     
     def _build_date_patterns(self) -> List[str]:
@@ -252,6 +357,9 @@ class AdvancedEntityExtractor:
             matches = re.finditer(pattern, text, re.IGNORECASE)
             for match in matches:
                 name = match.group(1).strip()
+                
+                # Clean the name (remove common prefixes)
+                name = self._clean_extracted_name(name)
                 
                 # Validate name (exclude common false positives)
                 if self._is_valid_name(name):
@@ -487,6 +595,26 @@ class AdvancedEntityExtractor:
                     entities.append(entity)
         
         return entities
+    
+    def _clean_extracted_name(self, name: str) -> str:
+        """Clean extracted name by removing common prefixes and suffixes"""
+        # Remove common Filipino/Aklanon prefixes
+        prefixes_to_remove = ["si ", "ang ", "ng ", "sa ", "kay ", "ni "]
+        
+        name_lower = name.lower().strip()
+        for prefix in prefixes_to_remove:
+            if name_lower.startswith(prefix):
+                name = name[len(prefix):].strip()
+                break
+        
+        # Remove common suffixes
+        suffixes_to_remove = [" ang", " nga", " na", " si"]
+        for suffix in suffixes_to_remove:
+            if name_lower.endswith(suffix):
+                name = name[:-len(suffix)].strip()
+                break
+        
+        return name.strip()
     
     def _is_valid_name(self, name: str) -> bool:
         """Validate if extracted text is likely a real name"""

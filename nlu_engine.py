@@ -1,10 +1,31 @@
 import json
 import logging
+import os
+import re
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+# Import NLTK for enhanced text processing
+try:
+    import nltk
+    from nltk.tokenize import word_tokenize, sent_tokenize
+    from nltk.corpus import stopwords
+    from nltk.stem import PorterStemmer
+    from nltk.tag import pos_tag
+    
+    # Set up NLTK data path
+    nltk_data_dir = os.path.join(os.getcwd(), 'nltk_data')
+    if os.path.exists(nltk_data_dir):
+        nltk.data.path.append(nltk_data_dir)
+        logger.info(f"✅ NLU Engine using local NLTK data from: {nltk_data_dir}")
+    
+    NLTK_AVAILABLE = True
+except ImportError:
+    NLTK_AVAILABLE = False
+    logger.warning("NLTK not available for NLU engine")
 
 # Import the new multilingual NLP engine
 try:
@@ -84,6 +105,102 @@ class NLUEngine:
         # Optional: Initialize AI clients (OpenAI/Groq) for advanced classification
         self.openai_client = None
         self.groq_client = None
+        
+        # Initialize NLTK components for enhanced text processing
+        self.stemmer = None
+        self.stop_words = set()
+        if NLTK_AVAILABLE:
+            try:
+                self.stemmer = PorterStemmer()
+                self.stop_words = set(stopwords.words('english'))
+                logger.info(f"✅ NLU Engine initialized with {len(self.stop_words)} stopwords")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not initialize NLTK components: {e}")
+                self.stop_words = set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'])
+    
+    def _preprocess_text(self, text: str) -> str:
+        """Enhanced text preprocessing using NLTK"""
+        if not NLTK_AVAILABLE:
+            return text.lower().strip()
+        
+        try:
+            # Tokenize and clean text
+            tokens = word_tokenize(text.lower())
+            
+            # Remove stopwords and non-alphabetic tokens
+            filtered_tokens = [token for token in tokens 
+                             if token.isalpha() and token not in self.stop_words]
+            
+            # Stem tokens if stemmer is available
+            if self.stemmer:
+                filtered_tokens = [self.stemmer.stem(token) for token in filtered_tokens]
+            
+            return ' '.join(filtered_tokens)
+        except Exception as e:
+            logger.warning(f"Text preprocessing failed: {e}")
+            return text.lower().strip()
+    
+    def _extract_key_phrases(self, text: str) -> List[str]:
+        """Extract key phrases using NLTK POS tagging"""
+        if not NLTK_AVAILABLE:
+            return text.split()
+        
+        try:
+            tokens = word_tokenize(text)
+            pos_tags = pos_tag(tokens)
+            
+            # Extract nouns, adjectives, and important verbs
+            key_phrases = []
+            for token, pos in pos_tags:
+                if pos.startswith(('NN', 'JJ', 'VB')) and len(token) > 2:
+                    key_phrases.append(token.lower())
+            
+            return key_phrases
+        except Exception as e:
+            logger.warning(f"Key phrase extraction failed: {e}")
+            return text.split()
+    
+    def _calculate_semantic_similarity(self, text1: str, text2: str) -> float:
+        """Calculate semantic similarity between two texts"""
+        if not NLTK_AVAILABLE:
+            # Simple word overlap similarity
+            words1 = set(text1.lower().split())
+            words2 = set(text2.lower().split())
+            intersection = words1.intersection(words2)
+            union = words1.union(words2)
+            return len(intersection) / len(union) if union else 0.0
+        
+        try:
+            # Enhanced similarity using preprocessed text
+            processed1 = self._preprocess_text(text1)
+            processed2 = self._preprocess_text(text2)
+            
+            words1 = set(processed1.split())
+            words2 = set(processed2.split())
+            
+            if not words1 or not words2:
+                return 0.0
+            
+            intersection = words1.intersection(words2)
+            union = words1.union(words2)
+            
+            # Jaccard similarity
+            jaccard = len(intersection) / len(union)
+            
+            # Weight by key phrase overlap
+            key_phrases1 = set(self._extract_key_phrases(text1))
+            key_phrases2 = set(self._extract_key_phrases(text2))
+            key_intersection = key_phrases1.intersection(key_phrases2)
+            key_union = key_phrases1.union(key_phrases2)
+            
+            key_similarity = len(key_intersection) / len(key_union) if key_union else 0.0
+            
+            # Combine similarities (weight key phrases more)
+            return (jaccard * 0.6) + (key_similarity * 0.4)
+            
+        except Exception as e:
+            logger.warning(f"Semantic similarity calculation failed: {e}")
+            return 0.0
         
     async def analyze_intent(self, user_input: str, context: Dict = None) -> NLUResult:
         """
@@ -230,7 +347,8 @@ class NLUEngine:
         # Priority 3: Name introductions - higher priority than greetings
         # This catches "hi i am john" as name_introduction rather than greeting_with_name
         name_intro_patterns = [
-            "my name is", "i am", "i'm", "im ", "ako si", "ako ay", "called"
+            "my name is", "i am", "i'm", "im ", "ako si", "ako ay", "called",
+            "ngaean ko si", "ngaean ko", "ngaean", "ngaean si"  # Aklanon patterns
         ]
         for pattern in name_intro_patterns:
             if pattern in user_lower:
@@ -243,7 +361,7 @@ class NLUEngine:
         if any(greet in user_lower for greet in greeting_keywords):
             # Now only classify as greeting_with_name if it's a pure greeting without introduction intent
             # This should catch cases like "hello, my name is john" where greeting comes first
-            if any(pattern in user_lower for pattern in ["my name is", "i am", "i'm", "im ", "ako si"]):
+            if any(pattern in user_lower for pattern in ["my name is", "i am", "i'm", "im ", "ako si", "ngaean ko si", "ngaean ko"]):
                 # But if it's clearly a name introduction, it was already caught above
                 # This is for cases where greeting is the primary intent
                 return NLUResult(Intent.GREETING_WITH_NAME, 0.85, [])
@@ -269,7 +387,7 @@ class NLUEngine:
         ]
         if any(pattern in user_lower for pattern in name_query_patterns):
             # But exclude name introductions ("my name is John") which were already handled above
-            if not any(intro in user_lower for intro in ["my name is", "ako si", "i am", "i'm"]):
+            if not any(intro in user_lower for intro in ["my name is", "ako si", "i am", "i'm", "ngaean ko si", "ngaean ko"]):
                 return NLUResult(Intent.NAME_QUERY, 0.9, [])
         
         # Priority 5: Enrollment (check before child introduction to avoid conflicts)
@@ -581,7 +699,7 @@ class NLUEngine:
             confidence = 0.8  # Base confidence for greeting detection
             
             # Check for name introduction first
-            if any(pattern in user_lower for pattern in ["my name is", "i am", "i'm", "im ", "ako si"]):
+            if any(pattern in user_lower for pattern in ["my name is", "i am", "i'm", "im ", "ako si", "ngaean ko si", "ngaean ko"]):
                 intent = Intent.GREETING_WITH_NAME
                 confidence = 0.95
             

@@ -30,6 +30,7 @@ class ChatResponse:
     language_confidence: float
     is_split: bool
     message_count: int
+    intent: Optional[str] = None  # Add intent field
 
 class ChatBot:
     """Clean, refactored chatbot with fixed underlying issues"""
@@ -118,12 +119,16 @@ class ChatBot:
                 logger.info(f"🧠 Updated memory for user: {user_memory.name}, topics: {list(user_memory.topics.keys())}")
             
             # 3. Perform database search FIRST to get context for Groq
-            search_results = await self.database_search.search_prompts(query, limit=10)
+            search_results = self.database_search.search_prompts(query, limit=10)
+            logger.info(f"🔍 Found {len(search_results)} search results")
             
             # 4. Select best result for context
             best_result = None
             if search_results:
                 best_result = self.database_search.select_best_result(search_results, query)
+                logger.info(f"🏆 Selected: {best_result['keywords'] if best_result else 'None'}")
+            else:
+                logger.info("❌ No search results found")
             
             # 5. Generate response using Groq with enhanced context
             if best_result:
@@ -169,7 +174,8 @@ class ChatBot:
                 detected_language=detected_lang,
                 language_confidence=confidence,
                 is_split=len(split_messages) > 1,
-                message_count=len(split_messages)
+                message_count=len(split_messages),
+                intent=nlu_result.intent.value if nlu_result and nlu_result.intent else 'unknown'
             )
             
         except Exception as e:
@@ -196,7 +202,8 @@ class ChatBot:
             detected_language=detected_lang,
             language_confidence=confidence,
             is_split=len(split_messages) > 1,
-            message_count=len(split_messages)
+            message_count=len(split_messages),
+            intent='keyword_match'
         )
     
     def _create_fallback_response(self, query: str, detected_lang: str, confidence: float) -> ChatResponse:
@@ -212,7 +219,8 @@ class ChatBot:
             detected_language=detected_lang,
             language_confidence=confidence,
             is_split=False,
-            message_count=1
+            message_count=1,
+            intent='fallback'
         )
     
     def _create_error_response(self, detected_lang: str) -> ChatResponse:
@@ -228,5 +236,6 @@ class ChatBot:
             detected_language=detected_lang,
             language_confidence=0.5,
             is_split=False,
-            message_count=1
+            message_count=1,
+            intent='error'
         )

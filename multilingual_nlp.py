@@ -117,33 +117,50 @@ class MultilingualNLPEngine:
                 from nltk.corpus import stopwords
                 from nltk.stem import PorterStemmer
                 
-                # Try to download required data if not available
+                # Set up NLTK data path to use local nltk_data folder
+                nltk_data_dir = os.path.join(os.getcwd(), 'nltk_data')
+                if os.path.exists(nltk_data_dir):
+                    nltk.data.path.append(nltk_data_dir)
+                    logger.info(f"✅ Using local NLTK data from: {nltk_data_dir}")
+                else:
+                    logger.warning("⚠️ Local nltk_data folder not found, using default paths")
+                
+                # Verify essential NLTK resources are available
                 try:
                     nltk.data.find('tokenizers/punkt')
+                    logger.info("✅ Punkt tokenizer available")
                 except LookupError:
-                    nltk.download('punkt', quiet=True)
+                    logger.warning("⚠️ Punkt tokenizer not found")
                 
                 try:
                     nltk.data.find('corpora/stopwords')
+                    logger.info("✅ Stopwords available")
                 except LookupError:
-                    nltk.download('stopwords', quiet=True)
+                    logger.warning("⚠️ Stopwords not found")
                 
-                # Download wordnet if needed (for textblob compatibility)
                 try:
                     nltk.data.find('corpora/wordnet')
+                    logger.info("✅ WordNet available")
                 except LookupError:
-                    try:
-                        nltk.download('wordnet', quiet=True)
-                    except Exception as wordnet_error:
-                        logger.warning(f"Wordnet download failed: {wordnet_error}. Continuing without wordnet.")
+                    logger.warning("⚠️ WordNet not found")
                 
+                # Initialize NLTK components
                 self.stemmer = PorterStemmer()
-                self.stop_words = set(stopwords.words('english'))
+                try:
+                    self.stop_words = set(stopwords.words('english'))
+                    logger.info(f"✅ Loaded {len(self.stop_words)} English stopwords")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not load stopwords: {e}")
+                    self.stop_words = set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'])
+                
                 NLTK_AVAILABLE = True
                 logger.info("✅ NLTK components initialized successfully")
             except Exception as e:
                 logger.warning(f"NLTK initialization failed: {e}")
                 NLTK_AVAILABLE = False
+                # Set fallback values
+                self.stemmer = None
+                self.stop_words = set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'])
             
             # Initialize TextBlob with safe imports
             try:
