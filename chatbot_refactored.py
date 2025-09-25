@@ -205,7 +205,9 @@ class ChatBot:
                 
                 try:
                     # Get user name from memory for personalization
-                    user_name = self.conversation_memory.get_user_name(session_id)
+                    user_name = ""
+                    if session_id:
+                        user_name = self.conversation_memory.get_user_name(session_id)
                     contact_response = self.response_generator.get_contact_escalation_response(detected_lang, contact_type, self.database_search.supabase, user_name)
                     return ChatResponse(
                         response=[contact_response],
