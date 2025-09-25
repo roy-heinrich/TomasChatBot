@@ -275,47 +275,27 @@ INSTRUCTIONS: Answer the user's question. Use the NLP analysis to understand the
                 return "For questions that need a live person:"
     
     def _format_contact_information(self, contact_type: str, use_tagalog: bool, office_hours: str, guidance_hours: str) -> str:
-        """Format contact information with proper bullets using NLP"""
+        """Format contact information as natural sentences"""
         
         if use_tagalog:
             if contact_type == "urgent":
-                return f"""• 📞 Tumawag sa school office
-• 🏫 Pumunta sa school office para sa immediate assistance
-
-Office hours: {office_hours}"""
+                return f"Maaari kayong tumawag sa school office o pumunta doon para sa immediate assistance. Office hours: {office_hours}"
             
             elif contact_type == "guidance":
-                return f"""• 👥 Pumunta sa Guidance Office (katabi ng Principal's Office)
-• 📞 Tumawag sa school office para sa appointment
-
-Available: {guidance_hours}"""
+                return f"Maaari kayong pumunta sa Guidance Office (katabi ng Principal's Office) o tumawag sa school office para sa appointment. Available: {guidance_hours}"
             
             else:  # general
-                return f"""• 📞 Tumawag sa school office
-• 🏫 Pumunta sa school office
-• 📧 Mag-email sa school
-
-Office hours: {office_hours}"""
+                return f"Maaari kayong tumawag sa school office, pumunta doon, o mag-email sa school. Office hours: {office_hours}"
         
         else:  # English
             if contact_type == "urgent":
-                return f"""• 📞 Call the school office
-• 🏫 Visit the school office for immediate assistance
-
-Office hours: {office_hours}"""
+                return f"You can call the school office or visit for immediate assistance. Office hours: {office_hours}"
             
             elif contact_type == "guidance":
-                return f"""• 👥 Visit the Guidance Office (next to Principal's Office)
-• 📞 Call the school office for an appointment
-
-Available: {guidance_hours}"""
+                return f"You can visit the Guidance Office (next to Principal's Office) or call the school office for an appointment. Available: {guidance_hours}"
             
             else:  # general
-                return f"""• 📞 Call the school office
-• 🏫 Visit the school office
-• 📧 Email the school
-
-Office hours: {office_hours}"""
+                return f"You can call the school office, visit in person, or email the school. Office hours: {office_hours}"
     
     def split_long_response(self, response: str, max_length: int = 200) -> List[str]:
         """Split long responses into multiple messages for better chat bubble display"""

@@ -42,6 +42,12 @@ class ConversationMemory:
         # For now, return None to avoid hardcoded pattern matching
         return None
     
+    def get_user_name(self, session_id: str = None) -> Optional[str]:
+        """Get user name from memory for a specific session"""
+        if session_id and session_id in self.user_memories:
+            return self.user_memories[session_id].name
+        return None
+    
     def extract_topics_from_query(self, query: str) -> List[str]:
         """Extract topics from user query using NLP"""
         topics = []
