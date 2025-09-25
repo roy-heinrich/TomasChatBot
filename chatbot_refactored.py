@@ -175,7 +175,7 @@ class ChatBot:
             
             if is_gibberish:
                 logger.info("🚫 Obvious gibberish detected - using fallback response")
-                return self._create_fallback_response(query, detected_lang, confidence)
+                return self._create_fallback_response(query, detected_lang, confidence, session_id)
             
             # 🚨 FIX: Handle name introductions and greeting with name even without database context
             if nlu_result and nlu_result.intent.value in ['name_introduction', 'greeting_with_name']:
@@ -231,7 +231,7 @@ class ChatBot:
                     )
             elif not best_result and not search_results and context == "General school information query":
                 logger.info("🚫 No meaningful context available - using fallback response")
-                return self._create_fallback_response(query, detected_lang, confidence)
+                return self._create_fallback_response(query, detected_lang, confidence, session_id)
             
             # Generate response with Groq (professional, factual, humane, jolly, no roleplay)
             # Pass enhanced NLP/NLU information for better response generation
@@ -285,7 +285,7 @@ class ChatBot:
             intent='keyword_match'
         )
     
-    def _create_fallback_response(self, query: str, detected_lang: str, confidence: float) -> ChatResponse:
+    def _create_fallback_response(self, query: str, detected_lang: str, confidence: float, session_id: str = None) -> ChatResponse:
         """Create fallback response when no database results found with contact escalation"""
         
         # Determine contact type based on query content
@@ -298,7 +298,9 @@ class ChatBot:
             contact_type = "guidance"
         
         # Get contact escalation response with user name for personalization
-        user_name = self.conversation_memory.get_user_name(session_id)
+        user_name = ""
+        if session_id:
+            user_name = self.conversation_memory.get_user_name(session_id)
         fallback_text = self.response_generator.get_contact_escalation_response(detected_lang, contact_type, self.database_search.supabase, user_name)
         
         return ChatResponse(
