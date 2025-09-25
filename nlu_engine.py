@@ -76,6 +76,7 @@ class Intent(Enum):
     STAFF_INQUIRY = "staff_inquiry"
     SCHEDULE_INQUIRY = "schedule_inquiry"
     CONTACT_INFO = "contact_info"
+    CONTACT_ESCALATION = "contact_escalation"  # New: live person contact requests
     NAME_INTRODUCTION = "name_introduction"
     CHILD_INTRODUCTION = "child_introduction"
     NAME_QUERY = "name_query"  # New: "what is my name" queries
@@ -333,11 +334,41 @@ class NLUEngine:
             "sabihin mo sa akin ang tungkol sa school programs": (Intent.SCHOOL_INFO, 0.9),
             "sabihin sa akin tungkol sa": (Intent.GENERAL_INFO, 0.8),
             
+            # Tagalog contact escalation phrases
+            "gusto ko makausap ang isang tao": (Intent.CONTACT_ESCALATION, 0.95),
+            "kailangan ko makausap ang isang tao": (Intent.CONTACT_ESCALATION, 0.95),
+            "gusto ko makipag-usap sa isang tao": (Intent.CONTACT_ESCALATION, 0.95),
+            "kailangan ko makipag-usap sa isang tao": (Intent.CONTACT_ESCALATION, 0.95),
+            "gusto ko makausap ang isang staff": (Intent.CONTACT_ESCALATION, 0.95),
+            "kailangan ko makausap ang isang staff": (Intent.CONTACT_ESCALATION, 0.95),
+            "gusto ko makausap ang isang teacher": (Intent.CONTACT_ESCALATION, 0.95),
+            "kailangan ko makausap ang isang teacher": (Intent.CONTACT_ESCALATION, 0.95),
+            "gusto ko makausap ang isang principal": (Intent.CONTACT_ESCALATION, 0.95),
+            "kailangan ko makausap ang isang principal": (Intent.CONTACT_ESCALATION, 0.95),
+            "gusto ko makausap ang isang guidance counselor": (Intent.CONTACT_ESCALATION, 0.95),
+            "kailangan ko makausap ang isang guidance counselor": (Intent.CONTACT_ESCALATION, 0.95),
+            
             # Aklanon location phrases  
             "diin ang lokasyon sang paaralan": (Intent.LOCATION_INQUIRY, 0.95),
             "diin ang paaralan": (Intent.LOCATION_INQUIRY, 0.9),
             "diin nga lokasyon": (Intent.LOCATION_INQUIRY, 0.9),
             "ano nga contact number": (Intent.CONTACT_INFO, 0.9),
+            
+            # Aklanon contact escalation phrases
+            "gusto ko makausap ang isa ka tawo": (Intent.CONTACT_ESCALATION, 0.95),
+            "kailangan ko makausap ang isa ka tawo": (Intent.CONTACT_ESCALATION, 0.95),
+            "gusto ko makipag-usap sa isa ka tawo": (Intent.CONTACT_ESCALATION, 0.95),
+            "kailangan ko makipag-usap sa isa ka tawo": (Intent.CONTACT_ESCALATION, 0.95),
+            "gusto ko magistryo sa tawo": (Intent.CONTACT_ESCALATION, 0.95),
+            "kailangan ko magistryo sa tawo": (Intent.CONTACT_ESCALATION, 0.95),
+            "gusto ko makausap ang isa ka staff": (Intent.CONTACT_ESCALATION, 0.95),
+            "kailangan ko makausap ang isa ka staff": (Intent.CONTACT_ESCALATION, 0.95),
+            "gusto ko makausap ang isa ka teacher": (Intent.CONTACT_ESCALATION, 0.95),
+            "kailangan ko makausap ang isa ka teacher": (Intent.CONTACT_ESCALATION, 0.95),
+            "gusto ko makausap ang isa ka principal": (Intent.CONTACT_ESCALATION, 0.95),
+            "kailangan ko makausap ang isa ka principal": (Intent.CONTACT_ESCALATION, 0.95),
+            "gusto ko makausap ang isa ka guidance counselor": (Intent.CONTACT_ESCALATION, 0.95),
+            "kailangan ko makausap ang isa ka guidance counselor": (Intent.CONTACT_ESCALATION, 0.95),
         }
         
         for phrase, (intent, confidence) in exact_phrases.items():
@@ -604,6 +635,30 @@ class NLUEngine:
         ]
         if any(pattern in user_lower for pattern in contact_patterns):
             return NLUResult(Intent.CONTACT_INFO, 0.8, [])
+        
+        # Priority 17.1: Contact escalation requests (live person contact)
+        contact_escalation_patterns = [
+            # English patterns
+            "talk to someone", "speak to someone", "contact someone", "live person", "human",
+            "staff member", "teacher", "principal", "want to speak", "need to talk", "talk to a live",
+            "speak to a live", "contact a live", "talk to staff", "speak to staff", "contact staff",
+            "talk to teacher", "speak to teacher", "contact teacher", "talk to principal", "speak to principal",
+            "contact principal", "talk to guidance", "speak to guidance", "contact guidance",
+            "talk to counselor", "speak to counselor", "contact counselor",
+            # Tagalog patterns
+            "makausap ang isang tao", "makipag-usap sa isang tao", "makausap ang isang staff",
+            "makipag-usap sa isang staff", "makausap ang isang teacher", "makipag-usap sa isang teacher",
+            "makausap ang isang principal", "makipag-usap sa isang principal", "makausap ang isang guidance",
+            "makipag-usap sa isang guidance", "makausap ang isang counselor", "makipag-usap sa isang counselor",
+            "gusto ko makausap", "kailangan ko makausap", "gusto ko makipag-usap", "kailangan ko makipag-usap",
+            # Aklanon patterns
+            "makausap ang isa ka tawo", "makipag-usap sa isa ka tawo", "magistryo sa tawo",
+            "makausap ang isa ka staff", "makipag-usap sa isa ka staff", "makausap ang isa ka teacher", "makipag-usap sa isa ka teacher",
+            "makausap ang isa ka principal", "makipag-usap sa isa ka principal", "makausap ang isa ka guidance",
+            "makipag-usap sa isa ka guidance", "makausap ang isa ka counselor", "makipag-usap sa isa ka counselor"
+        ]
+        if any(pattern in user_lower for pattern in contact_escalation_patterns):
+            return NLUResult(Intent.CONTACT_ESCALATION, 0.85, [])
         
         # CONVERSATION FLOW INTENTS - for better multi-turn conversations
         

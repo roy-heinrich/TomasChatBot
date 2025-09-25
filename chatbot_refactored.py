@@ -205,6 +205,39 @@ class ChatBot:
                 logger.info(f"👋 {nlu_result.intent.value} detected - handling simple greeting")
                 # For simple greetings, provide friendly response
                 context = "User is giving a simple greeting"
+            elif nlu_result and nlu_result.intent.value == 'contact_escalation':
+                logger.info("👥 Contact escalation requested - providing contact information")
+                # User explicitly wants to talk to someone
+                contact_type = "general"
+                if any(word in query.lower() for word in ["urgent", "emergency", "immediate"]):
+                    contact_type = "urgent"
+                elif any(word in query.lower() for word in ["guidance", "counselor", "emotional"]):
+                    contact_type = "guidance"
+                
+                try:
+                    contact_response = self.response_generator.get_contact_escalation_response(detected_lang, contact_type, self.database_search.supabase)
+                    return ChatResponse(
+                        response=[contact_response],
+                        entities=[{"entity_type": e.entity_type, "value": e.value, "confidence": e.confidence} for e in entities],
+                        detected_language=detected_lang,
+                        language_confidence=confidence,
+                        is_split=False,
+                        message_count=1,
+                        intent='contact_escalation'
+                    )
+                except Exception as e:
+                    logger.error(f"Error in contact escalation: {e}")
+                    # Fallback to simple contact message
+                    fallback_contact = f"For questions that need a live person:\n\n📱 Message us directly: <a href=\"https://m.me/114901Tomas\" target=\"_blank\">Click here to chat on Messenger</a>\n📞 Call the school office\n🏫 Visit the school office\n\nOffice hours: Monday-Friday, 7:00 AM - 5:00 PM"
+                    return ChatResponse(
+                        response=[fallback_contact],
+                        entities=[{"entity_type": e.entity_type, "value": e.value, "confidence": e.confidence} for e in entities],
+                        detected_language=detected_lang,
+                        language_confidence=confidence,
+                        is_split=False,
+                        message_count=1,
+                        intent='contact_escalation'
+                    )
             elif not best_result and not search_results and context == "General school information query":
                 logger.info("🚫 No meaningful context available - using fallback response")
                 return self._create_fallback_response(query, detected_lang, confidence)
@@ -262,11 +295,19 @@ class ChatBot:
         )
     
     def _create_fallback_response(self, query: str, detected_lang: str, confidence: float) -> ChatResponse:
-        """Create fallback response when no database results found"""
-        if detected_lang == "tl" or detected_lang == "akl":
-            fallback_text = "Paumanhin, hindi ko mahanap ang impormasyon na hinahanap ninyo. Maaari po kayong magpunta sa school office para sa dagdag na detalye."
-        else:
-            fallback_text = "I'm sorry, I couldn't find the information you're looking for. Please visit the school office for more details."
+        """Create fallback response when no database results found with contact escalation"""
+        
+        # Determine contact type based on query content
+        query_lower = query.lower()
+        contact_type = "general"
+        
+        if any(word in query_lower for word in ["urgent", "emergency", "immediate", "asap", "now"]):
+            contact_type = "urgent"
+        elif any(word in query_lower for word in ["guidance", "counselor", "emotional", "sad", "depressed", "anxiety", "stress"]):
+            contact_type = "guidance"
+        
+        # Get contact escalation response
+        fallback_text = self.response_generator.get_contact_escalation_response(detected_lang, contact_type, self.database_search.supabase)
         
         return ChatResponse(
             response=[fallback_text],
@@ -275,7 +316,7 @@ class ChatBot:
             language_confidence=confidence,
             is_split=False,
             message_count=1,
-            intent='fallback'
+            intent='contact_escalation'
         )
     
     def _create_error_response(self, detected_lang: str) -> ChatResponse:

@@ -202,6 +202,98 @@ INSTRUCTIONS: Answer the user's question. Use the NLP analysis to understand the
         else:
             return "Sorry, there was a problem processing your question. Please try again later."
     
+    def get_contact_escalation_response(self, lang: str, contact_type: str = "general", supabase_client=None) -> str:
+        """Get standardized contact escalation response based on language and contact type"""
+        
+        # Contact information - configurable through environment variables
+        import os
+        messenger_url = os.environ.get("SCHOOL_MESSENGER_URL", "https://m.me/114901Tomas")
+        
+        # Get office hours from Supabase database
+        office_hours = "Office hours not available"  # Default fallback
+        guidance_hours = "Guidance hours not available"  # Default fallback
+        
+        if supabase_client:
+            try:
+                # Try to get office hours from database - exact match for "Office Hours"
+                result = supabase_client.table("chatbot_prompts").select("response").ilike("keywords", "%Office Hours%").execute()
+                if result.data and len(result.data) > 0:
+                    office_hours = result.data[0].get("response", office_hours)
+                    logger.info(f"📅 Retrieved office hours from database: {office_hours}")
+                
+                # Try to get guidance hours from database
+                result = supabase_client.table("chatbot_prompts").select("response").ilike("keywords", "%guidance hours%").execute()
+                if result.data and len(result.data) > 0:
+                    guidance_hours = result.data[0].get("response", guidance_hours)
+                    logger.info(f"📅 Retrieved guidance hours from database: {guidance_hours}")
+            except Exception as e:
+                logger.warning(f"Could not fetch office hours from database: {e}")
+                # Use default values
+        
+        if lang == "tl" or lang == "akl":
+            if contact_type == "urgent":
+                return f"""Para sa mga urgent na concerns, maaari kayong:
+                
+📞 Tumawag sa school office
+🏫 Pumunta sa school office para sa immediate assistance
+
+Office hours: {office_hours}
+
+<a href="{messenger_url}" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Chat with us on Messenger</a>"""
+            
+            elif contact_type == "guidance":
+                return f"""Para sa guidance counseling at emotional support:
+                
+👥 Pumunta sa Guidance Office (katabi ng Principal's Office)
+📞 Tumawag sa school office para sa appointment
+
+Available: {guidance_hours}
+
+<a href="{messenger_url}" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Chat with us on Messenger</a>"""
+            
+            else:  # general
+                return f"""Para sa mga tanong na kailangan ng live person:
+                
+📞 Tumawag sa school office
+🏫 Pumunta sa school office
+📧 Mag-email sa school
+
+Office hours: {office_hours}
+
+<a href="{messenger_url}" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Chat with us on Messenger</a>"""
+        
+        else:  # English
+            if contact_type == "urgent":
+                return f"""For urgent concerns, you can:
+                
+📞 Call the school office
+🏫 Visit the school office for immediate assistance
+
+Office hours: {office_hours}
+
+<a href="{messenger_url}" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Chat with us on Messenger</a>"""
+            
+            elif contact_type == "guidance":
+                return f"""For guidance counseling and emotional support:
+                
+👥 Visit the Guidance Office (next to Principal's Office)
+📞 Call the school office for an appointment
+
+Available: {guidance_hours}
+
+<a href="{messenger_url}" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Chat with us on Messenger</a>"""
+            
+            else:  # general
+                return f"""For questions that need a live person:
+                
+📞 Call the school office
+🏫 Visit the school office
+📧 Email the school
+
+Office hours: {office_hours}
+
+<a href="{messenger_url}" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Chat with us on Messenger</a>"""
+    
     def split_long_response(self, response: str, max_length: int = 200) -> List[str]:
         """Split long responses into multiple messages for better chat bubble display"""
         if len(response) <= max_length:
