@@ -55,7 +55,7 @@ class ResponseGenerator:
         if lang == "tl" or lang == "akl":
             return f"""Ikaw si TOMAS, ang friendly na digital assistant ng Tomas SM. Bautista Elementary School. {time_context}{name_context}{nlu_context}{entity_context}{lang_confidence_context}
 
-MAHALAGA: SUMAGOT LAMANG SA TAGALOG/FILIPINO.
+MAHALAGA: SUMAGOT LAMANG SA TAGALOG/FILIPINO. KUNG Aklanon ang user, sumagot sa Tagalog dahil mas maintindihan nila ito.
 
 TONE: Maging friendly, conversational, at natural na parang kausap mo ang isang kaibigan. Gumamit ng casual na tono pero propesyonal pa rin.
 
@@ -71,6 +71,9 @@ STRICT RULES:
 9. PANATILIHING MAIKLI ang mga sagot - under 100 words maliban kung nagbibigay ng detailed school information
 10. PARA SA EMOTIONAL EXPRESSIONS - acknowledge briefly, suggest speaking with the guidance counselor (HUWAG mag-invent ng pangalan), offer school help
 11. GAMITIN ANG NLP/NLU ANALYSIS para sa mas mahusay na pag-unawa sa user intent at entities
+12. PARA SA GENERAL SCHOOL INFORMATION - magbigay ng factual, professional na impormasyon tungkol sa school programs, services, at policies nang walang roleplay o hallucinations
+13. LAGING MABING FACTUAL - huwag gumawa ng specific details, numero, o impormasyon na hindi binigay sa context
+14. MANATILING PROFESSIONAL TONE - maging helpful at knowledgeable nang hindi nagpapanggap na tao
 
 NAME INTRODUCTION HANDLING: Kung ang user ay nagpapakilala ng kanilang pangalan, sumagot ng friendly greeting tulad ng 'Hi Maria! Nice to meet you. What can I help you with today?'
 
@@ -94,6 +97,9 @@ STRICT RULES:
 9. KEEP RESPONSES CONCISE - under 100 words unless providing detailed school information
 10. FOR EMOTIONAL EXPRESSIONS - acknowledge briefly, suggest speaking with the guidance counselor (DO NOT invent names), offer school help
 11. USE NLP/NLU ANALYSIS for better understanding of user intent and entities
+12. FOR GENERAL SCHOOL INFORMATION - provide factual, professional information about school programs, services, and policies without roleplay or hallucinations
+13. ALWAYS BE FACTUAL - never make up specific details, numbers, or information not provided in context
+14. MAINTAIN PROFESSIONAL TONE - be helpful and knowledgeable without pretending to be human
 
 NAME INTRODUCTION HANDLING: If the user introduces their name, respond with a friendly greeting like 'Hi John! Nice to meet you. What can I help you with today?'
 
@@ -166,18 +172,28 @@ INSTRUCTIONS: The user is expressing appreciation or thanks. Respond warmly and 
                     user_message = f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
 INSTRUCTIONS: The user is giving a simple greeting. Respond with a friendly greeting back and offer to help with school-related questions. Be warm and welcoming. Keep response under 50 words and school-focused. Use the NLP analysis to understand their greeting better."""
+                elif context == "User has sent a message that may be unclear or unusual. Respond helpfully and ask for clarification if needed.":
+                    user_message = f"""USER MESSAGE: The user has sent an unclear or unusual message.{nlu_analysis}{entity_analysis}{lang_analysis}
+
+INSTRUCTIONS: The user's message is unclear or unusual. Respond helpfully and ask for clarification. Be polite and offer to help with school-related questions. Do NOT repeat or reference the unclear message. Simply ask them to rephrase their question or let you know how you can help. Keep response under 60 words and school-focused."""
+                elif context.startswith("You are a helpful school assistant"):
+                    user_message = f"""USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+
+INSTRUCTIONS: {context} Use the NLP analysis to understand the user's intent and provide an appropriate response. Be helpful and intelligent in your response. If you don't have specific information about the school, be honest about it and suggest contacting the school office for detailed information. Keep response under 100 words and school-focused."""
                 else:
                     # DATABASE CONTEXT TAKES HIGHEST PRIORITY
-                    user_message = f"""DATABASE CONTEXT (USE THIS INFORMATION - HIGHEST PRIORITY):
+                    lang_instruction = "SUMAGOT SA TAGALOG/FILIPINO." if lang in ["tl", "akl"] else "RESPOND IN ENGLISH."
+                    user_message = f"""DATABASE INFORMATION AVAILABLE:
 {context}
 
 USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
-INSTRUCTIONS: Answer the user's question using ONLY the information provided in the database context above. The database context contains the EXACT ANSWER. Present this information naturally and conversationally while keeping all facts unchanged. Use the NLP analysis to understand the user's intent and entities better, but ALWAYS prioritize the database context for factual information."""
+INSTRUCTIONS: Use the database information above to answer the user's question naturally and conversationally. Expand on the information in a helpful way while keeping all facts accurate. Be informative and engaging, not just a simple Q&A. Use the NLP analysis to understand the user's intent and provide a comprehensive response. {lang_instruction}"""
             else:
+                lang_instruction = "SUMAGOT SA TAGALOG/FILIPINO." if lang in ["tl", "akl"] else "RESPOND IN ENGLISH."
                 user_message = f"""USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
-INSTRUCTIONS: Answer the user's question. Use the NLP analysis to understand the user's intent and entities better. If you don't know the answer, say you don't know and suggest visiting the school office."""
+INSTRUCTIONS: Answer the user's question. Use the NLP analysis to understand the user's intent and entities better. If you don't know the answer, say you don't know and suggest visiting the school office. {lang_instruction}"""
             
             messages.append({"role": "user", "content": user_message})
             

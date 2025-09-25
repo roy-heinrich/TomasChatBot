@@ -98,16 +98,28 @@ class ChatBot:
                    user_timezone: str = None, session_id: str = None) -> ChatResponse:
         """Main chat method - Groq-first approach for natural responses"""
         try:
-            # 1. Detect language
-            detected_lang, confidence = self.language_detector.detect_language(query)
-            logger.info(f"🌍 Detected language: {detected_lang} (confidence: {confidence:.2f})")
+            # 1. Use multilingual NLP for better language detection FIRST
+            try:
+                from multilingual_nlp import multilingual_nlp
+                if multilingual_nlp:
+                    lang_result = await multilingual_nlp.detect_language_semantic(query)
+                    detected_lang = lang_result.language
+                    confidence = lang_result.confidence
+                    logger.info(f"🌍 Detected language: {detected_lang} (confidence: {confidence:.2f})")
+                else:
+                    raise ImportError("Multilingual NLP not available")
+            except Exception as e:
+                logger.warning(f"⚠️ Multilingual NLP language detection failed: {e}")
+                # Fallback to basic language detection
+                detected_lang, confidence = self.language_detector.detect_language(query)
+                logger.info(f"🌍 Detected language: {detected_lang} (confidence: {confidence:.2f})")
             
-            # 2. Extract entities
+            # 2. Get NLU analysis for intent
+            nlu_result = await self.nlu_engine.analyze_intent(query)
+            
+            # 3. Extract entities
             entities = self.entity_extractor.extract_entities(query)
             logger.info(f"🔍 Extracted {len(entities)} entities")
-            
-            # 3. Get NLU analysis FIRST to determine intent
-            nlu_result = await self.nlu_engine.analyze_intent(query)
             
             # 4. Enhanced memory system - extract user info and update memory
             user_name = ""
@@ -144,10 +156,12 @@ class ChatBot:
             # 5. Generate response using Groq with enhanced context
             if best_result:
                 logger.info("📚 Using database context for Groq response")
-                context = f"Q: {best_result['keywords']}\nA: {best_result['response']}"
+                # Provide database information as context but let Groq expand naturally
+                context = f"Database Information: {best_result['response']}"
             else:
-                logger.info("📝 No database context found, using general context")
-                context = "General school information query"
+                # Use Groq for intelligent responses when no database context, but with appropriate safeguards
+                logger.info("🤖 No database context found - using Groq for intelligent response with safeguards")
+                context = "You are a helpful school assistant. Respond to the user's question appropriately, but if you don't have specific information about the school, be honest about it and suggest contacting the school office for detailed information."
             
             # Add personalized memory context
             if session_id:
@@ -175,7 +189,7 @@ class ChatBot:
             
             if is_gibberish:
                 logger.info("🚫 Obvious gibberish detected - using fallback response")
-                return self._create_fallback_response(query, detected_lang, confidence, session_id)
+                return await self._create_fallback_response(query, detected_lang, confidence, session_id)
             
             # 🚨 FIX: Handle name introductions and greeting with name even without database context
             if nlu_result and nlu_result.intent.value in ['name_introduction', 'greeting_with_name']:
@@ -231,9 +245,7 @@ class ChatBot:
                         message_count=1,
                         intent='contact_escalation'
                     )
-            elif not best_result and not search_results and context == "General school information query":
-                logger.info("🚫 No meaningful context available - using fallback response")
-                return self._create_fallback_response(query, detected_lang, confidence, session_id)
+            # Remove the old fallback logic - let Groq handle all cases intelligently
             
             # Generate response with Groq (professional, factual, humane, jolly, no roleplay)
             # Pass enhanced NLP/NLU information for better response generation
@@ -287,32 +299,124 @@ class ChatBot:
             intent='keyword_match'
         )
     
-    def _create_fallback_response(self, query: str, detected_lang: str, confidence: float, session_id: str = None) -> ChatResponse:
-        """Create fallback response when no database results found with contact escalation"""
+    async def _create_no_information_response(self, query: str, detected_lang: str, confidence: float, nlu_result, entities: List, session_id: str = None) -> ChatResponse:
+        """Create structured response when no database information is found"""
         
-        # Determine contact type based on query content
-        query_lower = query.lower()
-        contact_type = "general"
+        # Analyze the query using NLP/NLU to understand what the user is asking about
+        query_lower = query.lower().strip()
         
-        if any(word in query_lower for word in ["urgent", "emergency", "immediate", "asap", "now"]):
-            contact_type = "urgent"
-        elif any(word in query_lower for word in ["guidance", "counselor", "emotional", "sad", "depressed", "anxiety", "stress"]):
-            contact_type = "guidance"
+        # Determine the topic/subject of the query using NLP analysis
+        topic_keywords = {
+            'enrollment': ['enrollment', 'enroll', 'admission', 'register', 'registration', 'apply', 'application'],
+            'schedule': ['schedule', 'time', 'when', 'hours', 'class', 'period', 'timetable'],
+            'location': ['where', 'location', 'address', 'place', 'find', 'directions'],
+            'contact': ['contact', 'phone', 'number', 'email', 'reach', 'call'],
+            'academic': ['grade', 'subject', 'course', 'curriculum', 'study', 'learning'],
+            'services': ['service', 'help', 'support', 'assistance', 'guidance', 'counselor'],
+            'general': ['information', 'about', 'tell', 'know', 'question']
+        }
         
-        # Get contact escalation response with user name for personalization
+        # Use NLU intent to better understand the query
+        detected_topic = 'general'
+        if nlu_result and nlu_result.intent:
+            intent = nlu_result.intent.value
+            if intent in ['question', 'information_request']:
+                # Analyze the query content to determine topic
+                for topic, keywords in topic_keywords.items():
+                    if any(keyword in query_lower for keyword in keywords):
+                        detected_topic = topic
+                        break
+        
+        # Generate appropriate response based on detected language and topic
+        if detected_lang in ['tl', 'akl']:  # Tagalog/Aklanon
+            if detected_topic == 'enrollment':
+                response_text = "Paumanhin, wala akong impormasyon tungkol sa enrollment. Mas mabuti kung makipag-ugnayan kayo sa school office para sa mas tiyak na kasagutan."
+            elif detected_topic == 'schedule':
+                response_text = "Paumanhin, wala akong impormasyon tungkol sa schedule na ito. Mas mabuti kung makipag-ugnayan kayo sa school office para sa mas tiyak na kasagutan."
+            elif detected_topic == 'location':
+                response_text = "Paumanhin, wala akong impormasyon tungkol sa lokasyon na ito. Mas mabuti kung makipag-ugnayan kayo sa school office para sa mas tiyak na kasagutan."
+            elif detected_topic == 'contact':
+                response_text = "Paumanhin, wala akong impormasyon tungkol sa contact na ito. Mas mabuti kung makipag-ugnayan kayo sa school office para sa mas tiyak na kasagutan."
+            elif detected_topic == 'academic':
+                response_text = "Paumanhin, wala akong impormasyon tungkol sa academic na ito. Mas mabuti kung makipag-ugnayan kayo sa school office para sa mas tiyak na kasagutan."
+            elif detected_topic == 'services':
+                response_text = "Paumanhin, wala akong impormasyon tungkol sa serbisyo na ito. Mas mabuti kung makipag-ugnayan kayo sa school office para sa mas tiyak na kasagutan."
+            else:
+                response_text = "Paumanhin, wala akong impormasyon tungkol sa inyong tanong. Mas mabuti kung makipag-ugnayan kayo sa school office para sa mas tiyak na kasagutan."
+        else:  # English
+            if detected_topic == 'enrollment':
+                response_text = "I couldn't find any information about enrollment. It would be best if you can contact the school office to better cater your question."
+            elif detected_topic == 'schedule':
+                response_text = "I couldn't find any information about this schedule. It would be best if you can contact the school office to better cater your question."
+            elif detected_topic == 'location':
+                response_text = "I couldn't find any information about this location. It would be best if you can contact the school office to better cater your question."
+            elif detected_topic == 'contact':
+                response_text = "I couldn't find any information about this contact. It would be best if you can contact the school office to better cater your question."
+            elif detected_topic == 'academic':
+                response_text = "I couldn't find any information about this academic matter. It would be best if you can contact the school office to better cater your question."
+            elif detected_topic == 'services':
+                response_text = "I couldn't find any information about this service. It would be best if you can contact the school office to better cater your question."
+            else:
+                response_text = "I couldn't find any information about your question. It would be best if you can contact the school office to better cater your question."
+        
+        # Split long responses if needed
+        split_messages = self.response_generator.split_long_response(response_text)
+        
+        return ChatResponse(
+            response=split_messages,
+            entities=[{"entity_type": e.entity_type, "value": e.value, "confidence": e.confidence} for e in entities],
+            detected_language=detected_lang,
+            language_confidence=confidence,
+            is_split=len(split_messages) > 1,
+            message_count=len(split_messages),
+            intent='no_information_found'
+        )
+
+    async def _create_fallback_response(self, query: str, detected_lang: str, confidence: float, session_id: str = None) -> ChatResponse:
+        """Create fallback response using Groq - no hardcoded responses"""
+        
+        # Use Groq to handle the query gracefully instead of hardcoded responses
+        context = "User has sent a message that may be unclear or unusual. Respond helpfully and ask for clarification if needed."
+        
+        # Get user name for personalization
         user_name = ""
         if session_id:
             user_name = self.conversation_memory.get_user_name(session_id)
-        fallback_text = self.response_generator.get_contact_escalation_response(detected_lang, contact_type, self.database_search.supabase, user_name)
         
-        return ChatResponse(
-            response=[fallback_text],
-            entities=[],
+        try:
+            # Use Groq to generate a helpful response
+            response_text = await self.response_generator.generate_response(
+                query, context, detected_lang, [], None, user_name, [], confidence
+            )
+            
+            # Split long responses if needed
+            split_messages = self.response_generator.split_long_response(response_text)
+            
+            return ChatResponse(
+                response=split_messages,
+                entities=[],
+                detected_language=detected_lang,
+                language_confidence=confidence,
+                is_split=len(split_messages) > 1,
+                message_count=len(split_messages),
+                intent='fallback'
+            )
+        except Exception as e:
+            logger.error(f"❌ Error in fallback response generation: {e}")
+            # Only use this as absolute last resort
+            if detected_lang == "tl" or detected_lang == "akl":
+                fallback_text = "Paumanhin, hindi ko maintindihan ang inyong tanong. Maaari ba ninyong ulitin ito sa ibang paraan?"
+            else:
+                fallback_text = "I'm sorry, I didn't quite understand that. Could you please rephrase your question?"
+            
+            return ChatResponse(
+                response=[fallback_text],
+                entities=[],
             detected_language=detected_lang,
             language_confidence=confidence,
             is_split=False,
             message_count=1,
-            intent='contact_escalation'
+                intent='fallback'
         )
     
     def _create_error_response(self, detected_lang: str) -> ChatResponse:
@@ -334,59 +438,20 @@ class ChatBot:
     
     def _detect_gibberish_input(self, query: str, nlu_result, entities: List, detected_lang: str, confidence: float) -> bool:
         """
-        Pure NLP/NLU-based gibberish detection - NO HARDCODING
-        Uses the existing NLP and NLU systems to determine if input is gibberish
+        Very lenient gibberish detection - trust NLU/NLP systems to handle most cases
+        Only catch extremely obvious gibberish patterns
         """
-        # 🚨 CRITICAL FIX: Don't use negative confidence scores for gibberish detection
-        # Language detection can return negative scores for valid queries
-        # Only use positive confidence scores for gibberish detection
+        # 🚨 CRITICAL: Trust the NLU system - if it has any confidence, let it handle the input
+        if nlu_result and nlu_result.confidence > 0.05:  # Very low threshold - trust NLU
+            logger.info(f"✅ NLU has confidence {nlu_result.confidence:.3f} - not gibberish")
+            return False
         
-        # Use NLU confidence as primary signal - if NLU is very confident it's unknown, it's likely gibberish
-        if nlu_result and nlu_result.intent.value == 'unknown' and nlu_result.confidence < 0.1:
-            logger.info(f"🔍 NLU detected gibberish: intent=unknown, confidence={nlu_result.confidence:.3f}")
-            return True
-        
-        # 🚨 FIX: Only check positive confidence scores - negative scores are not gibberish indicators
-        # Use language detection confidence - but only if it's positive and very low
-        if confidence > 0 and confidence < 0.05:  # Only very low positive confidence
-            logger.info(f"🔍 Language detection uncertain: confidence={confidence:.3f}")
-            return True
-        
-        # Use entity extraction - if no entities found AND NLU confidence is low, might be gibberish
-        if len(entities) == 0 and nlu_result and nlu_result.confidence < 0.2:
-            logger.info(f"🔍 No entities + low NLU confidence: entities=0, nlu_confidence={nlu_result.confidence:.3f}")
-            return True
-        
-        # 🚨 FIX: Check for valid school-related patterns first - if found, it's not gibberish
+        # Only catch extremely obvious patterns
         query_lower = query.lower().strip()
         
-        # Valid school-related patterns that should never be considered gibberish
-        valid_patterns = [
-            # Common English words
-            "i am", "my name", "hello", "hi", "thank", "sad", "happy", "good", "bad",
-            # School-related terms
-            "school", "teacher", "student", "grade", "class", "enroll", "admission",
-            "principal", "head", "teacher", "staff", "office", "library", "cafeteria",
-            # Question words
-            "what", "where", "when", "how", "who", "why", "which", "are", "is", "do", "can",
-            # Common Filipino/Aklanon words
-            "ako", "si", "ang", "ng", "sa", "ko", "mo", "niya", "namin", "ninyo", "nila",
-            "kumusta", "kamusta", "salamat", "magandang", "maayong", "paaralan", "eskwelahan",
-            # Common phrases
-            "i am sad", "i am happy", "i am heinz", "i am john", "i am mary",
-            "head teacher", "are transferees", "what is", "where is", "how do"
-        ]
-        
-        # If query contains any valid patterns, it's not gibberish
-        for pattern in valid_patterns:
-            if pattern in query_lower:
-                logger.info(f"✅ Valid pattern detected: '{pattern}' - not gibberish")
-                return False
-        
-        # Use basic linguistic patterns - only for obvious cases
-        # Check for obvious random character patterns (like "sadassdafdxs")
-        if len(query) > 10:
-            # Count consecutive consonants - if more than 6 consecutive consonants, likely gibberish
+        # Check for extremely obvious gibberish patterns
+        if len(query) > 15:  # Only check very long strings
+            # Count consecutive consonants - only flag if more than 8 consecutive consonants
             consecutive_consonants = 0
             max_consecutive = 0
             vowels = set('aeiou')
@@ -399,10 +464,22 @@ class ChatBot:
                     else:
                         consecutive_consonants = 0
             
-            if max_consecutive >= 6:  # Very strict - only obvious gibberish
+            if max_consecutive >= 8:  # Very strict - only obvious gibberish
                 logger.info(f"🔍 Obvious gibberish pattern detected: {max_consecutive} consecutive consonants")
                 return True
         
-        # If we get here, it's not gibberish - let the normal NLP/NLU systems handle it
-        logger.info("✅ Input passed gibberish detection - using normal NLP/NLU processing")
+        # Check for patterns that are clearly not human language
+        obvious_gibberish_patterns = [
+            "qwertyuiop", "asdfghjkl", "zxcvbnm",  # Keyboard patterns
+            "aaaaaaaa", "bbbbbbbb", "cccccccc",    # Repeated single characters
+            "123456789", "abcdefgh",               # Sequential patterns
+        ]
+        
+        for pattern in obvious_gibberish_patterns:
+            if pattern in query_lower:
+                logger.info(f"🔍 Obvious gibberish pattern detected: '{pattern}'")
+                return True
+        
+        # If we get here, it's not gibberish - let Groq handle it with NLP/NLU
+        logger.info("✅ Input passed gibberish detection - using Groq with NLP/NLU processing")
         return False
