@@ -423,7 +423,39 @@ class NLUEngine:
         if any(phrase in user_lower for phrase in ["i meant", "what i mean", "clarify", "correction"]):
             return NLUResult(Intent.CLARIFICATION, 0.8, [])
         
-        # Priority 2: Name introductions - HIGHEST PRIORITY for greetings + names
+        # Priority 2: Check for contact escalation FIRST (even with name introductions)
+        # This handles cases like "ako si heinz and i want to talk to a live person"
+        contact_escalation_patterns = [
+            # English patterns
+            "talk to someone", "speak to someone", "contact someone", "live person", "human",
+            "staff member", "teacher", "principal", "want to speak", "need to talk", "talk to a live",
+            "speak to a live", "contact a live", "talk to staff", "speak to staff", "contact staff",
+            "talk to teacher", "speak to teacher", "contact teacher", "talk to principal", "speak to principal",
+            "contact principal", "talk to guidance", "speak to guidance", "contact guidance",
+            "talk to counselor", "speak to counselor", "contact counselor",
+            # More specific patterns for better matching
+            "want to talk to", "want to speak to", "need to talk to", "need to speak to",
+            "talk to a live person", "speak to a live person", "contact a live person",
+            "i want to talk", "i want to speak", "i need to talk", "i need to speak",
+            # Tagalog patterns
+            "makausap ang isang tao", "makipag-usap sa isang tao", "makausap ang isang staff",
+            "makipag-usap sa isang staff", "makausap ang isang teacher", "makipag-usap sa isang teacher",
+            "makausap ang isang principal", "makipag-usap sa isang principal", "makausap ang isang guidance",
+            "makipag-usap sa isang guidance", "makausap ang isang counselor", "makipag-usap sa isang counselor",
+            "gusto ko makausap", "kailangan ko makausap", "gusto ko makipag-usap", "kailangan ko makipag-usap",
+            "gusto ko mag-usap", "kailangan ko mag-usap", "gusto ko makipag-usap sa tao",
+            # Aklanon patterns
+            "makausap ang isa ka tawo", "makipag-usap sa isa ka tawo", "magistryo sa tawo",
+            "makausap ang isa ka staff", "makipag-usap sa isa ka staff", "makausap ang isa ka teacher", "makipag-usap sa isa ka teacher",
+            "makausap ang isa ka principal", "makipag-usap sa isa ka principal", "makausap ang isa ka guidance",
+            "makipag-usap sa isa ka guidance", "makausap ang isa ka counselor", "makipag-usap sa isa ka counselor"
+        ]
+        
+        # Check for contact escalation patterns first (highest priority)
+        if any(pattern in user_lower for pattern in contact_escalation_patterns):
+            return NLUResult(Intent.CONTACT_ESCALATION, 0.85, [])
+        
+        # Priority 3: Name introductions - HIGH PRIORITY for greetings + names
         # This catches "hi i am john" as name_introduction rather than greeting_with_name
         name_intro_patterns = [
             "my name is", "i am", "i'm", "im ", "ako si", "ako ay", "called",
@@ -441,6 +473,19 @@ class NLUEngine:
                 emotional_states = ['sad', 'happy', 'worried', 'excited', 'tired', 'angry', 'nervous', 'scared', 'confused', 'frustrated', 'anxious', 'depressed', 'lonely', 'stressed', 'overwhelmed', 'disappointed', 'proud', 'grateful', 'relieved', 'surprised', 'shocked', 'amazed', 'confused', 'lost', 'found', 'here', 'there', 'ready', 'busy', 'free', 'available', 'unavailable', 'online', 'offline', 'studying', 'enrollment', 'school', 'grades', 'classes', 'homework', 'exams', 'tests', 'about', 'for', 'with', 'of']
                 
                 if len(text_after) > 0 and not text_after.startswith("asking") and not text_after.startswith("not"):
+                    # 🚨 NEW: Check for contact escalation patterns in the text after name introduction
+                    contact_escalation_keywords = [
+                        "want to talk", "want to speak", "need to talk", "need to speak",
+                        "talk to", "speak to", "contact", "live person", "human", "staff"
+                    ]
+                    
+                    text_after_lower = text_after.lower()
+                    has_contact_escalation = any(keyword in text_after_lower for keyword in contact_escalation_keywords)
+                    
+                    if has_contact_escalation:
+                        logger.info(f"🎯 Contact escalation detected in name introduction: pattern='{pattern}', text_after='{text_after}'")
+                        return NLUResult(Intent.CONTACT_ESCALATION, 0.9, [])
+                    
                     # Check if the text after "i am" is likely a name (not an emotional state)
                     first_word = text_after.split()[0].lower() if text_after.split() else ""
                     
@@ -636,29 +681,7 @@ class NLUEngine:
         if any(pattern in user_lower for pattern in contact_patterns):
             return NLUResult(Intent.CONTACT_INFO, 0.8, [])
         
-        # Priority 17.1: Contact escalation requests (live person contact)
-        contact_escalation_patterns = [
-            # English patterns
-            "talk to someone", "speak to someone", "contact someone", "live person", "human",
-            "staff member", "teacher", "principal", "want to speak", "need to talk", "talk to a live",
-            "speak to a live", "contact a live", "talk to staff", "speak to staff", "contact staff",
-            "talk to teacher", "speak to teacher", "contact teacher", "talk to principal", "speak to principal",
-            "contact principal", "talk to guidance", "speak to guidance", "contact guidance",
-            "talk to counselor", "speak to counselor", "contact counselor",
-            # Tagalog patterns
-            "makausap ang isang tao", "makipag-usap sa isang tao", "makausap ang isang staff",
-            "makipag-usap sa isang staff", "makausap ang isang teacher", "makipag-usap sa isang teacher",
-            "makausap ang isang principal", "makipag-usap sa isang principal", "makausap ang isang guidance",
-            "makipag-usap sa isang guidance", "makausap ang isang counselor", "makipag-usap sa isang counselor",
-            "gusto ko makausap", "kailangan ko makausap", "gusto ko makipag-usap", "kailangan ko makipag-usap",
-            # Aklanon patterns
-            "makausap ang isa ka tawo", "makipag-usap sa isa ka tawo", "magistryo sa tawo",
-            "makausap ang isa ka staff", "makipag-usap sa isa ka staff", "makausap ang isa ka teacher", "makipag-usap sa isa ka teacher",
-            "makausap ang isa ka principal", "makipag-usap sa isa ka principal", "makausap ang isa ka guidance",
-            "makipag-usap sa isa ka guidance", "makausap ang isa ka counselor", "makipag-usap sa isa ka counselor"
-        ]
-        if any(pattern in user_lower for pattern in contact_escalation_patterns):
-            return NLUResult(Intent.CONTACT_ESCALATION, 0.85, [])
+        # Contact escalation patterns moved to Priority 2 (above) for higher priority
         
         # CONVERSATION FLOW INTENTS - for better multi-turn conversations
         

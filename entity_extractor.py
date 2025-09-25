@@ -467,6 +467,13 @@ class AdvancedEntityExtractor:
         for subject in self.subject_patterns:
             if subject in text_lower:
                 start_pos = text_lower.find(subject)
+                
+                # Skip false positives for "pe" - only match if it's standalone or part of "physical education"
+                if subject == "pe":
+                    # Check if it's part of "person" - if so, skip this match
+                    if start_pos + 2 < len(text_lower) and text_lower[start_pos:start_pos+6] == "person":
+                        continue  # Skip this match as it's "person" not "PE"
+                
                 entity = ExtractedEntity(
                     entity_type="academic_subject",
                     value=subject.title(),
