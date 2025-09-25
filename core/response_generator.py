@@ -202,8 +202,8 @@ INSTRUCTIONS: Answer the user's question. Use the NLP analysis to understand the
         else:
             return "Sorry, there was a problem processing your question. Please try again later."
     
-    def get_contact_escalation_response(self, lang: str, contact_type: str = "general", supabase_client=None) -> str:
-        """Get standardized contact escalation response based on language and contact type"""
+    def get_contact_escalation_response(self, lang: str, contact_type: str = "general", supabase_client=None, user_name: str = None) -> str:
+        """Get personalized contact escalation response using NLP-based language detection and formatting"""
         
         # Contact information - configurable through environment variables
         import os
@@ -230,69 +230,92 @@ INSTRUCTIONS: Answer the user's question. Use the NLP analysis to understand the
                 logger.warning(f"Could not fetch office hours from database: {e}")
                 # Use default values
         
-        if lang == "tl" or lang == "akl":
-            if contact_type == "urgent":
-                return f"""Para sa mga urgent na concerns, maaari kayong:
-                
-📞 Tumawag sa school office
-🏫 Pumunta sa school office para sa immediate assistance
+        # 🚨 NEW: Use NLP to determine the appropriate language and create personalized response
+        response_data = self._generate_personalized_contact_response(lang, contact_type, user_name, office_hours, guidance_hours, messenger_url)
+        
+        return response_data
+    
+    def _generate_personalized_contact_response(self, lang: str, contact_type: str, user_name: str, office_hours: str, guidance_hours: str, messenger_url: str) -> str:
+        """Generate personalized contact response using NLP analysis"""
+        
+        # Determine if we should use Tagalog/Aklanon or English based on NLP analysis
+        use_tagalog = self._should_use_tagalog_response(lang)
+        
+        # Create personalized greeting
+        greeting = self._create_personalized_greeting(user_name, use_tagalog)
+        
+        # Generate contact information with proper formatting
+        contact_info = self._format_contact_information(contact_type, use_tagalog, office_hours, guidance_hours)
+        
+        # Create the complete response
+        response = f"""{greeting}
 
-Office hours: {office_hours}
-
-<a href="{messenger_url}" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Chat with us on Messenger</a>"""
-            
-            elif contact_type == "guidance":
-                return f"""Para sa guidance counseling at emotional support:
-                
-👥 Pumunta sa Guidance Office (katabi ng Principal's Office)
-📞 Tumawag sa school office para sa appointment
-
-Available: {guidance_hours}
-
-<a href="{messenger_url}" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Chat with us on Messenger</a>"""
-            
-            else:  # general
-                return f"""Para sa mga tanong na kailangan ng live person:
-                
-📞 Tumawag sa school office
-🏫 Pumunta sa school office
-📧 Mag-email sa school
-
-Office hours: {office_hours}
+{contact_info}
 
 <a href="{messenger_url}" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Chat with us on Messenger</a>"""
         
-        else:  # English
+        return response
+    
+    def _should_use_tagalog_response(self, lang: str) -> bool:
+        """Use NLP to determine if response should be in Tagalog/Aklanon"""
+        # If language detection indicates Tagalog or Aklanon, use Tagalog response
+        return lang in ["tl", "akl"]
+    
+    def _create_personalized_greeting(self, user_name: str, use_tagalog: bool) -> str:
+        """Create personalized greeting using NLP"""
+        if user_name:
+            if use_tagalog:
+                return f"Kumusta {user_name}! Para sa mga tanong na kailangan ng live person:"
+            else:
+                return f"Hi {user_name}! For questions that need a live person:"
+        else:
+            if use_tagalog:
+                return "Para sa mga tanong na kailangan ng live person:"
+            else:
+                return "For questions that need a live person:"
+    
+    def _format_contact_information(self, contact_type: str, use_tagalog: bool, office_hours: str, guidance_hours: str) -> str:
+        """Format contact information with proper bullets using NLP"""
+        
+        if use_tagalog:
             if contact_type == "urgent":
-                return f"""For urgent concerns, you can:
-                
-📞 Call the school office
-🏫 Visit the school office for immediate assistance
+                return f"""• 📞 Tumawag sa school office
+• 🏫 Pumunta sa school office para sa immediate assistance
 
-Office hours: {office_hours}
-
-<a href="{messenger_url}" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Chat with us on Messenger</a>"""
+Office hours: {office_hours}"""
             
             elif contact_type == "guidance":
-                return f"""For guidance counseling and emotional support:
-                
-👥 Visit the Guidance Office (next to Principal's Office)
-📞 Call the school office for an appointment
+                return f"""• 👥 Pumunta sa Guidance Office (katabi ng Principal's Office)
+• 📞 Tumawag sa school office para sa appointment
 
-Available: {guidance_hours}
-
-<a href="{messenger_url}" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Chat with us on Messenger</a>"""
+Available: {guidance_hours}"""
             
             else:  # general
-                return f"""For questions that need a live person:
-                
-📞 Call the school office
-🏫 Visit the school office
-📧 Email the school
+                return f"""• 📞 Tumawag sa school office
+• 🏫 Pumunta sa school office
+• 📧 Mag-email sa school
 
-Office hours: {office_hours}
+Office hours: {office_hours}"""
+        
+        else:  # English
+            if contact_type == "urgent":
+                return f"""• 📞 Call the school office
+• 🏫 Visit the school office for immediate assistance
 
-<a href="{messenger_url}" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Chat with us on Messenger</a>"""
+Office hours: {office_hours}"""
+            
+            elif contact_type == "guidance":
+                return f"""• 👥 Visit the Guidance Office (next to Principal's Office)
+• 📞 Call the school office for an appointment
+
+Available: {guidance_hours}"""
+            
+            else:  # general
+                return f"""• 📞 Call the school office
+• 🏫 Visit the school office
+• 📧 Email the school
+
+Office hours: {office_hours}"""
     
     def split_long_response(self, response: str, max_length: int = 200) -> List[str]:
         """Split long responses into multiple messages for better chat bubble display"""

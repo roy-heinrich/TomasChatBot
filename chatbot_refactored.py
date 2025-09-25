@@ -74,21 +74,10 @@ class ChatBot:
                         if name and len(name) > 1 and len(name) < 50:  # Reasonable name length
                             return name.title()
                 
-                # If no PERSON entities found, try to extract from common name introduction patterns
-                # but only if the content looks like a genuine name introduction
-                content_lower = content.lower()
-                if any(pattern in content_lower for pattern in ["my name is", "i'm called", "call me"]):
-                    # Extract the part after the introduction phrase
-                    for pattern in ["my name is", "i'm called", "call me"]:
-                        if pattern in content_lower:
-                            # Get the text after the pattern
-                            after_pattern = content_lower.split(pattern, 1)[1].strip()
-                            # Take the first word/phrase as potential name
-                            potential_name = after_pattern.split()[0] if after_pattern.split() else ""
-                            # Clean and validate
-                            clean_name = ''.join(c for c in potential_name if c.isalnum()).strip()
-                            if clean_name and len(clean_name) > 1 and len(clean_name) < 30:
-                                return clean_name.title()
+                # Use the NLU engine's NLP-based name extraction for better accuracy
+                extracted_name = self.nlu_engine._extract_name_using_nlp(content, "name_introduction")
+                if extracted_name:
+                    return extracted_name
         return ""
     
     def _extract_child_name(self, conversation_history: List[Dict]) -> str:
@@ -215,7 +204,9 @@ class ChatBot:
                     contact_type = "guidance"
                 
                 try:
-                    contact_response = self.response_generator.get_contact_escalation_response(detected_lang, contact_type, self.database_search.supabase)
+                    # Get user name from memory for personalization
+                    user_name = self.conversation_memory.get_user_name()
+                    contact_response = self.response_generator.get_contact_escalation_response(detected_lang, contact_type, self.database_search.supabase, user_name)
                     return ChatResponse(
                         response=[contact_response],
                         entities=[{"entity_type": e.entity_type, "value": e.value, "confidence": e.confidence} for e in entities],
@@ -306,8 +297,9 @@ class ChatBot:
         elif any(word in query_lower for word in ["guidance", "counselor", "emotional", "sad", "depressed", "anxiety", "stress"]):
             contact_type = "guidance"
         
-        # Get contact escalation response
-        fallback_text = self.response_generator.get_contact_escalation_response(detected_lang, contact_type, self.database_search.supabase)
+        # Get contact escalation response with user name for personalization
+        user_name = self.conversation_memory.get_user_name()
+        fallback_text = self.response_generator.get_contact_escalation_response(detected_lang, contact_type, self.database_search.supabase, user_name)
         
         return ChatResponse(
             response=[fallback_text],

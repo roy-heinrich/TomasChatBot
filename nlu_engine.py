@@ -486,35 +486,20 @@ class NLUEngine:
                         logger.info(f"🎯 Contact escalation detected in name introduction: pattern='{pattern}', text_after='{text_after}'")
                         return NLUResult(Intent.CONTACT_ESCALATION, 0.9, [])
                     
-                    # Check if the text after "i am" is likely a name (not an emotional state)
-                    first_word = text_after.split()[0].lower() if text_after.split() else ""
+                    # 🚨 NEW: Use NLP-based analysis instead of hardcoded emotional states
+                    extracted_name = self._extract_name_using_nlp(text_after, pattern)
                     
-                    # Check if it's a multi-word emotional expression
-                    words = text_after.split()
-                    is_emotional_expression = False
-                    
-                    # Check if any word in the text is an emotional state
-                    for word in words:
-                        if word.lower() in emotional_states:
-                            is_emotional_expression = True
-                            break
-                    
-                    # Also check for common emotional phrases
-                    emotional_phrases = ['excited for', 'worried about', 'happy about', 'sad about', 'tired of', 'angry at', 'nervous about', 'scared of', 'confused about', 'frustrated with', 'anxious about', 'proud of', 'grateful for', 'relieved about', 'surprised by', 'shocked by', 'amazed by']
-                    for phrase in emotional_phrases:
-                        if phrase in text_after.lower():
-                            is_emotional_expression = True
-                            break
-                    
-                    if is_emotional_expression:
-                        logger.info(f"🎯 Emotional expression detected: pattern='{pattern}', text_after='{text_after}'")
-                        return NLUResult(Intent.EMOTIONAL_EXPRESSION, 0.9, [])
-                    elif first_word not in emotional_states and len(first_word) > 1:
-                        logger.info(f"🎯 Name introduction detected: pattern='{pattern}', text_after='{text_after}', first_word='{first_word}'")
+                    if extracted_name:
+                        logger.info(f"🎯 Name introduction detected: pattern='{pattern}', text_after='{text_after}', extracted_name='{extracted_name}'")
                         return NLUResult(Intent.NAME_INTRODUCTION, 0.95, [])
                     else:
-                        logger.info(f"🎯 Emotional state detected (not name): pattern='{pattern}', text_after='{text_after}', first_word='{first_word}'")
-                        return NLUResult(Intent.EMOTIONAL_EXPRESSION, 0.8, [])
+                        # Check if it's an emotional expression using NLP
+                        if self._is_emotional_expression_nlp(text_after):
+                            logger.info(f"🎯 Emotional expression detected: pattern='{pattern}', text_after='{text_after}'")
+                            return NLUResult(Intent.EMOTIONAL_EXPRESSION, 0.9, [])
+                        else:
+                            logger.info(f"🎯 Name introduction detected (fallback): pattern='{pattern}', text_after='{text_after}'")
+                            return NLUResult(Intent.NAME_INTRODUCTION, 0.95, [])
 
         # Priority 3: Enhanced greeting classification with mood/style detection
         greeting_keywords = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", "good afternoon", "good evening", "magandang umaga", "magandang hapon", "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", "evening", "greetings", "hiya", "wassup", "howdy", "sup", "yo"]
@@ -1043,3 +1028,106 @@ class NLUEngine:
             
             result = response.json()
             return result["choices"][0]["message"]["content"].strip()
+    
+    def _extract_name_using_nlp(self, text_after: str, pattern: str) -> str:
+        """Extract name using NLP analysis instead of hardcoded patterns"""
+        import re
+        
+        # Clean the text
+        text_after = text_after.strip()
+        if not text_after:
+            return None
+        
+        # Split into words
+        words = text_after.split()
+        if not words:
+            return None
+        
+        # Use NLP patterns to identify potential names
+        potential_names = []
+        
+        # Pattern 1: Single word that looks like a name (capitalized, not a common word)
+        first_word = words[0]
+        if self._is_likely_name(first_word):
+            potential_names.append(first_word)
+        
+        # Pattern 2: Two words that could be first and last name
+        if len(words) >= 2:
+            two_words = f"{words[0]} {words[1]}"
+            if self._is_likely_full_name(two_words):
+                potential_names.append(two_words)
+        
+        # Pattern 3: Extract name before common connecting words
+        connecting_words = ['and', 'at', 'from', 'to', 'with', 'for', 'in', 'on', 'at']
+        for i, word in enumerate(words):
+            if word.lower() in connecting_words and i > 0:
+                name_candidate = ' '.join(words[:i])
+                if self._is_likely_name(name_candidate):
+                    potential_names.append(name_candidate)
+                break
+        
+        # Return the most likely name
+        if potential_names:
+            # Prefer longer names (more specific)
+            return max(potential_names, key=len)
+        
+        return None
+    
+    def _is_likely_name(self, word: str) -> bool:
+        """Use NLP to determine if a word is likely a name"""
+        import re
+        
+        # Basic name patterns
+        if not word or len(word) < 2:
+            return False
+        
+        # Must start with capital letter
+        if not word[0].isupper():
+            return False
+        
+        # Should not be common words
+        common_words = {
+            'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+            'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
+            'do', 'does', 'did', 'will', 'would', 'can', 'could', 'should', 'may', 'might',
+            'what', 'where', 'when', 'why', 'how', 'who', 'which', 'this', 'that', 'these', 'those',
+            'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them',
+            'my', 'your', 'his', 'her', 'its', 'our', 'their', 'mine', 'yours', 'hers', 'ours', 'theirs'
+        }
+        
+        if word.lower() in common_words:
+            return False
+        
+        # Should contain only letters (no numbers or special characters)
+        if not re.match(r'^[A-Za-z]+$', word):
+            return False
+        
+        # Should not be too long (unlikely names)
+        if len(word) > 20:
+            return False
+        
+        return True
+    
+    def _is_likely_full_name(self, name: str) -> bool:
+        """Use NLP to determine if a two-word string is likely a full name"""
+        words = name.split()
+        if len(words) != 2:
+            return False
+        
+        # Both words should be likely names
+        return all(self._is_likely_name(word) for word in words)
+    
+    def _is_emotional_expression_nlp(self, text: str) -> bool:
+        """Use NLP to detect emotional expressions instead of hardcoded lists"""
+        import re
+        
+        text_lower = text.lower()
+        
+        # Use linguistic patterns to detect emotional expressions
+        emotional_patterns = [
+            r'\b(sad|happy|worried|excited|tired|angry|nervous|scared|confused|frustrated|anxious|depressed|lonely|stressed|overwhelmed|disappointed|proud|grateful|relieved|surprised|shocked|amazed)\b',
+            r'\b(malungkot|masaya|nag-aalala|natutuwa|pagod|galit|nervous|takot|nalilito|naiinis|nalulungkot)\b',
+            r'\b(excited for|worried about|happy about|sad about|tired of|angry at|nervous about|scared of|confused about|frustrated with|anxious about|proud of|grateful for|relieved about|surprised by|shocked by|amazed by)\b'
+        ]
+        
+        return any(re.search(pattern, text_lower) for pattern in emotional_patterns)
