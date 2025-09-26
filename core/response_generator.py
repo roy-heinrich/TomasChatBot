@@ -1,6 +1,6 @@
 """
-Response Generation Module - Fixed
-Handles response generation with proper language support
+Response Generation Module - Multi-Provider AI System
+Handles response generation with multiple AI providers and intelligent fallback
 """
 import logging
 from typing import List, Dict, Optional, Any
@@ -8,26 +8,30 @@ from typing import List, Dict, Optional, Any
 logger = logging.getLogger(__name__)
 
 class ResponseGenerator:
-    """Fixed response generator with proper language handling"""
+    """Multi-provider response generator with intelligent fallback"""
     
-    def __init__(self, groq_key: str):
+    def __init__(self, groq_key: str = None):
+        # Initialize multi-provider AI system
+        from core.ai_providers import MultiProviderAI
+        self.multi_ai = MultiProviderAI()
+        
+        # Keep backward compatibility with Groq
         self.groq_key = groq_key
         self.groq_client = None
         
-        if not groq_key:
-            logger.warning("Groq API key not provided")
-            return
-            
-        try:
-            from groq import Groq
-            self.groq_client = Groq(api_key=groq_key)
-            logger.info("✅ Groq client initialized successfully")
-        except ImportError as e:
-            logger.error(f"❌ Groq library not installed: {e}")
-            logger.warning("Install with: pip install groq")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize Groq client: {e}")
-            logger.warning("Check your GROQ_API_KEY environment variable")
+        if groq_key:
+            try:
+                from groq import Groq
+                self.groq_client = Groq(api_key=groq_key)
+                logger.info("✅ Groq client initialized (legacy support)")
+            except ImportError as e:
+                logger.error(f"❌ Groq library not installed: {e}")
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize Groq client: {e}")
+        
+        # Log available providers
+        stats = self.multi_ai.get_provider_stats()
+        logger.info(f"🚀 Multi-provider AI initialized: {stats}")
     
     def get_system_prompt(self, lang: str, user_name: str = "", nlu_info: Dict = None, 
                          entities: List = None, confidence: float = 0.0) -> str:
@@ -122,94 +126,94 @@ CRITICAL: The context provided contains the EXACT ANSWER from our school databas
                               conversation_history: List[Dict] = None, 
                               nlu_info: Dict = None, user_name: str = "", 
                               entities: List = None, confidence: float = 0.0) -> str:
-        """Generate response using Groq with proper language handling"""
-        if not self.groq_client:
-            return self._get_fallback_response(lang)
+        """Generate response using multi-provider AI system with intelligent fallback"""
         
         try:
+            # Build the system prompt
             system_prompt = self.get_system_prompt(lang, user_name, nlu_info, entities, confidence)
-            messages = [{"role": "system", "content": system_prompt}]
             
-            # Add conversation history if provided
-            if conversation_history:
-                recent_history = conversation_history[-8:]  # Limit to last 8 messages
-                for msg in recent_history:
-                    messages.append({
-                        "role": "user" if msg.get("role") == "user" else "assistant",
-                        "content": msg.get("content", "")
-                    })
+            # Build the user message with context
+            user_message = self._build_user_message(query, context, lang, nlu_info, entities, confidence)
             
-            # Enhanced user message with comprehensive NLP/NLU context
-            nlu_analysis = ""
-            if nlu_info:
-                intent = nlu_info.get('intent', 'unknown')
-                nlu_confidence = nlu_info.get('confidence', 0.0)
-                nlu_analysis = f"\nNLP/NLU ANALYSIS: Intent={intent} (confidence: {nlu_confidence:.2f})"
+            # Use multi-provider AI system
+            ai_response = await self.multi_ai.generate_response(
+                prompt=user_message,
+                system_prompt=system_prompt,
+                max_tokens=150,
+                temperature=0.7
+            )
             
-            entity_analysis = ""
-            if entities:
-                entity_list = [f"{e.entity_type}: {e.value}" for e in entities if hasattr(e, 'entity_type')]
-                if entity_list:
-                    entity_analysis = f"\nEXTRACTED ENTITIES: {', '.join(entity_list)}"
+            if ai_response.success:
+                logger.info(f"✅ Response generated using {ai_response.provider} ({ai_response.model})")
+                return ai_response.content.strip()
+            else:
+                logger.warning(f"⚠️ Multi-provider AI failed: {ai_response.error}")
+                return self._get_fallback_response(lang)
             
-            lang_analysis = f"\nLANGUAGE: {lang} (confidence: {confidence:.2f})" if confidence > 0 else f"\nLANGUAGE: {lang}"
-            
-            # Add current query with enhanced context - DATABASE CONTEXT TAKES PRIORITY
-            if context and context != "General school information query":
-                if context == "User is introducing themselves with their name":
-                    user_message = f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+        except Exception as e:
+            logger.error(f"❌ Response generation failed: {e}")
+            return self._get_fallback_response(lang)
+    
+    def _build_user_message(self, query: str, context: str, lang: str, 
+                           nlu_info: Dict = None, entities: List = None, 
+                           confidence: float = 0.0) -> str:
+        """Build the user message with enhanced context"""
+        
+        # Enhanced user message with comprehensive NLP/NLU context
+        nlu_analysis = ""
+        if nlu_info:
+            intent = nlu_info.get('intent', 'unknown')
+            nlu_confidence = nlu_info.get('confidence', 0.0)
+            nlu_analysis = f"\nNLP/NLU ANALYSIS: Intent={intent} (confidence: {nlu_confidence:.2f})"
+        
+        entity_analysis = ""
+        if entities:
+            entity_list = [f"{e.entity_type}: {e.value}" for e in entities if hasattr(e, 'entity_type')]
+            if entity_list:
+                entity_analysis = f"\nEXTRACTED ENTITIES: {', '.join(entity_list)}"
+        
+        lang_analysis = f"\nLANGUAGE: {lang} (confidence: {confidence:.2f})" if confidence > 0 else f"\nLANGUAGE: {lang}"
+        
+        # Add current query with enhanced context - DATABASE CONTEXT TAKES PRIORITY
+        if context and context != "General school information query":
+            if context == "User is introducing themselves with their name":
+                return f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
 INSTRUCTIONS: The user is introducing themselves with their name. Respond with a friendly greeting using their name, like "Hi [Name]! Nice to meet you. What can I help you with today?" Be warm and welcoming. Use the NLP analysis to understand their intent better."""
-                elif context == "User is expressing their emotional state":
-                    user_message = f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+            elif context == "User is expressing their emotional state":
+                return f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
 INSTRUCTIONS: The user is expressing their emotional state. Respond briefly and professionally in 1-2 sentences. Acknowledge their feeling but immediately redirect to school services. If they seem to need support, suggest speaking with the guidance counselor (DO NOT invent names - just say "guidance counselor"). Always offer to help with school-related questions. Keep response under 80 words and school-focused. Use the NLP analysis to understand their emotional state better."""
-                elif context == "User is expressing appreciation or thanks":
-                    user_message = f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+            elif context == "User is expressing appreciation or thanks":
+                return f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
 INSTRUCTIONS: The user is expressing appreciation or thanks. Respond warmly and acknowledge their thanks. Be friendly and offer to help with any school-related questions they might have. Keep response under 60 words and school-focused. Use the NLP analysis to understand their appreciation better."""
-                elif context == "User is giving a simple greeting":
-                    user_message = f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+            elif context == "User is giving a simple greeting":
+                return f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
 INSTRUCTIONS: The user is giving a simple greeting. Respond with a friendly greeting back and offer to help with school-related questions. Be warm and welcoming. Keep response under 50 words and school-focused. Use the NLP analysis to understand their greeting better."""
-                elif context == "User has sent a message that may be unclear or unusual. Respond helpfully and ask for clarification if needed.":
-                    user_message = f"""USER MESSAGE: The user has sent an unclear or unusual message.{nlu_analysis}{entity_analysis}{lang_analysis}
+            elif context == "User has sent a message that may be unclear or unusual. Respond helpfully and ask for clarification if needed.":
+                return f"""USER MESSAGE: The user has sent an unclear or unusual message.{nlu_analysis}{entity_analysis}{lang_analysis}
 
 INSTRUCTIONS: The user's message is unclear or unusual. Respond helpfully and ask for clarification. Be polite and offer to help with school-related questions. Do NOT repeat or reference the unclear message. Simply ask them to rephrase their question or let you know how you can help. Keep response under 60 words and school-focused."""
-                elif context.startswith("You are a helpful school assistant"):
-                    user_message = f"""USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+            elif context.startswith("You are a helpful school assistant"):
+                return f"""USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
 INSTRUCTIONS: {context} Use the NLP analysis to understand the user's intent and provide an appropriate response. Be helpful and intelligent in your response. If you don't have specific information about the school, be honest about it and suggest contacting the school office for detailed information. Keep response under 100 words and school-focused."""
-                else:
-                    # DATABASE CONTEXT TAKES HIGHEST PRIORITY
-                    lang_instruction = "SUMAGOT SA TAGALOG/FILIPINO." if lang in ["tl", "akl"] else "RESPOND IN ENGLISH."
-                    user_message = f"""DATABASE INFORMATION AVAILABLE:
+            else:
+                # DATABASE CONTEXT TAKES HIGHEST PRIORITY
+                lang_instruction = "SUMAGOT SA TAGALOG/FILIPINO." if lang in ["tl", "akl"] else "RESPOND IN ENGLISH."
+                return f"""DATABASE INFORMATION AVAILABLE:
 {context}
 
 USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
 INSTRUCTIONS: Use the database information above to answer the user's question naturally and conversationally. Expand on the information in a helpful way while keeping all facts accurate. Be informative and engaging, not just a simple Q&A. Use the NLP analysis to understand the user's intent and provide a comprehensive response. {lang_instruction}"""
-            else:
-                lang_instruction = "SUMAGOT SA TAGALOG/FILIPINO." if lang in ["tl", "akl"] else "RESPOND IN ENGLISH."
-                user_message = f"""USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+        else:
+            lang_instruction = "SUMAGOT SA TAGALOG/FILIPINO." if lang in ["tl", "akl"] else "RESPOND IN ENGLISH."
+            return f"""USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
 INSTRUCTIONS: Answer the user's question. Use the NLP analysis to understand the user's intent and entities better. If you don't know the answer, say you don't know and suggest visiting the school office. {lang_instruction}"""
-            
-            messages.append({"role": "user", "content": user_message})
-            
-            # Call Groq API with timeout
-            response = self.groq_client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=messages,
-                max_tokens=150,  # Reduced for more concise responses
-                temperature=0.7
-            )
-            
-            return response.choices[0].message.content.strip()
-            
-        except Exception as e:
-            logger.warning(f"Groq response generation failed: {e}")
-            return self._get_fallback_response(lang)
     
     def _get_fallback_response(self, lang: str) -> str:
         """Get fallback response in appropriate language"""
