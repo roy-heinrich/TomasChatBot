@@ -16,3 +16,4 @@ start_gui.bat
 start_gui.py
 test_gui.py
 env_config.txt
+chatbot_web_gui.py

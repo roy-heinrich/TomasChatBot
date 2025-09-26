@@ -144,7 +144,7 @@ CRITICAL: The context provided contains the EXACT ANSWER from our school databas
             ai_response = await self.multi_ai.generate_response(
                 prompt=user_message,
                 system_prompt=system_prompt,
-                max_tokens=150,
+                max_tokens=500,  # Increased from 150 to allow complete responses
                 temperature=0.7
             )
             
@@ -322,48 +322,74 @@ INSTRUCTIONS: Answer the user's question. Use the NLP analysis to understand the
             else:  # general
                 return f"You can call the school office, visit in person, or email the school. Office hours: {office_hours}"
     
-    def split_long_response(self, response: str, max_length: int = 200) -> List[str]:
-        """Split long responses into multiple messages for better chat bubble display"""
+    def split_long_response(self, response: str, max_length: int = 250) -> List[str]:
+        """Split long responses into multiple messages, ensuring complete sentences only"""
         if len(response) <= max_length:
             return [response]
         
-        # Split by sentences first, then by words if needed
-        sentences = response.split('. ')
+        # Split by complete sentences only - never split mid-sentence
+        import re
+        
+        # Find all complete sentences (ending with ., !, or ?)
+        sentences = re.split(r'(?<=[.!?])\s+', response)
+        
         messages = []
         current_message = ""
         
         for sentence in sentences:
-            # Add period back if it was removed by split
-            if not sentence.endswith('.') and not sentence.endswith('!') and not sentence.endswith('?'):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            # Ensure sentence ends with punctuation
+            if not sentence.endswith(('.', '!', '?')):
                 sentence += '.'
             
             # Check if adding this sentence would exceed max_length
-            test_message = current_message + sentence + " " if current_message else sentence + " "
+            test_message = current_message + " " + sentence if current_message else sentence
             
-            if len(test_message.strip()) <= max_length:
+            if len(test_message) <= max_length:
                 current_message = test_message
             else:
-                # If current message has content, save it
+                # If current message has content, save it (it's already complete sentences)
                 if current_message.strip():
                     messages.append(current_message.strip())
                 
-                # If the sentence itself is too long, split it by words
+                # Start new message with current sentence
+                # If this single sentence is too long, we have to break it (rare case)
                 if len(sentence) > max_length:
+                    # This is a very long sentence - split it at word boundaries
                     words = sentence.split()
                     temp_message = ""
+                    
                     for word in words:
-                        if len(temp_message + word + " ") <= max_length:
-                            temp_message += word + " "
+                        test_word = temp_message + " " + word if temp_message else word
+                        if len(test_word) <= max_length:
+                            temp_message = test_word
                         else:
+                            # Save current message if it has content
                             if temp_message.strip():
-                                messages.append(temp_message.strip())
-                            temp_message = word + " "
-                    current_message = temp_message
+                                temp_message = temp_message.strip()
+                                if not temp_message.endswith(('.', '!', '?')):
+                                    temp_message += '.'
+                                messages.append(temp_message)
+                            temp_message = word
+                    
+                    # Handle the last part
+                    if temp_message.strip():
+                        temp_message = temp_message.strip()
+                        if not temp_message.endswith(('.', '!', '?')):
+                            temp_message += '.'
+                        current_message = temp_message
                 else:
-                    current_message = sentence + " "
+                    current_message = sentence
         
         # Add the last message if it has content
         if current_message.strip():
-            messages.append(current_message.strip())
+            current_message = current_message.strip()
+            # Ensure the final message ends with proper punctuation
+            if not current_message.endswith(('.', '!', '?')):
+                current_message += '.'
+            messages.append(current_message)
         
         return messages

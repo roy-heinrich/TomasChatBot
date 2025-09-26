@@ -116,7 +116,7 @@ class LocalAIProvider:
             response = client.chat_completion(
                 model=model,
                 messages=messages,
-                max_tokens=min(max_tokens, 100),  # Limit for free tier
+                max_tokens=min(max_tokens, 300),  # Increased from 100 to allow complete responses
                 temperature=temperature
             )
             
