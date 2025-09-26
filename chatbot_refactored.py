@@ -5,8 +5,12 @@ Main chatbot class with all underlying issues resolved
 import os
 import logging
 import asyncio
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import dataclass
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Import our clean modules
 from core.database_search import DatabaseSearchEngine
@@ -56,6 +60,10 @@ class ChatBot:
         # Initialize conversation memory
         self.conversation_memory = ConversationMemory()
         
+        # Initialize context-aware translation
+        from core.context_translator import ContextTranslator
+        self.context_translator = ContextTranslator()
+        
         logger.info("✅ ChatBot initialized with clean, modular architecture")
     
     def _extract_user_name(self, conversation_history: List[Dict]) -> str:
@@ -94,32 +102,79 @@ class ChatBot:
                             return parts[i + 1].title()
         return ""
     
+    def _detect_context_language(self, conversation_history: List[Dict]) -> Tuple[str, float]:
+        """Detect language based on conversation context"""
+        try:
+            if not conversation_history:
+                return "en", 0.5
+            
+            # Analyze recent messages for language patterns
+            recent_messages = conversation_history[-3:]  # Last 3 messages
+            language_scores = {"en": 0.0, "tl": 0.0, "akl": 0.0}
+            
+            for msg in recent_messages:
+                if msg.get("role") == "user":
+                    content = msg.get("content", "")
+                    if content:
+                        # Use enhanced language detection
+                        lang, conf = self.language_detector.detect_language(content)
+                        if lang in language_scores:
+                            language_scores[lang] += conf
+            
+            # Get the language with highest score
+            if any(score > 0 for score in language_scores.values()):
+                best_lang = max(language_scores.items(), key=lambda x: x[1])
+                return best_lang[0], min(best_lang[1], 0.9)
+            else:
+                return "en", 0.5
+                
+        except Exception as e:
+            logger.error(f"Context language detection failed: {e}")
+            return "en", 0.5
+    
     async def chat(self, query: str, conversation_history: List[Dict] = None, 
                    user_timezone: str = None, session_id: str = None) -> ChatResponse:
         """Main chat method - Groq-first approach for natural responses"""
         try:
-            # 1. Use multilingual NLP for better language detection FIRST
+            # 1. Enhanced language detection with mixed-language support
             try:
                 from multilingual_nlp import multilingual_nlp
                 if multilingual_nlp:
                     lang_result = await multilingual_nlp.detect_language_semantic(query)
                     detected_lang = lang_result.language
                     confidence = lang_result.confidence
-                    logger.info(f"🌍 Detected language: {detected_lang} (confidence: {confidence:.2f})")
+                    logger.info(f"🌍 Multilingual NLP detected: {detected_lang} (confidence: {confidence:.2f})")
                 else:
                     raise ImportError("Multilingual NLP not available")
             except Exception as e:
                 logger.warning(f"⚠️ Multilingual NLP language detection failed: {e}")
-                # Fallback to basic language detection
+                # Enhanced fallback language detection
                 detected_lang, confidence = self.language_detector.detect_language(query)
-                logger.info(f"🌍 Detected language: {detected_lang} (confidence: {confidence:.2f})")
+                logger.info(f"🌍 Enhanced language detection: {detected_lang} (confidence: {confidence:.2f})")
+            
+            # Check for mixed-language input
+            if confidence < 0.7:
+                logger.info("🔍 Low confidence language detection - may be mixed language")
+                # Use context-aware translation for mixed languages
+                if conversation_history:
+                    context_lang, context_confidence = self._detect_context_language(conversation_history)
+                    if context_confidence > confidence:
+                        detected_lang = context_lang
+                        confidence = context_confidence
+                        logger.info(f"🌍 Context-based language detection: {detected_lang} (confidence: {confidence:.2f})")
             
             # 2. Get NLU analysis for intent
             nlu_result = await self.nlu_engine.analyze_intent(query)
             
-            # 3. Extract entities
-            entities = self.entity_extractor.extract_entities(query)
-            logger.info(f"🔍 Extracted {len(entities)} entities")
+            # 3. Enhanced entity extraction with relationships
+            entities = self.entity_extractor.extract_entities(query, nlu_result.intent.value if nlu_result else None)
+            logger.info(f"🔍 Enhanced entity extraction: {len(entities)} entities with relationships")
+            
+            # Log entity relationships
+            for entity in entities:
+                if hasattr(entity, 'relationships') and entity.relationships:
+                    for rel in entity.relationships:
+                        logger.info(f"🔗 Relationship: {entity.value} -> {rel['entity'].value} ({rel['relationship']['type']})")
             
             # 4. Enhanced memory system - extract user info and update memory
             user_name = ""
@@ -257,6 +312,16 @@ class ChatBot:
             response_text = await self.response_generator.generate_response(
                 query, context, detected_lang, conversation_history, nlu_info_dict, user_name, entities, confidence
             )
+            
+            # Apply context-aware translation if needed
+            if detected_lang != "en" and confidence < 0.8:
+                logger.info("🌐 Applying context-aware translation")
+                translated_response, translation_confidence = self.context_translator.translate_with_context(
+                    response_text, detected_lang, conversation_history, session_id
+                )
+                if translation_confidence > 0.7:
+                    response_text = translated_response
+                    logger.info(f"🌐 Context-aware translation applied (confidence: {translation_confidence:.2f})")
             
             # 6. Split long responses if needed
             split_messages = self.response_generator.split_long_response(response_text)

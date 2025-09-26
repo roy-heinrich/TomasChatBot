@@ -59,18 +59,10 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set")
 
 try:
-    # Test the connection first
-    logger.info("🔍 Testing Supabase connection...")
+    # Create Supabase client
+    logger.info("🔍 Creating Supabase client...")
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    
-    # Try a simple operation to verify the connection
-    try:
-        # This will fail if the key is invalid
-        result = supabase.table('_test_connection').select('*').limit(1).execute()
-        logger.info("✅ Supabase client created and connection verified")
-    except Exception as conn_error:
-        logger.warning(f"⚠️ Supabase client created but connection test failed: {conn_error}")
-        logger.info("✅ Supabase client created (connection test skipped)")
+    logger.info("✅ Supabase client created successfully")
         
 except Exception as e:
     logger.error(f"❌ Failed to create Supabase client: {e}")

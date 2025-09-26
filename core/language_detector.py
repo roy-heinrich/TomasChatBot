@@ -17,7 +17,7 @@ class LanguageDetector:
         self.last_cleanup = time.time()
     
     def detect_language(self, text: str) -> Tuple[str, float]:
-        """Detect language with proper caching and Aklanon support"""
+        """Enhanced language detection with mixed-language support"""
         text_lower = text.lower().strip()
         
         # Clean cache periodically
@@ -31,18 +31,23 @@ class LanguageDetector:
             if time.time() - timestamp < self.cache_ttl:
                 return cached_result
         
-        # Detect language
+        # Enhanced mixed-language detection
         try:
-            import langid
-            lang, confidence = langid.classify(text)
+            # Use multiple detection methods for better accuracy
+            langid_result = self._detect_with_langid(text)
+            nlp_result = self._detect_with_nlp_analysis(text_lower)
+            pattern_result = self._detect_with_patterns(text_lower)
             
-            # Enhanced language mapping
-            detected_lang = self._map_language(lang, text_lower, confidence)
+            # Combine results with weighted scoring
+            final_lang, final_confidence = self._combine_detection_results(
+                langid_result, nlp_result, pattern_result, text_lower
+            )
             
             # Cache the result
-            self.language_cache[text_lower] = ((detected_lang, confidence), time.time())
+            self.language_cache[text_lower] = ((final_lang, final_confidence), time.time())
             
-            return detected_lang, confidence
+            logger.info(f"🌍 Language detected: {final_lang} (confidence: {final_confidence:.2f})")
+            return final_lang, final_confidence
             
         except Exception as e:
             logger.warning(f"Language detection failed: {e}")
@@ -151,6 +156,137 @@ class LanguageDetector:
         ]
         
         return any(re.match(pattern, word) for pattern in aklanon_patterns)
+    
+    def _detect_with_langid(self, text: str) -> Tuple[str, float]:
+        """Detect language using langid library"""
+        try:
+            import langid
+            lang, confidence = langid.classify(text)
+            return self._map_language(lang, text.lower(), confidence)
+        except Exception as e:
+            logger.warning(f"Langid detection failed: {e}")
+            return "en", 0.3
+    
+    def _detect_with_nlp_analysis(self, text_lower: str) -> Tuple[str, float]:
+        """Detect language using NLP analysis"""
+        try:
+            # Analyze sentence structure and word patterns
+            sentences = text_lower.split('.')
+            language_scores = {"en": 0.0, "tl": 0.0, "akl": 0.0}
+            
+            for sentence in sentences:
+                if sentence.strip():
+                    scores = self._calculate_language_scores(sentence.strip())
+                    for lang, score in scores.items():
+                        language_scores[lang] += score
+            
+            # Normalize scores
+            total_score = sum(language_scores.values())
+            if total_score > 0:
+                for lang in language_scores:
+                    language_scores[lang] = language_scores[lang] / total_score
+            
+            # Get best language
+            best_lang = max(language_scores.items(), key=lambda x: x[1])
+            return best_lang[0], best_lang[1]
+            
+        except Exception as e:
+            logger.warning(f"NLP analysis failed: {e}")
+            return "en", 0.3
+    
+    def _detect_with_patterns(self, text_lower: str) -> Tuple[str, float]:
+        """Detect language using pattern matching"""
+        try:
+            # Count language-specific patterns
+            pattern_counts = {"en": 0, "tl": 0, "akl": 0}
+            
+            words = text_lower.split()
+            for word in words:
+                if self._is_english_pattern(word):
+                    pattern_counts["en"] += 1
+                elif self._is_tagalog_pattern(word):
+                    pattern_counts["tl"] += 1
+                elif self._is_aklanon_pattern(word):
+                    pattern_counts["akl"] += 1
+            
+            # Calculate confidence based on pattern matches
+            total_words = len(words)
+            if total_words > 0:
+                for lang in pattern_counts:
+                    pattern_counts[lang] = pattern_counts[lang] / total_words
+                
+                best_lang = max(pattern_counts.items(), key=lambda x: x[1])
+                return best_lang[0], best_lang[1]
+            else:
+                return "en", 0.3
+                
+        except Exception as e:
+            logger.warning(f"Pattern detection failed: {e}")
+            return "en", 0.3
+    
+    def _combine_detection_results(self, langid_result: Tuple[str, float], 
+                                 nlp_result: Tuple[str, float], 
+                                 pattern_result: Tuple[str, float], 
+                                 text_lower: str) -> Tuple[str, float]:
+        """Combine multiple detection results with weighted scoring"""
+        
+        # Weight different methods based on text characteristics
+        text_length = len(text_lower.split())
+        
+        # Adjust weights based on text length and complexity
+        if text_length < 3:
+            # Short text: rely more on patterns
+            weights = {"langid": 0.3, "nlp": 0.2, "pattern": 0.5}
+        elif text_length < 10:
+            # Medium text: balanced approach
+            weights = {"langid": 0.4, "nlp": 0.3, "pattern": 0.3}
+        else:
+            # Long text: rely more on NLP analysis
+            weights = {"langid": 0.3, "nlp": 0.5, "pattern": 0.2}
+        
+        # Calculate weighted scores for each language
+        language_scores = {"en": 0.0, "tl": 0.0, "akl": 0.0}
+        
+        for lang in language_scores:
+            # Langid contribution
+            if langid_result[0] == lang:
+                language_scores[lang] += langid_result[1] * weights["langid"]
+            
+            # NLP contribution
+            if nlp_result[0] == lang:
+                language_scores[lang] += nlp_result[1] * weights["nlp"]
+            
+            # Pattern contribution
+            if pattern_result[0] == lang:
+                language_scores[lang] += pattern_result[1] * weights["pattern"]
+        
+        # Get the language with highest score
+        best_lang = max(language_scores.items(), key=lambda x: x[1])
+        
+        # Calculate final confidence
+        final_confidence = min(best_lang[1], 0.95)  # Cap at 95%
+        
+        # Boost confidence for mixed-language detection
+        if self._is_mixed_language(text_lower):
+            final_confidence = max(final_confidence, 0.7)
+        
+        return best_lang[0], final_confidence
+    
+    def _is_mixed_language(self, text_lower: str) -> bool:
+        """Detect if text contains mixed languages"""
+        words = text_lower.split()
+        if len(words) < 2:
+            return False
+        
+        # Check for presence of multiple language patterns
+        has_english = any(self._is_english_pattern(word) for word in words)
+        has_tagalog = any(self._is_tagalog_pattern(word) for word in words)
+        has_aklanon = any(self._is_aklanon_pattern(word) for word in words)
+        
+        # Count how many languages are present
+        language_count = sum([has_english, has_tagalog, has_aklanon])
+        
+        return language_count > 1
     
     def _clean_cache(self):
         """Clean expired cache entries"""

@@ -13,6 +13,7 @@ langdetect==1.0.9
 langid==1.1.6
 rapidfuzz==3.5.2
 deep_translator==1.11.4
+aiohttp==3.9.1
 
 
 
@@ -35,6 +36,7 @@ requests==2.32.3
 groq==0.31.1
 cohere==5.18.0
 openai==1.3.0
+huggingface-hub==0.34.4
 
 # HTTP Client for AI APIs
 aiohttp==3.12.15
@@ -42,4 +44,4 @@ aiohttp==3.12.15
 # Machine Learning
 scikit-learn==1.7.1
 gensim==4.3.3
-textblob
+textblob==0.17.1

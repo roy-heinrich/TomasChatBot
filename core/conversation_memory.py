@@ -37,10 +37,40 @@ class ConversationMemory:
         self.session_topics: Dict[str, List[str]] = {}  # session_id -> topics
         
     def extract_user_name(self, conversation_history: List[Dict]) -> Optional[str]:
-        """Extract user name from conversation history using NLP entity extraction"""
-        # This method should be called with proper entity extraction from the main chatbot
-        # For now, return None to avoid hardcoded pattern matching
-        return None
+        """Enhanced user name extraction from conversation history"""
+        try:
+            if not conversation_history:
+                return None
+            
+            # Look for name patterns in recent messages
+            name_patterns = [
+                r"my name is (\w+)",
+                r"i'm (\w+)",
+                r"i am (\w+)",
+                r"call me (\w+)",
+                r"i'm (\w+)",
+                r"this is (\w+)",
+                r"(\w+) here"
+            ]
+            
+            import re
+            for message in reversed(conversation_history[-5:]):  # Check last 5 messages
+                if message.get("role") == "user":
+                    content = message.get("content", "")
+                    if content:
+                        for pattern in name_patterns:
+                            match = re.search(pattern, content, re.IGNORECASE)
+                            if match:
+                                name = match.group(1).strip()
+                                if len(name) > 1 and name.isalpha():  # Valid name
+                                    logger.info(f"🎯 Extracted user name: {name}")
+                                    return name
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"User name extraction failed: {e}")
+            return None
     
     def get_user_name(self, session_id: str = None) -> Optional[str]:
         """Get user name from memory for a specific session"""
@@ -132,53 +162,125 @@ class ConversationMemory:
         return user_memory
     
     def get_conversation_context(self, session_id: str, user_name: str = None) -> str:
-        """Generate conversation context for Groq"""
-        if session_id not in self.user_memories:
+        """Enhanced conversation context generation with better memory retrieval"""
+        try:
+            if session_id not in self.user_memories:
+                return ""
+            
+            user_memory = self.user_memories[session_id]
+            context_parts = []
+            
+            # Add user name context with enhanced formatting
+            if user_memory.name:
+                context_parts.append(f"User's name: {user_memory.name}")
+            
+            # Add recent topics context with better organization
+            recent_topics = []
+            for topic, topic_info in user_memory.topics.items():
+                if topic_info.last_mentioned > datetime.now() - timedelta(hours=24):
+                    recent_topics.append(topic_info.topic.replace("_", " "))
+            
+            if recent_topics:
+                context_parts.append(f"Recent topics discussed: {', '.join(recent_topics)}")
+            
+            # Add interaction history with more detail
+            if user_memory.total_messages > 1:
+                context_parts.append(f"User has sent {user_memory.total_messages} messages")
+            
+            # Add child information if available
+            child_info = self._extract_child_information(session_id)
+            if child_info:
+                context_parts.append(f"Child information: {child_info}")
+            
+            # Add session-specific context
+            session_context = self._get_session_context(session_id)
+            if session_context:
+                context_parts.append(f"Current session context: {session_context}")
+            
+            return ". ".join(context_parts) + "." if context_parts else ""
+            
+        except Exception as e:
+            logger.error(f"Context generation failed: {e}")
             return ""
-        
-        user_memory = self.user_memories[session_id]
-        context_parts = []
-        
-        # Add user name context
-        if user_memory.name:
-            context_parts.append(f"User's name: {user_memory.name}")
-        
-        # Add recent topics context
-        recent_topics = []
-        for topic, topic_info in user_memory.topics.items():
-            if topic_info.last_mentioned > datetime.now() - timedelta(hours=24):
-                recent_topics.append(topic_info.topic)
-        
-        if recent_topics:
-            context_parts.append(f"Recent topics discussed: {', '.join(recent_topics)}")
-        
-        # Add interaction history
-        if user_memory.total_messages > 1:
-            context_parts.append(f"User has sent {user_memory.total_messages} messages")
-        
-        return ". ".join(context_parts) + "." if context_parts else ""
+    
+    def _extract_child_information(self, session_id: str) -> Optional[str]:
+        """Extract child information from user memory"""
+        try:
+            if session_id not in self.user_memories:
+                return None
+            
+            user_memory = self.user_memories[session_id]
+            child_info = []
+            
+            # Look for child-related topics
+            for topic, topic_info in user_memory.topics.items():
+                if "child" in topic or "grade" in topic or "student" in topic:
+                    child_info.append(topic_info.topic.replace("_", " "))
+            
+            return ", ".join(child_info) if child_info else None
+            
+        except Exception as e:
+            logger.error(f"Child information extraction failed: {e}")
+            return None
+    
+    def _get_session_context(self, session_id: str) -> Optional[str]:
+        """Get session-specific context"""
+        try:
+            if session_id not in self.session_topics:
+                return None
+            
+            topics = self.session_topics[session_id]
+            if not topics:
+                return None
+            
+            # Get the most recent topics for this session
+            recent_topics = topics[-3:] if len(topics) > 3 else topics
+            return ", ".join(recent_topics)
+            
+        except Exception as e:
+            logger.error(f"Session context extraction failed: {e}")
+            return None
     
     def get_personalized_greeting(self, session_id: str, user_name: str = None) -> str:
-        """Generate personalized greeting based on memory"""
-        if session_id not in self.user_memories:
+        """Enhanced personalized greeting with better memory integration"""
+        try:
+            if session_id not in self.user_memories:
+                return ""
+            
+            user_memory = self.user_memories[session_id]
+            
+            if not user_memory.name:
+                return ""
+            
+            # Get recent topics with better filtering
+            recent_topics = []
+            for topic, topic_info in user_memory.topics.items():
+                if topic_info.last_mentioned > datetime.now() - timedelta(hours=24):
+                    recent_topics.append(topic_info.topic.replace("_", " "))
+            
+            # Get child information for more personalized greeting
+            child_info = self._extract_child_information(session_id)
+            
+            # Build personalized greeting
+            greeting_parts = [f"Hi {user_memory.name}"]
+            
+            if child_info:
+                greeting_parts.append(f"I remember you have a child in {child_info}")
+            
+            if recent_topics:
+                topics_text = ", ".join(recent_topics[:3])  # Limit to 3 topics
+                greeting_parts.append(f"you've been asking about {topics_text}")
+            
+            # Add interaction count for more context
+            if user_memory.total_messages > 5:
+                greeting_parts.append(f"we've had {user_memory.total_messages} conversations")
+            
+            greeting = ", ".join(greeting_parts) + ". What can I help you with today?"
+            return greeting
+            
+        except Exception as e:
+            logger.error(f"Personalized greeting generation failed: {e}")
             return ""
-        
-        user_memory = self.user_memories[session_id]
-        
-        if not user_memory.name:
-            return ""
-        
-        # Get recent topics
-        recent_topics = []
-        for topic, topic_info in user_memory.topics.items():
-            if topic_info.last_mentioned > datetime.now() - timedelta(hours=24):
-                recent_topics.append(topic_info.topic.replace("_", " "))
-        
-        if recent_topics:
-            topics_text = ", ".join(recent_topics[:3])  # Limit to 3 topics
-            return f"Hi {user_memory.name}, yes I do remember you! You've been asking me about {topics_text}. What can I help you with?"
-        else:
-            return f"Hi {user_memory.name}, yes I do remember you! What can I help you with?"
     
     def cleanup_old_memories(self, max_age_hours: int = 168):  # 7 days
         """Clean up old user memories"""

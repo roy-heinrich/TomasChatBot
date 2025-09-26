@@ -3,7 +3,12 @@ Response Generation Module - Multi-Provider AI System
 Handles response generation with multiple AI providers and intelligent fallback
 """
 import logging
+import os
 from typing import List, Dict, Optional, Any
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +71,7 @@ TONE: Maging friendly, conversational, at natural na parang kausap mo ang isang 
 STRICT RULES:
 1. DATABASE CONTEXT ANG PINAKAMAHALAGA - gamitin ang impormasyon mula sa database context kung available
 2. HUWAG MAG-INVENT ng mga pangalan, numero, o impormasyon na wala sa context
-3. HUWAG MAG-ROLEPLAY - ikaw ay digital assistant, hindi tao
+3. HUWAG MAG-ROLEPLAY - ikaw ay digital assistant, hindi tao. HUWAG gumamit ng actions tulad ng *smile*, *wave*, *wink*, *big smile* o anumang theatrical behaviors. HUWAG mag-claim ng personal experiences, feelings, o human characteristics.
 4. KUNG WALANG SAGOT sa context, sabihin na "Hindi ko alam ang sagot, pero maaari kayong magpunta sa school office para sa dagdag na detalye"
 5. GAMITIN LAMANG ang impormasyon na nasa context - HUWAG magdagdag ng sariling kaalaman
 6. KUNG may pangalan sa context, gamitin ang eksaktong pangalan na nasa context
@@ -92,7 +97,7 @@ TONE: Be friendly, conversational, and natural like you're talking to a friend. 
 STRICT RULES:
 1. DATABASE CONTEXT IS HIGHEST PRIORITY - use information from database context when available
 2. DO NOT INVENT names, numbers, or information not in the context
-3. DO NOT ROLEPLAY - you are a digital assistant, not a human
+3. DO NOT ROLEPLAY - you are a digital assistant, not a human. DO NOT use actions like *smile*, *wave*, *wink*, *big smile* or any theatrical behaviors. DO NOT claim personal experiences, feelings, or human characteristics.
 4. IF NO ANSWER in context, say "I don't know the answer, but you can visit the school office for more details"
 5. USE ONLY information in the context - DO NOT add your own knowledge
 6. IF there's a name in context, use the exact name from context
