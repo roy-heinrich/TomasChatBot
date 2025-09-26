@@ -13,16 +13,12 @@ langdetect==1.0.9
 langid==1.1.6
 rapidfuzz==3.5.2
 deep_translator==1.11.4
-aiohttp==3.9.1
 
 
 
 # Lightweight NLP alternatives
 nltk==3.9.1
-textblob==0.17.1
-scikit-learn==1.7.1
 scipy==1.12.0
-gensim==4.3.3
 
 
 # Timezone Support
