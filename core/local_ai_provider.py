@@ -2,6 +2,7 @@
 Local AI Provider - Completely Free
 Uses local models and Hugging Face transformers
 """
+import os
 import logging
 import asyncio
 from typing import Optional, Dict, Any
@@ -30,14 +31,13 @@ except ImportError:
 class LocalAIProvider:
     """Local AI provider using Hugging Face models - completely free"""
     
-    def __init__(self):
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or os.getenv('HUGGINGFACE_API_KEY')
+        # Use the same working model as the main HuggingFaceProvider
         self.available_models = [
-            "microsoft/DialoGPT-medium",
-            "microsoft/DialoGPT-small", 
-            "facebook/blenderbot-400M-distill",
-            "microsoft/DialoGPT-large"
+            "deepseek-ai/DeepSeek-V3-0324"  # Same model that works in main provider
         ]
-        self.current_model = "microsoft/DialoGPT-medium"
+        self.current_model = "deepseek-ai/DeepSeek-V3-0324"
         logger.info("✅ Local AI provider initialized (completely free)")
     
     async def generate_response(self, prompt: str, system_prompt: str = None, 
@@ -53,13 +53,16 @@ class LocalAIProvider:
                 try:
                     response = await self._call_huggingface_model(model, full_prompt, max_tokens, temperature)
                     if response and response.get('success'):
+                        # Calculate tokens (estimate based on content length)
+                        estimated_tokens = len(response['content'].split()) * 1.3
+                        
                         return AIResponse(
                             content=response['content'],
                             provider='local_huggingface',
                             model=model,
                             success=True,
                             cost=0.0,
-                            tokens_used=0
+                            tokens_used=int(estimated_tokens)
                         )
                 except Exception as e:
                     logger.warning(f"Model {model} failed: {e}")
@@ -88,50 +91,47 @@ class LocalAIProvider:
             )
     
     async def _call_huggingface_model(self, model: str, prompt: str, max_tokens: int, temperature: float) -> Dict[str, Any]:
-        """Call Hugging Face model via Inference API"""
+        """Call Hugging Face model via Chat Completion API (same as main provider)"""
         
         try:
-            # Use Hugging Face Inference API (free tier)
-            url = f"https://api-inference.huggingface.co/models/{model}"
+            # Use Hugging Face Chat Completion API (same as main HuggingFaceProvider)
+            from huggingface_hub import InferenceClient
             
-            headers = {
-                "Content-Type": "application/json"
-            }
-            
-            payload = {
-                "inputs": prompt,
-                "parameters": {
-                    "max_length": max_tokens,
-                    "temperature": temperature,
-                    "return_full_text": False,
-                    "do_sample": True
+            if not self.api_key:
+                return {
+                    'content': "No API key available",
+                    'success': False,
+                    'error': "Hugging Face API key not provided"
                 }
-            }
             
-            # Make async request
-            import aiohttp
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, headers=headers, timeout=30) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        if isinstance(result, list) and len(result) > 0:
-                            content = result[0].get("generated_text", "")
-                            return {
-                                'content': content,
-                                'success': True
-                            }
-                        else:
-                            return {
-                                'content': str(result),
-                                'success': True
-                            }
-                    else:
-                        error_text = await response.text()
-                        return {
-                            'content': f"API Error: {response.status}",
-                            'success': False,
-                            'error': error_text
-                        }
+            # Initialize client with API key
+            client = InferenceClient(token=self.api_key)
+            
+            # Prepare messages for chat completion
+            messages = [
+                {"role": "user", "content": prompt}
+            ]
+            
+            # Use chat completion API
+            response = client.chat_completion(
+                model=model,
+                messages=messages,
+                max_tokens=min(max_tokens, 100),  # Limit for free tier
+                temperature=temperature
+            )
+            
+            # Extract content from response
+            if hasattr(response, 'choices') and len(response.choices) > 0:
+                content = response.choices[0].message.content
+                return {
+                    'content': content,
+                    'success': True
+                }
+            else:
+                return {
+                    'content': str(response),
+                    'success': True
+                }
                         
         except Exception as e:
             return {
@@ -141,28 +141,42 @@ class LocalAIProvider:
             }
     
     def _get_simple_response(self, prompt: str) -> str:
-        """Get a simple response when AI models fail"""
+        """Get an intelligent fallback response when AI models fail"""
         
-        # Simple keyword-based responses
+        # Enhanced keyword-based responses with better context
         prompt_lower = prompt.lower()
         
+        # Greetings
         if any(word in prompt_lower for word in ["hello", "hi", "hey", "kumusta", "kamusta"]):
-            return "Hello! How can I help you with school-related questions today?"
+            return "Hello! I'm TOMAS, your digital assistant for Tomas SM. Bautista Elementary School. How can I help you with school-related questions today?"
         
+        # Gratitude
         elif any(word in prompt_lower for word in ["thank", "thanks", "salamat"]):
-            return "You're welcome! Is there anything else I can help you with?"
+            return "You're welcome! I'm glad I could help. Is there anything else about our school that you'd like to know?"
         
-        elif any(word in prompt_lower for word in ["enrollment", "enroll", "admission"]):
-            return "For enrollment information, please contact the school office directly. They can provide you with the most up-to-date details."
+        # Enrollment queries
+        elif any(word in prompt_lower for word in ["enrollment", "enroll", "admission", "register", "application"]):
+            return "For enrollment and admission information, please visit our school office or contact them directly. They have the most current enrollment requirements and procedures."
         
-        elif any(word in prompt_lower for word in ["schedule", "time", "when"]):
-            return "For schedule information, please check with the school office or your teachers for the most current details."
+        # Schedule and time queries
+        elif any(word in prompt_lower for word in ["schedule", "time", "when", "hours", "class", "school hours"]):
+            return "For current school schedules and hours, please check with the school office or your teachers. They can provide you with the most up-to-date information."
         
-        elif any(word in prompt_lower for word in ["contact", "phone", "number"]):
-            return "You can contact the school office directly for contact information and assistance."
+        # Contact information
+        elif any(word in prompt_lower for word in ["contact", "phone", "number", "email", "address"]):
+            return "For contact information and to speak with someone directly, please visit the school office or call them. They can provide you with the most current contact details."
         
+        # Academic queries
+        elif any(word in prompt_lower for word in ["grade", "subject", "course", "curriculum", "study"]):
+            return "For academic information about grades, subjects, or curriculum, please speak with your teachers or the school office for the most accurate details."
+        
+        # General help
+        elif any(word in prompt_lower for word in ["help", "assistance", "support", "tulong"]):
+            return "I'm here to help with school-related questions! Please let me know what specific information you need, or contact the school office for more detailed assistance."
+        
+        # Default response
         else:
-            return "I'm here to help with school-related questions. Please let me know what you need assistance with, or contact the school office for more specific information."
+            return "I'm TOMAS, your digital assistant for Tomas SM. Bautista Elementary School. I'm here to help with school-related questions. Please let me know what you need assistance with, or contact the school office for more specific information."
     
     def is_available(self) -> bool:
         """Check if local AI is available"""

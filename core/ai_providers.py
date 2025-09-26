@@ -212,12 +212,16 @@ class HuggingFaceProvider(AIProvider):
                 if response and hasattr(response, 'choices') and len(response.choices) > 0:
                     content = response.choices[0].message.content
                     if content.strip():
+                        # Calculate tokens (estimate based on content length)
+                        estimated_tokens = len(content.split()) * 1.3  # Rough estimation
+                        
                         logger.info(f"✅ Hugging Face model {model} succeeded")
                         return AIResponse(
                             content=content,
                             provider="huggingface",
                             model=model,
-                            success=True
+                            success=True,
+                            tokens_used=int(estimated_tokens)
                         )
                 
             except Exception as e:
@@ -382,12 +386,12 @@ class MultiProviderAI:
             {
                 "class": HuggingFaceProvider,
                 "api_key": os.environ.get("HUGGINGFACE_API_KEY"),  # Optional
-                "model": "microsoft/DialoGPT-medium"
+                "model": "deepseek-ai/DeepSeek-V3-0324"
             },
             {
                 "class": CohereProvider,
                 "api_key": os.environ.get("COHERE_API_KEY"),
-                "model": "command"
+                "model": "command-a-03-2025"
             }
         ]
         
@@ -408,7 +412,9 @@ class MultiProviderAI:
         # Add local AI provider as final fallback (always available)
         try:
             from core.local_ai_provider import LocalAIProvider
-            local_provider = LocalAIProvider()
+            # Pass Hugging Face API key to local provider
+            hf_key = os.getenv('HUGGINGFACE_API_KEY')
+            local_provider = LocalAIProvider(api_key=hf_key)
             if local_provider.is_available():
                 self.providers.append(local_provider)
                 logger.info("✅ Local AI provider added (completely free)")
@@ -440,9 +446,9 @@ class MultiProviderAI:
                 
                 logger.info(f"🤖 Trying {provider_name} (attempt {i+1}/{len(self.providers)})")
                 
-                # Check if this provider has been failing recently
-                if provider_name in provider_errors and provider_errors[provider_name] > 3:
-                    logger.warning(f"⚠️ Skipping {provider_name} - too many recent failures")
+                # Check if this provider has been failing recently (enhanced health monitoring)
+                if provider_name in provider_errors and provider_errors[provider_name] > 2:
+                    logger.warning(f"⚠️ Skipping {provider_name} - too many recent failures ({provider_errors[provider_name]})")
                     continue
                 
                 response = await provider.generate_response(
@@ -505,6 +511,9 @@ class MultiProviderAI:
                     provider_errors[provider_name] = provider_errors.get(provider_name, 0) + 1
                     continue
         
+        # Reset provider health after some time (every 10 minutes)
+        self._reset_provider_health_if_needed()
+        
         # If all providers failed, try to provide a helpful error message
         if provider_errors:
             failed_providers = [name for name, count in provider_errors.items() if count > 0]
@@ -558,3 +567,19 @@ class MultiProviderAI:
                 status["summary"]["approaching_limit"] += 1
         
         return status
+    
+    def _reset_provider_health_if_needed(self):
+        """Reset provider health after some time to allow retry of failed providers"""
+        import time
+        current_time = time.time()
+        
+        # Reset health every 10 minutes (600 seconds)
+        if not hasattr(self, '_last_health_reset'):
+            self._last_health_reset = current_time
+            self._provider_health = {}
+            return
+        
+        if current_time - self._last_health_reset > 600:  # 10 minutes
+            self._last_health_reset = current_time
+            self._provider_health = {}
+            logger.info("🔄 Provider health reset - all providers can be retried")
