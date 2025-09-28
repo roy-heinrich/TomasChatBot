@@ -132,6 +132,34 @@ class ChatBot:
             logger.error(f"Context language detection failed: {e}")
             return "en", 0.5
     
+    def _check_persistent_escalation(self, conversation_history: List[Dict]) -> bool:
+        """Check if user has been persistent about wanting to talk to someone"""
+        if not conversation_history:
+            return False
+        
+        # Look for escalation patterns in recent messages
+        recent_messages = conversation_history[-6:]  # Last 6 messages
+        
+        escalation_count = 0
+        escalation_patterns = [
+            "talk to", "speak to", "contact", "live person", "human", "admin", "staff", 
+            "principal", "teacher", "guidance", "counselor", "someone", "anyone",
+            "makausap", "makipag-usap", "magistryo", "tao", "staff", "principal"
+        ]
+        
+        # Only count user messages, not assistant responses
+        user_messages = [msg for msg in recent_messages if msg.get('role') == 'user']
+        
+        for message in user_messages:
+            content = message.get('content', '').lower()
+            
+            # Check for escalation patterns
+            if any(pattern in content for pattern in escalation_patterns):
+                escalation_count += 1
+        
+        # If user has mentioned escalation 2+ times in recent messages, consider it persistent
+        return escalation_count >= 2
+    
     async def chat(self, query: str, conversation_history: List[Dict] = None, 
                    user_timezone: str = None, session_id: str = None) -> ChatResponse:
         """Main chat method - Groq-first approach for natural responses"""
@@ -199,11 +227,23 @@ class ChatBot:
             # 🚨 CRITICAL: Check for special intents FIRST before database search
             # These intents should skip database search entirely
             if nlu_result and nlu_result.intent.value == 'contact_escalation':
-                logger.info("👥 Contact escalation requested - skipping database search, using helpful approach")
-                # Skip database search entirely for contact escalation
-                # Use the new helpful approach: ask about other school topics first
-                search_results = []
-                best_result = None
+                logger.info("👥 Contact escalation requested - checking conversation history for persistence")
+                
+                # Check if user has been persistent about wanting to talk to someone
+                persistent_escalation = self._check_persistent_escalation(conversation_history)
+                
+                if persistent_escalation:
+                    logger.info("👥 Persistent escalation detected - providing direct contact option")
+                    # Provide direct escalation response
+                    search_results = []
+                    best_result = None
+                    context = "User has been persistent about wanting to talk to a live person/admin. Provide the Facebook Messenger contact link immediately."
+                else:
+                    logger.info("👥 First escalation request - using helpful approach first")
+                    # Use helpful approach for first request
+                    search_results = []
+                    best_result = None
+                    context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
             else:
                 # 3. Perform database search to get context for Groq
                 search_results = self.database_search.search_prompts(query, limit=10)
@@ -219,9 +259,12 @@ class ChatBot:
             
             # 5. Generate response using Groq with enhanced context
             if nlu_result and nlu_result.intent.value == 'contact_escalation':
-                # For contact escalation, use the helpful approach context
-                logger.info("🤖 Using helpful approach for contact escalation")
-                context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
+                # For contact escalation, use the appropriate context based on persistence
+                logger.info("🤖 Using contact escalation approach")
+                if persistent_escalation:
+                    context = "User has been persistent about wanting to talk to a live person/admin. Provide the Facebook Messenger contact link immediately."
+                else:
+                    context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
             elif best_result:
                 logger.info("📚 Using database context for Groq response")
                 # Provide database information as context but let Groq expand naturally
