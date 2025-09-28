@@ -14,6 +14,66 @@ class DatabaseSearchEngine:
     def __init__(self, supabase_url: str, supabase_key: str):
         self.supabase: Client = create_client(supabase_url, supabase_key)
     
+    def _translate_query_for_search(self, query: str) -> str:
+        """Translate Tagalog query terms to English for database search"""
+        # Tagalog to English mapping for common school terms
+        tagalog_to_english = {
+            # Grade levels
+            'ikatlong': 'three', 'ikatatlong': 'three', 'ikatlo': 'three',
+            'ikalimang': 'five', 'ikalima': 'five',
+            'unang': 'one', 'una': 'one',
+            'ikalawang': 'two', 'ikalawa': 'two',
+            'ikaapat': 'four', 'ikapat': 'four',
+            'ikaanim': 'six', 'ika-anim': 'six',
+            'baitang': 'grade',
+            
+            # Staff roles
+            'guro': 'teacher', 'maestro': 'teacher', 'maestra': 'teacher',
+            'adviser': 'adviser', 'advisor': 'adviser',
+            'principal': 'principal', 'punong guro': 'principal',
+            'direktor': 'director',
+            
+            # Common terms
+            'sino': 'who', 'ano': 'what', 'saan': 'where',
+            'kailan': 'when', 'bakit': 'why', 'paano': 'how',
+            'para sa': 'for', 'ng': 'of', 'sa': 'in'
+        }
+        
+        # Convert to lowercase for matching
+        query_lower = query.lower()
+        translated_parts = []
+        
+        # Split query into words and translate each
+        words = query_lower.split()
+        for word in words:
+            # Clean word (remove punctuation)
+            clean_word = word.strip('.,!?')
+            if clean_word in tagalog_to_english:
+                translated_parts.append(tagalog_to_english[clean_word])
+            else:
+                translated_parts.append(clean_word)
+        
+        # Join translated words
+        translated_query = ' '.join(translated_parts)
+        
+        # Special handling for common patterns
+        if 'guro para sa' in query_lower:
+            # "guro para sa ikatlong baitang" -> "teacher for grade three"
+            translated_query = translated_query.replace('guro para sa', 'teacher for')
+            translated_query = translated_query.replace('baitang', 'grade')
+        
+        # Clean up common words that don't help with matching
+        words_to_remove = ['ang', 'ng', 'sa', 'para', 'in', 'who', 'what', 'where', 'when', 'why', 'how']
+        translated_words = translated_query.split()
+        cleaned_words = [word for word in translated_words if word not in words_to_remove]
+        translated_query = ' '.join(cleaned_words)
+        
+        # Log the translation for debugging
+        if translated_query != query_lower:
+            logger.info(f"🌐 Translated query: '{query}' -> '{translated_query}'")
+        
+        return translated_query
+    
     def search_prompts(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
         """Search chatbot prompts using search_tsv column with improved strategy"""
         try:
@@ -31,6 +91,43 @@ class DatabaseSearchEngine:
                     logger.info(f"🎯 Found {len(result.data)} exact keyword matches")
             except Exception as e:
                 logger.warning(f"Exact keyword search failed: {e}")
+            
+            # Strategy 1.5: Try translated query for Tagalog/English mismatch
+            translated_query = self._translate_query_for_search(query)
+            if translated_query and translated_query != query:
+                try:
+                    result = self.supabase.table("chatbot_prompts") \
+                        .select("keywords, response, search_tsv") \
+                        .ilike("keywords", f"%{translated_query}%") \
+                        .execute()
+                    
+                    if result.data:
+                        for item in result.data:
+                            if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                all_results.append(item)
+                        logger.info(f"🌐 Found {len(result.data)} translated query matches for '{translated_query}'")
+                except Exception as e:
+                    logger.warning(f"Translated query search failed: {e}")
+            
+            # Strategy 1.6: Try specific grade + teacher pattern matching
+            if 'teacher' in translated_query and any(grade in translated_query for grade in ['three', '3', 'third']):
+                try:
+                    # Search for "Grade three" or "Grade 3" patterns
+                    grade_patterns = ['Grade three', 'Grade 3', 'grade three', 'grade 3', 'three grade', '3rd grade']
+                    for pattern in grade_patterns:
+                        result = self.supabase.table("chatbot_prompts") \
+                            .select("keywords, response, search_tsv") \
+                            .ilike("keywords", f"%{pattern}%") \
+                            .execute()
+                        
+                        if result.data:
+                            for item in result.data:
+                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                    all_results.append(item)
+                            logger.info(f"🎯 Found {len(result.data)} grade pattern matches for '{pattern}'")
+                            break  # Stop after first successful match
+                except Exception as e:
+                    logger.warning(f"Grade pattern search failed: {e}")
             
             # Strategy 2: Try formatted full-text search
             formatted_query = query.replace(' ', ' & ')

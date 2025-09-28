@@ -196,27 +196,40 @@ class ChatBot:
                 )
                 logger.info(f"🧠 Updated memory for user: {user_memory.name}, topics: {list(user_memory.topics.keys())}")
             
-            # 3. Perform database search FIRST to get context for Groq
-            search_results = self.database_search.search_prompts(query, limit=10)
-            logger.info(f"🔍 Found {len(search_results)} search results")
-            
-            # 4. Select best result for context
-            best_result = None
-            if search_results:
-                best_result = self.database_search.select_best_result(search_results, query)
-                logger.info(f"🏆 Selected: {best_result['keywords'] if best_result else 'None'}")
+            # 🚨 CRITICAL: Check for special intents FIRST before database search
+            # These intents should skip database search entirely
+            if nlu_result and nlu_result.intent.value == 'contact_escalation':
+                logger.info("👥 Contact escalation requested - skipping database search, using helpful approach")
+                # Skip database search entirely for contact escalation
+                # Use the new helpful approach: ask about other school topics first
+                search_results = []
+                best_result = None
             else:
-                logger.info("❌ No search results found")
+                # 3. Perform database search to get context for Groq
+                search_results = self.database_search.search_prompts(query, limit=10)
+                logger.info(f"🔍 Found {len(search_results)} search results")
+                
+                # 4. Select best result for context
+                best_result = None
+                if search_results:
+                    best_result = self.database_search.select_best_result(search_results, query)
+                    logger.info(f"🏆 Selected: {best_result['keywords'] if best_result else 'None'}")
+                else:
+                    logger.info("❌ No search results found")
             
             # 5. Generate response using Groq with enhanced context
-            if best_result:
+            if nlu_result and nlu_result.intent.value == 'contact_escalation':
+                # For contact escalation, use the helpful approach context
+                logger.info("🤖 Using helpful approach for contact escalation")
+                context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
+            elif best_result:
                 logger.info("📚 Using database context for Groq response")
                 # Provide database information as context but let Groq expand naturally
                 context = f"Database Information: {best_result['response']}"
             else:
-                # Use Groq for intelligent responses when no database context, but with appropriate safeguards
+                # Use Groq for intelligent responses when no database context, but with strict safeguards
                 logger.info("🤖 No database context found - using Groq for intelligent response with safeguards")
-                context = "You are a helpful school assistant. Respond to the user's question appropriately, but if you don't have specific information about the school, be honest about it and suggest contacting the school office for detailed information."
+                context = "CRITICAL: NO DATABASE INFORMATION AVAILABLE. You MUST respond that you don't have the specific information requested. Ask if they want to talk to a school admin - if yes, provide the Facebook link: https://web.facebook.com/114901Tomas. If no, ask what else they want to know about the school. DO NOT make up, invent, or hallucinate any information about teachers, staff names, schedules, or school policies. DO NOT provide specific teacher names, subjects, or any details not in your database. Be honest about your limitations."
             
             # Add personalized memory context
             if session_id:
@@ -263,43 +276,14 @@ class ChatBot:
                 logger.info(f"👋 {nlu_result.intent.value} detected - handling simple greeting")
                 # For simple greetings, provide friendly response
                 context = "User is giving a simple greeting"
+            elif nlu_result and nlu_result.intent.value == 'medical_emergency':
+                logger.info(f"🚨 {nlu_result.intent.value} detected - handling medical emergency")
+                # For medical emergencies, provide immediate emergency response
+                context = "MEDICAL EMERGENCY DETECTED - User is experiencing a medical emergency requiring immediate attention"
             elif nlu_result and nlu_result.intent.value == 'contact_escalation':
-                logger.info("👥 Contact escalation requested - providing contact information")
-                # User explicitly wants to talk to someone
-                contact_type = "general"
-                if any(word in query.lower() for word in ["urgent", "emergency", "immediate"]):
-                    contact_type = "urgent"
-                elif any(word in query.lower() for word in ["guidance", "counselor", "emotional"]):
-                    contact_type = "guidance"
-                
-                try:
-                    # Get user name from memory for personalization
-                    user_name = ""
-                    if session_id:
-                        user_name = self.conversation_memory.get_user_name(session_id)
-                    contact_response = self.response_generator.get_contact_escalation_response(detected_lang, contact_type, self.database_search.supabase, user_name)
-                    return ChatResponse(
-                        response=[contact_response],
-                        entities=[{"entity_type": e.entity_type, "value": e.value, "confidence": e.confidence} for e in entities],
-                        detected_language=detected_lang,
-                        language_confidence=confidence,
-                        is_split=False,
-                        message_count=1,
-                        intent='contact_escalation'
-                    )
-                except Exception as e:
-                    logger.error(f"Error in contact escalation: {e}")
-                    # Fallback to simple contact message
-                    fallback_contact = f"For questions that need a live person:\n\n📱 Message us directly: <a href=\"https://m.me/114901Tomas\" target=\"_blank\">Click here to chat on Messenger</a>\n📞 Call the school office\n🏫 Visit the school office\n\nOffice hours: Monday-Friday, 7:00 AM - 5:00 PM"
-                    return ChatResponse(
-                        response=[fallback_contact],
-                        entities=[{"entity_type": e.entity_type, "value": e.value, "confidence": e.confidence} for e in entities],
-                        detected_language=detected_lang,
-                        language_confidence=confidence,
-                        is_split=False,
-                        message_count=1,
-                        intent='contact_escalation'
-                    )
+                logger.info(f"👥 {nlu_result.intent.value} detected - using helpful approach first")
+                # For contact escalation, use helpful approach: ask about other school topics first
+                context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
             # Remove the old fallback logic - let Groq handle all cases intelligently
             
             # Generate response with Groq (professional, factual, humane, jolly, no roleplay)

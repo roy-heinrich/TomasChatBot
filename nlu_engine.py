@@ -92,6 +92,10 @@ class Intent(Enum):
     DENIAL = "denial"
     GOODBYE = "goodbye"
     
+    # Emergency and Safety Intents - for critical situations
+    MEDICAL_EMERGENCY = "medical_emergency"  # Medical emergencies requiring immediate attention
+    SAFETY_EMERGENCY = "safety_emergency"  # School safety emergencies
+    
     # Conversation Flow Intents - for better multi-turn conversations
     ENROLLMENT_DOCUMENTS = "enrollment_documents"  # Specific document requirements
     ENROLLMENT_DEADLINE = "enrollment_deadline"    # Deadline and timeline questions
@@ -400,6 +404,31 @@ class NLUEngine:
         staff_score = self._calculate_staff_confidence(user_lower)
         if staff_score > 0.6:
             return NLUResult(Intent.STAFF_INQUIRY, staff_score, [])
+        
+        # 🚨 CRITICAL: Medical emergency detection (highest priority)
+        medical_emergency_patterns = [
+            # English medical emergencies
+            "heart attack", "stroke", "seizure", "choking", "bleeding", "unconscious",
+            "can't breathe", "chest pain", "severe pain", "medical emergency",
+            "need ambulance", "call 911", "emergency room", "hospital now",
+            "life threatening", "dying", "critical condition", "medical crisis",
+            "cardiac arrest", "respiratory distress", "severe injury", "trauma",
+            "allergic reaction", "anaphylaxis", "overdose", "poisoning",
+            
+            # Tagalog medical emergencies
+            "atake sa puso", "stroke", "nawalan ng malay", "hindi makahinga",
+            "sakit sa dibdib", "emergency medical", "kailangan ng ambulansya",
+            "tawagan ang 911", "emergency room", "ospital ngayon",
+            "nakamamatay", "nag-aagaw buhay", "kritikal na kondisyon",
+            "malubhang sakit", "malubhang sugat", "alergic reaction",
+            "sobrang sakit", "hindi na makahinga", "nagkakaroon ng seizure",
+            "nagkakaroon ng stroke", "atake sa puso", "cardiac arrest"
+        ]
+        
+        for pattern in medical_emergency_patterns:
+            if pattern in user_lower:
+                logger.info(f"🚨 MEDICAL EMERGENCY DETECTED: '{pattern}'")
+                return NLUResult(Intent.MEDICAL_EMERGENCY, 0.95, [])
         
         # Enhanced emotional expression detection for Tagalog/Aklanon
         emotional_patterns = [

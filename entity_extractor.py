@@ -306,8 +306,11 @@ class AdvancedEntityExtractor:
                 r"grade\s*(one|two|three|four|five|six|seven|eight|nine|ten)"
             ],
             "filipino": [
-                r"(unang|ikalawang|ikatlong|ikaapat|ikalimang|ikaanim)\s*baitang",
-                r"baitang\s*(isa|dalawa|tatlo|apat|lima|anim)"
+                r"(unang|ikalawang|ikatlong|ikatatlong|ikaapat|ikalimang|ikaanim)\s*baitang",
+                r"baitang\s*(isa|dalawa|tatlo|apat|lima|anim)",
+                r"(unang|ikalawang|ikatlong|ikatatlong|ikaapat|ikalimang|ikaanim)\s*grade",
+                r"grade\s*(isa|dalawa|tatlo|apat|lima|anim)",
+                r"para\s+sa\s+(ikatlong|ikatatlong|ikalimang|unang|ikalawang|ikaapat|ikaanim)\s+baitang"
             ]
         }
     
@@ -469,6 +472,23 @@ class AdvancedEntityExtractor:
                     )
                     entities.append(entity)
         
+        # Filipino grades (ikalimang baitang, etc.)
+        for pattern in self.grade_patterns["filipino"]:
+            matches = re.finditer(pattern, text_lower)
+            for match in matches:
+                grade_text = match.group(1)
+                normalized_grade = self._normalize_filipino_grade(grade_text)
+                if normalized_grade:
+                    entity = ExtractedEntity(
+                        entity_type="grade_level",
+                        value=normalized_grade,
+                        confidence=0.9,
+                        start_pos=match.start(),
+                        end_pos=match.end(),
+                        context=text[max(0, match.start()-15):match.end()+15]
+                    )
+                    entities.append(entity)
+        
         return entities
     
     def _extract_subjects(self, text: str, text_lower: str) -> List[ExtractedEntity]:
@@ -598,7 +618,7 @@ class AdvancedEntityExtractor:
                     r"(?:school\s+)?(?:head|principal|director)",
                     r"(?:head\s+)?(?:principal|headmaster|headmistress)",
                     r"(?:school\s+)?(?:administrator|administration)",
-                    r"(?:punong\s+)?(?:guro|teacher)",
+                    r"punong\s+(?:guro|teacher|ng\s+paaralan)(?:\s|$)",
                     r"(?:head\s+)?(?:ng\s+paaralan|sa\s+paaralan)",
                     r"(?:principal|direktor|administrador)",
                     r"in\s+charge(?:\s+of)?",
@@ -609,9 +629,13 @@ class AdvancedEntityExtractor:
             "teacher": {
                 "patterns": [
                     r"(?:class\s+)?(?:teacher|instructor|educator)",
-                    r"(?:guro|maestro|maestra)",
+                    r"(?:guro|maestro|maestra)(?!\s+(?:ng\s+paaralan|sa\s+paaralan|ng\s+eskwela))",
                     r"(?:grade\s+\d+\s+)?teacher",
-                    r"(?:subject\s+)?teacher"
+                    r"(?:subject\s+)?teacher",
+                    r"sino\s+ang\s+(?:guro|teacher)",
+                    r"(?:adviser|advisor)",
+                    r"(?:homeroom\s+)?teacher",
+                    r"guro\s+(?:para\s+sa|ng|sa)\s+(?:ikatlong|ikalimang|unang|ikalawang|ikaapat|ikaanim)\s+baitang"
                 ],
                 "confidence": 0.90
             },
@@ -794,6 +818,24 @@ class AdvancedEntityExtractor:
         }
         
         return grade_mapping.get(grade_text.lower())
+    
+    def _normalize_filipino_grade(self, grade_text: str) -> Optional[str]:
+        """Normalize Filipino grade level text to standard format"""
+        filipino_grade_mapping = {
+            # Ordinal forms
+            "unang": "Grade 1", "ikalawang": "Grade 2", "ikatlong": "Grade 3", "ikatatlong": "Grade 3",
+            "ikaapat": "Grade 4", "ikalimang": "Grade 5", "ikaanim": "Grade 6",
+            # Cardinal forms
+            "isa": "Grade 1", "dalawa": "Grade 2", "tatlo": "Grade 3",
+            "apat": "Grade 4", "lima": "Grade 5", "anim": "Grade 6",
+            # Alternative forms
+            "una": "Grade 1", "pangalawa": "Grade 2", "pangatlo": "Grade 3", "pang-apat": "Grade 4",
+            "panglima": "Grade 5", "panganim": "Grade 6",
+            # Additional variations
+            "ikatlong": "Grade 3", "ikatatlong": "Grade 3"
+        }
+        
+        return filipino_grade_mapping.get(grade_text.lower())
     
     def _parse_date(self, date_text: str) -> Optional[str]:
         """Parse and normalize date text"""

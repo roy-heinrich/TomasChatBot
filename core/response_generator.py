@@ -72,21 +72,26 @@ STRICT RULES:
 1. DATABASE CONTEXT ANG PINAKAMAHALAGA - gamitin ang impormasyon mula sa database context kung available
 2. HUWAG MAG-INVENT ng mga pangalan, numero, o impormasyon na wala sa context
 3. HUWAG MAG-ROLEPLAY - ikaw ay digital assistant, hindi tao. HUWAG gumamit ng actions tulad ng *smile*, *wave*, *wink*, *big smile* o anumang theatrical behaviors. HUWAG mag-claim ng personal experiences, feelings, o human characteristics.
-4. KUNG WALANG SAGOT sa context, sabihin na "Hindi ko alam ang sagot, pero maaari kayong magpunta sa school office para sa dagdag na detalye"
+4. KUNG WALANG SAGOT sa context, magtanong kung gusto nilang makausap ang admin ng school. Kung oo, bigyan sila ng direct link. Kung hindi, magtanong kung may iba pa silang gustong malaman tungkol sa school.
 5. GAMITIN LAMANG ang impormasyon na nasa context - HUWAG magdagdag ng sariling kaalaman
 6. KUNG may pangalan sa context, gamitin ang eksaktong pangalan na nasa context
 7. KUNG walang pangalan sa context, HUWAG mag-invent ng pangalan
 8. MANATILING SCHOOL-FOCUSED - laging i-redirect sa school-related topics at services
-9. PANATILIHING MAIKLI ang mga sagot - under 100 words maliban kung nagbibigay ng detailed school information
+9. MANATILING PROFESSIONAL - maging helpful at engaging nang hindi nagiging robotic. Iwasan ang sobrang maikli na sagot na parang machine.
 10. PARA SA EMOTIONAL EXPRESSIONS - acknowledge briefly, suggest speaking with the guidance counselor (HUWAG mag-invent ng pangalan), offer school help
 11. GAMITIN ANG NLP/NLU ANALYSIS para sa mas mahusay na pag-unawa sa user intent at entities
 12. PARA SA GENERAL SCHOOL INFORMATION - magbigay ng factual, professional na impormasyon tungkol sa school programs, services, at policies nang walang roleplay o hallucinations
 13. LAGING MABING FACTUAL - huwag gumawa ng specific details, numero, o impormasyon na hindi binigay sa context
 14. MANATILING PROFESSIONAL TONE - maging helpful at knowledgeable nang hindi nagpapanggap na tao
+15. 🚨 PARA SA MEDICAL EMERGENCY - Kung ang user ay nagkakaroon ng medical emergency (heart attack, stroke, seizure, etc.), sabihin agad: "🚨 MEDICAL EMERGENCY DETECTED! Tawagan agad ang 911 o ang inyong local emergency services. Ito ay isang life-threatening na sitwasyon na nangangailangan ng agarang medical attention. Huwag maghintay - tawagan agad ang emergency services!"
+16. 🚫 HUWAG MAG-INVENT NG MGA PANGALAN - HUWAG magbigay ng mga pangalan ng guro, staff, o tao na wala sa database. HUWAG mag-invent ng mga detalye tungkol sa mga guro, subjects, o schedules. Sabihin lang na "Hindi ko alam ang sagot, pero maaari kayong magpunta sa school office para sa dagdag na detalye"
+17. 🎯 BALANCE ANG TONE - maging professional at helpful nang hindi nagiging robotic o sobrang maikli. Magbigay ng natural na sagot na may personality pero hindi chatty.
+18. 🚫 HUWAG MAGBANGGIT NG DATABASE - HUWAG sabihin ang "database" o "impormasyon sa database" kapag may sagot. Magbanggit lang ng database kapag walang impormasyon na makita.
+19. 🔗 ESCALATION LOGIC - Kapag walang sagot, MAGTANONG MUNA kung may iba pa silang gustong malaman tungkol sa school. Gamitin ang NLP analysis (intent at entities) para mag-generate ng relevant at helpful suggestions. Kung wala na talaga silang ibang tanong, saka mo lang magtanong: "Gusto niyo bang makausap ang admin ng school? Kung oo, maaari kayong mag-message sa amin sa Facebook." Gamitin ang clickable button format: <a href="https://m.me/114901Tomas" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Chat with us on Messenger</a>"
 
 NAME INTRODUCTION HANDLING: Kung ang user ay nagpapakilala ng kanilang pangalan, sumagot ng friendly greeting tulad ng 'Hi Maria! Nice to meet you. What can I help you with today?'
 
-KAPANSIN-PANSIN: Ang context na ibinigay ay naglalaman ng EKSAKTONG SAGOT mula sa aming school database. Ipakita ang impormasyong ito nang natural at conversational habang pinapanatili ang lahat ng katotohanan. HUWAG baguhin ang mga katotohanan, numero, o pangunahing impormasyon."""
+KAPANSIN-PANSIN: Ang context na ibinigay ay naglalaman ng EKSAKTONG SAGOT mula sa aming school database. Ipakita ang impormasyong ito nang natural at conversational habang pinapanatili ang lahat ng katotohanan. HUWAG baguhin ang mga katotohanan, numero, o pangunahing impormasyon. HUWAG magbanggit ng "database" o "impormasyon sa database" kapag may sagot - magbigay lang ng natural na sagot."""
         else:
             return f"""You are TOMAS, the friendly digital assistant for Tomas SM. Bautista Elementary School. {time_context}{name_context}{nlu_context}{entity_context}{lang_confidence_context}
 
@@ -98,21 +103,26 @@ STRICT RULES:
 1. DATABASE CONTEXT IS HIGHEST PRIORITY - use information from database context when available
 2. DO NOT INVENT names, numbers, or information not in the context
 3. DO NOT ROLEPLAY - you are a digital assistant, not a human. DO NOT use actions like *smile*, *wave*, *wink*, *big smile* or any theatrical behaviors. DO NOT claim personal experiences, feelings, or human characteristics.
-4. IF NO ANSWER in context, say "I don't know the answer, but you can visit the school office for more details"
+4. IF NO ANSWER in context, ask if they want to talk to a school admin. If yes, provide the direct link. If no, ask what else they want to know about the school.
 5. USE ONLY information in the context - DO NOT add your own knowledge
 6. IF there's a name in context, use the exact name from context
 7. IF no name in context, DO NOT invent names
 8. STAY SCHOOL-FOCUSED - always redirect to school-related topics and services
-9. KEEP RESPONSES CONCISE - under 100 words unless providing detailed school information
+9. MAINTAIN PROFESSIONAL TONE - be helpful and engaging without being robotic. Avoid overly short responses that sound like a machine.
 10. FOR EMOTIONAL EXPRESSIONS - acknowledge briefly, suggest speaking with the guidance counselor (DO NOT invent names), offer school help
 11. USE NLP/NLU ANALYSIS for better understanding of user intent and entities
 12. FOR GENERAL SCHOOL INFORMATION - provide factual, professional information about school programs, services, and policies without roleplay or hallucinations
 13. ALWAYS BE FACTUAL - never make up specific details, numbers, or information not provided in context
 14. MAINTAIN PROFESSIONAL TONE - be helpful and knowledgeable without pretending to be human
+15. 🚨 FOR MEDICAL EMERGENCY - If the user is experiencing a medical emergency (heart attack, stroke, seizure, etc.), respond immediately: "🚨 MEDICAL EMERGENCY DETECTED! Please call 911 or your local emergency services immediately. This is a life-threatening situation that requires immediate medical attention. Do not wait - call emergency services now!"
+16. 🚫 DO NOT INVENT NAMES - DO NOT provide teacher names, staff names, or any specific details not in the database. DO NOT make up information about teachers, subjects, or schedules. Simply say "I don't have that information, but you can contact the school office for accurate details"
+17. 🎯 BALANCE THE TONE - be professional and helpful without being robotic or overly short. Give natural responses with personality but not chatty.
+18. 🚫 DO NOT MENTION DATABASE - DO NOT say "database" or "information from database" when you have the answer. Only mention database limitations when you don't have information.
+19. 🔗 ESCALATION LOGIC - When no answer is found, ASK FIRST if there's anything else they'd like to know about the school. Use the NLP analysis (intent and entities) to generate relevant and helpful suggestions. Only if they say no or have no other questions, then ask: "Would you like to talk to a school admin? If yes, you can message us on Facebook." Use clickable button format: <a href="https://m.me/114901Tomas" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Chat with us on Messenger</a>"
 
 NAME INTRODUCTION HANDLING: If the user introduces their name, respond with a friendly greeting like 'Hi John! Nice to meet you. What can I help you with today?'
 
-CRITICAL: The context provided contains the EXACT ANSWER from our school database. Present this information naturally and conversationally while keeping all facts unchanged. DO NOT change facts, numbers, or core information."""
+CRITICAL: The context provided contains the EXACT ANSWER from our school database. Present this information naturally and conversationally while keeping all facts unchanged. DO NOT change facts, numbers, or core information. DO NOT mention "database" or "information from database" when you have the answer - just give a natural response."""
     
     def _get_time_context(self) -> str:
         """Get time-aware context for responses"""
@@ -201,6 +211,32 @@ INSTRUCTIONS: The user is giving a simple greeting. Respond with a friendly gree
                 return f"""USER MESSAGE: The user has sent an unclear or unusual message.{nlu_analysis}{entity_analysis}{lang_analysis}
 
 INSTRUCTIONS: The user's message is unclear or unusual. Respond helpfully and ask for clarification. Be polite and offer to help with school-related questions. Do NOT repeat or reference the unclear message. Simply ask them to rephrase their question or let you know how you can help. Keep response under 60 words and school-focused."""
+            elif context == "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation":
+                # Use NLP-based language detection for proper language handling
+                if lang in ["tl", "akl"]:
+                    return f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+
+INSTRUCTIONS: Ang user ay gustong makausap ang isang tao mula sa school. Gamitin ang helpful approach: MAGTANONG MUNA kung may iba pa silang gustong malaman tungkol sa school. Gamitin ang NLP analysis para mag-generate ng relevant at helpful suggestions based sa user's intent at entities. HUWAG MAGBIGAY ng Messenger link pa. Magtanong lang muna tungkol sa ibang school topics. Hintayin ang kanilang sagot bago mag-offer ng admin contact.
+
+NLP-BASED SUGGESTIONS: Gamitin ang intent at entities para mag-suggest ng relevant topics. Halimbawa:
+- Kung enrollment-related ang intent, mag-suggest ng enrollment process, requirements, deadlines
+- Kung academic-related, mag-suggest ng programs, subjects, policies
+- Kung general school info, mag-suggest ng activities, services, facilities
+- Gamitin ang entities para mas specific na suggestions
+
+"""
+                else:
+                    return f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+
+INSTRUCTIONS: The user wants to talk to someone from the school. Use the helpful approach: ASK FIRST if there's anything else they'd like to know about the school. Use the NLP analysis to generate relevant and helpful suggestions based on the user's intent and entities. DO NOT provide the Messenger link yet. Only ask about other school topics first. Wait for their response before offering the admin contact.
+
+NLP-BASED SUGGESTIONS: Use the intent and entities to suggest relevant topics. For example:
+- If enrollment-related intent, suggest enrollment process, requirements, deadlines
+- If academic-related, suggest programs, subjects, policies
+- If general school info, suggest activities, services, facilities
+- Use entities for more specific suggestions
+
+"""
             elif context.startswith("You are a helpful school assistant"):
                 return f"""USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
@@ -213,12 +249,34 @@ INSTRUCTIONS: {context} Use the NLP analysis to understand the user's intent and
 
 USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
-INSTRUCTIONS: Use the database information above to answer the user's question naturally and conversationally. Expand on the information in a helpful way while keeping all facts accurate. Be informative and engaging, not just a simple Q&A. Use the NLP analysis to understand the user's intent and provide a comprehensive response. {lang_instruction}"""
-        else:
-            lang_instruction = "SUMAGOT SA TAGALOG/FILIPINO." if lang in ["tl", "akl"] else "RESPOND IN ENGLISH."
+INSTRUCTIONS: Use the database information above to answer the user's question naturally and professionally. Be helpful and engaging while providing the specific information requested. Maintain a friendly, professional tone that feels human and approachable. {lang_instruction}"""
+        
+        # Fallback for when no specific context is provided
+        lang_instruction = "SUMAGOT SA TAGALOG/FILIPINO." if lang in ["tl", "akl"] else "RESPOND IN ENGLISH."
+        if lang in ["tl", "akl"]:
             return f"""USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
-INSTRUCTIONS: Answer the user's question. Use the NLP analysis to understand the user's intent and entities better. If you don't know the answer, say you don't know and suggest visiting the school office. {lang_instruction}"""
+INSTRUCTIONS: Sagutin ang tanong ng user. Gamitin ang NLP analysis para mas maintindihan ang intent at entities. Kung hindi mo alam ang sagot, MAGTANONG MUNA kung may iba pa silang gustong malaman tungkol sa school. Gamitin ang NLP analysis para mag-generate ng relevant at helpful suggestions based sa user's intent at entities. Kung wala na talaga silang ibang tanong, saka mo lang magtanong kung gusto nilang makausap ang admin ng school. Kung oo, bigyan sila ng clickable button para sa Facebook Messenger. {lang_instruction}
+
+NLP-BASED SUGGESTIONS: Gamitin ang intent at entities para mag-suggest ng relevant topics. Halimbawa:
+- Kung enrollment-related ang intent, mag-suggest ng enrollment process, requirements, deadlines
+- Kung academic-related, mag-suggest ng programs, subjects, policies
+- Kung general school info, mag-suggest ng activities, services, facilities
+- Gamitin ang entities para mas specific na suggestions
+
+"""
+        else:
+            return f"""USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+
+INSTRUCTIONS: Answer the user's question. Use the NLP analysis to understand the user's intent and entities better. If you don't know the answer, ASK FIRST if there's anything else they'd like to know about the school. Use the NLP analysis to generate relevant and helpful suggestions based on the user's intent and entities. Only if they say no or have no other questions, then ask if they want to talk to a school admin. If yes, provide a clickable button for Facebook Messenger. {lang_instruction}
+
+NLP-BASED SUGGESTIONS: Use the intent and entities to suggest relevant topics. For example:
+- If enrollment-related intent, suggest enrollment process, requirements, deadlines
+- If academic-related, suggest programs, subjects, policies
+- If general school info, suggest activities, services, facilities
+- Use entities for more specific suggestions
+
+"""
     
     def _get_fallback_response(self, lang: str) -> str:
         """Get fallback response in appropriate language"""
@@ -310,7 +368,7 @@ INSTRUCTIONS: Answer the user's question. Use the NLP analysis to understand the
                 return f"Maaari kayong pumunta sa Guidance Office (katabi ng Principal's Office) o tumawag sa school office para sa appointment. Available: {guidance_hours}"
             
             else:  # general
-                return f"Maaari kayong tumawag sa school office, pumunta doon, o mag-email sa school. Office hours: {office_hours}"
+                return f"Maaari kayong tumawag sa school office, pumunta doon, o mag-email sa school. Office hours: {office_hours}, o makipag-ugnayan sa kanila sa"
         
         else:  # English
             if contact_type == "urgent":
@@ -320,7 +378,7 @@ INSTRUCTIONS: Answer the user's question. Use the NLP analysis to understand the
                 return f"You can visit the Guidance Office (next to Principal's Office) or call the school office for an appointment. Available: {guidance_hours}"
             
             else:  # general
-                return f"You can call the school office, visit in person, or email the school. Office hours: {office_hours}"
+                return f"You can call the school office, visit in person, or email the school. Office hours: {office_hours}, or contact them at"
     
     def split_long_response(self, response: str, max_length: int = 250) -> List[str]:
         """Split long responses into multiple messages, ensuring complete sentences only"""
