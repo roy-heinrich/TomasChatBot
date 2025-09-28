@@ -258,21 +258,14 @@ class ChatBot:
                     logger.info("❌ No search results found")
             
             # 5. Generate response using Groq with enhanced context
-            if nlu_result and nlu_result.intent.value == 'contact_escalation':
-                # For contact escalation, use the appropriate context based on persistence
-                logger.info("🤖 Using contact escalation approach")
-                if persistent_escalation:
-                    context = "User has been persistent about wanting to talk to a live person/admin. Provide the Facebook Messenger contact link immediately."
-                else:
-                    context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
-            elif best_result:
+            if best_result:
                 logger.info("📚 Using database context for Groq response")
                 # Provide database information as context but let Groq expand naturally
                 context = f"Database Information: {best_result['response']}"
             else:
-                # Use Groq for intelligent responses when no database context, but with strict safeguards
-                logger.info("🤖 No database context found - using Groq for intelligent response with safeguards")
-                context = "CRITICAL: NO DATABASE INFORMATION AVAILABLE. You MUST respond that you don't have the specific information requested. Ask if they want to talk to a school admin - if yes, provide the Facebook link: https://web.facebook.com/114901Tomas. If no, ask what else they want to know about the school. DO NOT make up, invent, or hallucinate any information about teachers, staff names, schedules, or school policies. DO NOT provide specific teacher names, subjects, or any details not in your database. Be honest about your limitations."
+                # Use Groq for intelligent responses when no database context
+                logger.info("🤖 No database context found - using Groq for intelligent response")
+                context = "General school information query"
             
             # Add personalized memory context
             if session_id:
