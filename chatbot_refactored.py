@@ -260,8 +260,10 @@ class ChatBot:
             # 5. Generate response using Groq with enhanced context
             if best_result:
                 logger.info("📚 Using database context for Groq response")
-                # Provide database information as context but let Groq expand naturally
-                context = f"Database Information: {best_result['response']}"
+                # Provide complete database information as context
+                keywords = best_result.get('keywords', '')
+                response = best_result.get('response', '')
+                context = f"Database Information: {keywords} - {response}"
             else:
                 # Use Groq for intelligent responses when no database context
                 logger.info("🤖 No database context found - using Groq for intelligent response")
