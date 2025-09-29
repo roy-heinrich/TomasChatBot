@@ -19,7 +19,8 @@ print(f"   Current NLTK paths: {nltk.data.path[:3]}...")
 
 import httpx
 import logging
-from fastapi import FastAPI
+import json
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from supabase import create_client, Client
@@ -27,10 +28,40 @@ from dotenv import load_dotenv
 
 from chatbot_refactored import ChatBot
 from pydantic import BaseModel
+from core.security import sql_protector
 
 load_dotenv()
+
+# Environment-based logging configuration
+def setup_logging():
+    # Get log level from environment (default to INFO for production)
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    
+    # Production-optimized logging
+    if os.getenv("ENVIRONMENT") == "production":
+        # Production: Less verbose, focus on errors and important events
+        logging.basicConfig(
+            level=getattr(logging, log_level),
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.StreamHandler(),  # Console output
+            ]
+        )
+        
+        # Reduce verbosity of specific loggers
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("urllib3").setLevel(logging.WARNING)
+        logging.getLogger("supabase").setLevel(logging.WARNING)
+        
+    else:
+        # Development: More verbose
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+
+setup_logging()
 logger = logging.getLogger("chatbot")
-logging.basicConfig(level=logging.INFO)
 
 # -----------------------
 # Supabase
@@ -90,6 +121,47 @@ chatbot = ChatBot(groq_key=GROQ_API_KEY)
 # FastAPI app
 # -----------------------
 app = FastAPI()
+
+# -----------------------
+# SQL Injection Protection Middleware
+# -----------------------
+@app.middleware("http")
+async def sql_injection_middleware(request: Request, call_next):
+    """Simple middleware that only blocks SQL injection attempts"""
+    try:
+        # Only check POST requests to /chat endpoint
+        if request.method == "POST" and request.url.path == "/chat":
+            # Read request body
+            body = await request.body()
+            
+            try:
+                request_data = json.loads(body)
+            except json.JSONDecodeError:
+                return JSONResponse(
+                    content={"error": "Invalid JSON format"},
+                    status_code=400
+                )
+            
+            # Check for SQL injection attempts
+            is_safe, error_message = sql_protector.validate_request(request_data)
+            
+            if not is_safe:
+                logger.warning(f"SQL injection attempt blocked: {error_message}")
+                return JSONResponse(
+                    content={"error": "Invalid request detected"},
+                    status_code=400
+                )
+        
+        # Process request
+        response = await call_next(request)
+        return response
+        
+    except Exception as e:
+        logger.error(f"SQL injection middleware error: {e}")
+        return JSONResponse(
+            content={"error": "Request validation failed"},
+            status_code=500
+        )
 
 # ✅ Enhanced CORS config for production and development
 app.add_middleware(
@@ -169,30 +241,38 @@ async def chat_options():
 @app.post("/chat")
 async def chat_endpoint(data: ChatRequest):
     try:
-        logger.info(f"📥 Received chat request: {data.query[:50]}...")
+        # Production-optimized logging
+        if os.getenv("ENVIRONMENT") == "production":
+            logger.info(f"Chat request: {data.query[:30]}...")
+        else:
+            logger.info(f"📥 Received chat request: {data.query[:50]}...")
+            
         query = data.query.strip()
         if not query:
-            logger.warning("⚠️ Empty query received")
+            logger.warning("Empty query received")
             return {"response": "No query provided."}
 
-        # 🔍 DEBUG: Log conversation history details
-        logger.info(f"📚 Conversation history received: {len(data.conversation_history)} messages")
-        if data.user_timezone:
-            logger.info(f"🌍 User timezone: {data.user_timezone}")
-        if data.session_id:
-            logger.info(f"👤 Session ID: {data.session_id}")
-        for i, msg in enumerate(data.conversation_history[-3:]):  # Log last 3 messages
-            logger.info(f"   Message {i+1}: {msg.get('role', 'unknown')} -> '{msg.get('content', '')[:30]}...'")
+        # Only log detailed conversation history in development
+        if os.getenv("ENVIRONMENT") != "production":
+            logger.info(f"📚 Conversation history received: {len(data.conversation_history)} messages")
+            if data.user_timezone:
+                logger.info(f"🌍 User timezone: {data.user_timezone}")
+            if data.session_id:
+                logger.info(f"👤 Session ID: {data.session_id}")
+            for i, msg in enumerate(data.conversation_history[-3:]):  # Log last 3 messages
+                logger.info(f"   Message {i+1}: {msg.get('role', 'unknown')} -> '{msg.get('content', '')[:30]}...'")
         
         # Test name extraction on the conversation history
         if data.conversation_history:
             user_name = chatbot._extract_user_name(data.conversation_history)
             child_name = chatbot._extract_child_name(data.conversation_history)
-            logger.info(f"🔍 Extracted names: user='{user_name}', child='{child_name}'")
+            if os.getenv("ENVIRONMENT") != "production":
+                logger.info(f"🔍 Extracted names: user='{user_name}', child='{child_name}'")
 
         # Fetch context asynchronously
         supabase_context = await fetch_supabase_context()
-        logger.info("📊 Context fetched from Supabase")
+        if os.getenv("ENVIRONMENT") != "production":
+            logger.info("📊 Context fetched from Supabase")
 
         # Ask ChatBot with the new refactored interface
         chat_response = await chatbot.chat(
@@ -305,6 +385,7 @@ async def get_performance_metrics():
             },
             status_code=500
         )
+
 
 # 🚀 NEW: Clear all caches endpoint
 @app.post("/admin/clear-cache")
