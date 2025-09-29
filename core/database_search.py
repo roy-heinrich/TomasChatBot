@@ -45,16 +45,31 @@ class DatabaseSearchEngine:
             '7': 'seven', '8': 'eight', '9': 'nine', '10': 'ten'
         }
         
+        # Question words to remove
+        question_words = ['what', 'is', 'are', 'who', 'where', 'when', 'why', 'how', 'which', 'whose']
+        
+        # Possessive forms to clean
+        possessive_patterns = ["'s", "'", "s'"]
+        
         # Convert to lowercase for matching
         query_lower = query.lower()
-        translated_parts = []
+        
+        # Clean possessive forms first
+        for pattern in possessive_patterns:
+            query_lower = query_lower.replace(pattern, '')
         
         # Split query into words and translate each
         words = query_lower.split()
+        translated_parts = []
+        
         for word in words:
             # Clean word (remove punctuation)
             clean_word = word.strip('.,!?')
             
+            # Skip question words
+            if clean_word in question_words:
+                continue
+                
             # Check for number-to-word translation first (for grade searches)
             if clean_word in number_to_word:
                 translated_parts.append(number_to_word[clean_word])
@@ -195,6 +210,54 @@ class DatabaseSearchEngine:
                                 
                 except Exception as e:
                     logger.warning(f"Partial name search failed: {e}")
+            
+            # Strategy 1.1.2: Try fuzzy matching for complex queries (like "ms jessica go advisory")
+            if len(query.split()) >= 3:  # For complex queries
+                try:
+                    # Extract potential name parts and role parts
+                    query_words = [word.strip('.,!?') for word in query.split() if len(word) >= 2]
+                    
+                    # Look for name patterns (2+ consecutive words that could be names)
+                    name_candidates = []
+                    for i in range(len(query_words) - 1):
+                        if len(query_words[i]) >= 2 and len(query_words[i+1]) >= 2:
+                            name_candidates.append(f"{query_words[i]} {query_words[i+1]}")
+                    
+                    # Search for each name candidate
+                    for name_candidate in name_candidates:
+                        # Try exact match first
+                        result = self.supabase.table("chatbot_prompts") \
+                            .select("keywords, response, search_tsv") \
+                            .ilike("response", f"%{name_candidate}%") \
+                            .execute()
+                        
+                        # If no exact match, try middle initial tolerant search
+                        if not result.data and len(name_candidate.split()) == 2:
+                            first_name, last_name = name_candidate.split()
+                            
+                            # Search for pattern: "first_name [middle_initial] last_name"
+                            # This will match "jessica go" against "jessica z. go"
+                            middle_initial_pattern = f"{first_name}%{last_name}"
+                            
+                            result = self.supabase.table("chatbot_prompts") \
+                                .select("keywords, response, search_tsv") \
+                                .ilike("response", f"%{middle_initial_pattern}%") \
+                                .execute()
+                        
+                        if result.data:
+                            # Add results that aren't already in all_results
+                            new_results = []
+                            for item in result.data:
+                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                    all_results.append(item)
+                                    new_results.append(item)
+                            
+                            if new_results:
+                                logger.info(f"🎯 Found {len(new_results)} fuzzy name matches for '{name_candidate}'")
+                                break  # Stop after first successful match
+                                
+                except Exception as e:
+                    logger.warning(f"Fuzzy name search failed: {e}")
             
             # Strategy 1.2: Try fuzzy name matching (for partial names like "Jessica Go" vs "Ms. Jessica Z. Go")
             if any(word in query.lower() for word in ['jessica', 'go', 'ms', 'mrs', 'mr', 'dr']):
