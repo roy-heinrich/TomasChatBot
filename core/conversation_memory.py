@@ -298,3 +298,13 @@ class ConversationMemory:
         
         if sessions_to_remove:
             logger.info(f"Cleaned up {len(sessions_to_remove)} old user memories")
+    
+    def clear_all_memories(self):
+        """Clear all conversation memories (used when user explicitly clears context)"""
+        try:
+            memory_count = len(self.user_memories)
+            self.user_memories.clear()
+            self.session_topics.clear()
+            logger.info(f"🧹 Cleared all {memory_count} conversation memories")
+        except Exception as e:
+            logger.error(f"Failed to clear all memories: {e}")

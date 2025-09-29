@@ -311,6 +311,8 @@ async def chat_endpoint(data: ChatRequest):
 async def clear_context():
     """Clear conversation context when user closes widget or navigates away"""
     try:
+        # Actually clear the conversation memory
+        chatbot.conversation_memory.clear_all_memories()
         logger.info("🧹 Conversation context cleared")
         return {"success": True, "message": "Context cleared"}
     except Exception as e:

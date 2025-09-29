@@ -120,6 +120,13 @@ class SQLInjectionProtector:
         
         text_lower = text.lower()
         
+        # Skip checking if it's clearly HTML content (chatbot responses)
+        if any(html_indicator in text_lower for html_indicator in [
+            '<a href=', '<div', '<span', '<p>', '<br>', 'style=', 'target=',
+            'background-color:', 'color:', 'padding:', 'border-radius:'
+        ]):
+            return False
+        
         # Check against all compiled patterns
         for pattern in self.compiled_patterns:
             if pattern.search(text_lower):

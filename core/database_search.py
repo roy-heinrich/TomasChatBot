@@ -39,6 +39,12 @@ class DatabaseSearchEngine:
             'para sa': 'for', 'ng': 'of', 'sa': 'in'
         }
         
+        # Number to word translation for grade searches
+        number_to_word = {
+            '1': 'one', '2': 'two', '3': 'three', '4': 'four', '5': 'five', '6': 'six',
+            '7': 'seven', '8': 'eight', '9': 'nine', '10': 'ten'
+        }
+        
         # Convert to lowercase for matching
         query_lower = query.lower()
         translated_parts = []
@@ -48,7 +54,12 @@ class DatabaseSearchEngine:
         for word in words:
             # Clean word (remove punctuation)
             clean_word = word.strip('.,!?')
-            if clean_word in tagalog_to_english:
+            
+            # Check for number-to-word translation first (for grade searches)
+            if clean_word in number_to_word:
+                translated_parts.append(number_to_word[clean_word])
+            # Check for Tagalog translation
+            elif clean_word in tagalog_to_english:
                 translated_parts.append(tagalog_to_english[clean_word])
             else:
                 translated_parts.append(clean_word)
@@ -79,6 +90,38 @@ class DatabaseSearchEngine:
         try:
             all_results = []
             
+            # Special handling for grade searches - return only exact matches
+            if any(word in query.lower() for word in ['grade', 'adviser', 'teacher']) and len(query.split()) >= 2:
+                try:
+                    # Translate the query first
+                    translated_query = self._translate_query_for_search(query)
+                    
+                    # Try to find exact grade match first using translated query
+                    result = self.supabase.table("chatbot_prompts") \
+                        .select("keywords, response, search_tsv") \
+                        .ilike("keywords", f"%{translated_query}%") \
+                        .execute()
+                    
+                    if result.data:
+                        # Filter for exact grade matches only
+                        exact_grade_matches = []
+                        for item in result.data:
+                            keywords = item.get('keywords', '').lower()
+                            # Check if this is an exact grade match
+                            if any(grade_pattern in keywords for grade_pattern in [
+                                'grade one', 'grade two', 'grade three', 'grade four', 'grade five', 'grade six'
+                            ]):
+                                exact_grade_matches.append(item)
+                        
+                        if exact_grade_matches:
+                            logger.info(f"🎯 Found {len(exact_grade_matches)} exact grade matches")
+                            return exact_grade_matches[:limit]
+                        
+                except Exception as e:
+                    logger.warning(f"Exact grade search failed: {e}")
+            
+            # Continue with regular search strategies if no exact grade match found
+            
             # Strategy 1: Try exact keyword match first (highest priority)
             try:
                 result = self.supabase.table("chatbot_prompts") \
@@ -87,10 +130,110 @@ class DatabaseSearchEngine:
                     .execute()
                 
                 if result.data:
-                    all_results.extend(result.data)
-                    logger.info(f"🎯 Found {len(result.data)} exact keyword matches")
+                    # For grade searches, prioritize exact matches
+                    if any(word in query.lower() for word in ['grade', 'adviser', 'teacher']):
+                        # Only add exact grade matches
+                        exact_matches = []
+                        for item in result.data:
+                            keywords = item.get('keywords', '').lower()
+                            if any(grade_word in keywords for grade_word in ['grade one', 'grade two', 'grade three', 'grade four', 'grade five', 'grade six']):
+                                exact_matches.append(item)
+                        
+                        if exact_matches:
+                            all_results.extend(exact_matches)
+                            logger.info(f"🎯 Found {len(exact_matches)} exact grade matches")
+                        else:
+                            all_results.extend(result.data)
+                            logger.info(f"🎯 Found {len(result.data)} exact keyword matches")
+                    else:
+                        all_results.extend(result.data)
+                        logger.info(f"🎯 Found {len(result.data)} exact keyword matches")
             except Exception as e:
                 logger.warning(f"Exact keyword search failed: {e}")
+            
+            # Strategy 1.1: Try searching in response field (for names and specific answers)
+            try:
+                result = self.supabase.table("chatbot_prompts") \
+                    .select("keywords, response, search_tsv") \
+                    .ilike("response", f"%{query}%") \
+                    .execute()
+                
+                if result.data:
+                    # Add results that aren't already in all_results
+                    for item in result.data:
+                        if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                            all_results.append(item)
+                    logger.info(f"🎯 Found {len(result.data)} response field matches")
+            except Exception as e:
+                logger.warning(f"Response field search failed: {e}")
+            
+            # Strategy 1.1.1: Try partial name matching in response field (for "Jessica Go" vs "Ms. Jessica Z. Go")
+            if len(query.split()) >= 2:  # Only for multi-word queries
+                try:
+                    # Split query into words (include words of 2+ characters for names like "Go")
+                    query_words = [word.strip('.,!?') for word in query.split() if len(word) >= 2]
+                    if len(query_words) >= 2:
+                        # Search for results that contain the first word
+                        first_word = query_words[0]
+                        result = self.supabase.table("chatbot_prompts") \
+                            .select("keywords, response, search_tsv") \
+                            .ilike("response", f"%{first_word}%") \
+                            .execute()
+                        
+                        if result.data:
+                            # Filter to only include results with ALL words
+                            filtered_results = []
+                            for item in result.data:
+                                response_text = item.get('response', '').lower()
+                                if all(qword.lower() in response_text for qword in query_words):
+                                    if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                        filtered_results.append(item)
+                            
+                            if filtered_results:
+                                all_results.extend(filtered_results)
+                                logger.info(f"🎯 Found {len(filtered_results)} partial name matches")
+                                
+                except Exception as e:
+                    logger.warning(f"Partial name search failed: {e}")
+            
+            # Strategy 1.2: Try fuzzy name matching (for partial names like "Jessica Go" vs "Ms. Jessica Z. Go")
+            if any(word in query.lower() for word in ['jessica', 'go', 'ms', 'mrs', 'mr', 'dr']):
+                try:
+                    # Extract potential name parts (only meaningful words)
+                    name_parts = [word.strip('.,!?') for word in query.split() if len(word) > 2 and word.lower() not in ['the', 'and', 'or', 'for', 'with', 'who', 'what', 'where', 'when', 'why', 'how']]
+                    
+                    # Only proceed if we have at least 2 meaningful parts (like "Jessica Go")
+                    if len(name_parts) >= 2:
+                        # Check if we already have accurate results
+                        has_accurate_match = any(
+                            all(part.lower() in item.get('response', '').lower() for part in name_parts)
+                            for item in all_results
+                        )
+                        
+                        # If no accurate match yet, try new search
+                        if not has_accurate_match:
+                            # Search for results that contain the first meaningful part
+                            first_part = name_parts[0]
+                            result = self.supabase.table("chatbot_prompts") \
+                                .select("keywords, response, search_tsv") \
+                                .ilike("response", f"%{first_part}%") \
+                                .execute()
+                            
+                            if result.data:
+                                # Filter results to only include those with ALL name parts
+                                filtered_results = []
+                                for item in result.data:
+                                    response_text = item.get('response', '').lower()
+                                    if all(part.lower() in response_text for part in name_parts):
+                                        if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                            filtered_results.append(item)
+                                
+                                if filtered_results:
+                                    all_results.extend(filtered_results)
+                                    logger.info(f"🎯 Found {len(filtered_results)} accurate fuzzy name matches")
+                            
+                except Exception as e:
+                    logger.warning(f"Fuzzy name search failed: {e}")
             
             # Strategy 1.5: Try translated query for Tagalog/English mismatch
             translated_query = self._translate_query_for_search(query)
