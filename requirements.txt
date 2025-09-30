@@ -18,3 +18,8 @@ gunicorn>=21.2.0
 nltk>=3.8.1
 langid>=1.1.6
 textblob>=0.17.1
+
+# Optional ML dependencies (for multilingual_nlp.py)
+scikit-learn>=1.3.0
+gensim>=4.3.0
+langdetect>=1.0.9
