@@ -1,0 +1,17 @@
+# Railway configuration file
+# This tells Railway to use native Python instead of Docker
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "python start.py"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+[env]
+PYTHON_VERSION = "3.11"
+PYTHONPATH = "/app"
+NLTK_DATA = "/app/nltk_data"

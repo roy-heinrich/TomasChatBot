@@ -1,22 +1,24 @@
-# Dockerfile for Railway/Fly.io deployment
-# Optimized for ML dependencies
+# Optimized Dockerfile for Railway
+# Faster build with multi-stage approach
 
 FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install minimal system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (for better caching)
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies with optimizations
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
@@ -24,6 +26,7 @@ COPY . .
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV NLTK_DATA=/app/nltk_data
+ENV PYTHONUNBUFFERED=1
 
 # Expose port
 EXPOSE 8080
