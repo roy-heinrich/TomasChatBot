@@ -152,7 +152,9 @@ class LanguageDetector:
         aklanon_patterns = [
             r'^(ngaean|sin-o|nahanumdom|nga|sang|imo|unga)$',   # Aklanon pronouns/particles
             r'^(maayong|salamat|gid|damo|huo|indi|sige|tama|mali)$', # Aklanon common words
-            r'^(diin|siin|ngaa|wara|mayo|ro|eon|aton|inyo|ila)$'  # Aklanon question words
+            r'^(diin|siin|ngaa|wara|mayo|ro|eon|aton|inyo|ila)$',  # Aklanon question words
+            r'^(sayud|kung|du|cr|comfort|room|banyo|palikuran)$',  # Aklanon/English mixed words
+            r'^(mo|ko|niya|namin|ninyo|nila|naton|inyo|ila)$'  # Aklanon pronouns
         ]
         
         return any(re.match(pattern, word) for pattern in aklanon_patterns)

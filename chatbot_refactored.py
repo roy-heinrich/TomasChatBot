@@ -71,21 +71,28 @@ class ChatBot:
         for msg in reversed(conversation_history):
             if msg.get("role") == "user":
                 content = msg.get("content", "")
+                logger.info(f"🔍 Extracting name from: '{content}'")
+                
                 # Use the entity extractor to find PERSON entities
                 entities = self.entity_extractor.extract_entities(content)
+                logger.info(f"🔍 Found {len(entities)} entities")
                 
                 # Look for PERSON entities that could be names
                 for entity in entities:
+                    logger.info(f"🔍 Entity: type='{entity.entity_type}', value='{entity.value}', confidence={entity.confidence}")
                     if entity.entity_type in ["PERSON", "person_name"] and entity.confidence > 0.7:
                         # Clean up the name (remove punctuation, capitalize properly)
                         name = ''.join(c for c in entity.value if c.isalnum() or c.isspace()).strip()
                         if name and len(name) > 1 and len(name) < 50:  # Reasonable name length
+                            logger.info(f"🔍 Extracted name: '{name.title()}'")
                             return name.title()
                 
                 # Use the NLU engine's NLP-based name extraction for better accuracy
                 extracted_name = self.nlu_engine._extract_name_using_nlp(content, "name_introduction")
                 if extracted_name:
+                    logger.info(f"🔍 NLU extracted name: '{extracted_name}'")
                     return extracted_name
+        logger.info("🔍 No name found in conversation history")
         return ""
     
     def _extract_child_name(self, conversation_history: List[Dict]) -> str:
@@ -160,6 +167,17 @@ class ChatBot:
         # If user has mentioned escalation 2+ times in recent messages, consider it persistent
         return escalation_count >= 2
     
+    def _map_to_response_language(self, detected_lang: str) -> str:
+        """Map detected language to response language"""
+        if detected_lang == "en":
+            return "en"  # English queries → English responses
+        elif detected_lang == "akl":
+            return "tl"  # Aklanon queries → Tagalog responses
+        elif detected_lang == "tl":
+            return "tl"  # Tagalog queries → Tagalog responses
+        else:
+            return "en"  # Default to English
+    
     async def chat(self, query: str, conversation_history: List[Dict] = None, 
                    user_timezone: str = None, session_id: str = None) -> ChatResponse:
         """Main chat method - Groq-first approach for natural responses"""
@@ -180,6 +198,10 @@ class ChatBot:
                 detected_lang, confidence = self.language_detector.detect_language(query)
                 logger.info(f"🌍 Enhanced language detection: {detected_lang} (confidence: {confidence:.2f})")
             
+            # Map detected language to response language
+            response_lang = self._map_to_response_language(detected_lang)
+            logger.info(f"🌍 Language mapping: {detected_lang} → {response_lang}")
+            
             # Check for mixed-language input
             if confidence < 0.7:
                 logger.info("🔍 Low confidence language detection - may be mixed language")
@@ -188,8 +210,9 @@ class ChatBot:
                     context_lang, context_confidence = self._detect_context_language(conversation_history)
                     if context_confidence > confidence:
                         detected_lang = context_lang
+                        response_lang = self._map_to_response_language(detected_lang)
                         confidence = context_confidence
-                        logger.info(f"🌍 Context-based language detection: {detected_lang} (confidence: {confidence:.2f})")
+                        logger.info(f"🌍 Context-based language detection: {detected_lang} → {response_lang} (confidence: {confidence:.2f})")
             
             # 2. Get NLU analysis for intent
             nlu_result = await self.nlu_engine.analyze_intent(query)
@@ -216,25 +239,45 @@ class ChatBot:
                     logger.info(f"🧠 Retrieved existing user name from memory: {user_name}")
             
             # If no existing name, try to extract from conversation history
-            if not user_name and conversation_history:
-                # Extract names from conversation history regardless of intent
-                # This ensures we capture names even in casual conversations
-                extracted_user_name = self._extract_user_name(conversation_history)
-                extracted_child_name = self._extract_child_name(conversation_history)
-                
-                if extracted_user_name:
-                    user_name = extracted_user_name
-                    child_name = extracted_child_name
-                    logger.info(f"🔍 Extracted names from conversation: user='{user_name}', child='{child_name}'")
+            if not user_name:
+                if conversation_history:
+                    # Extract names from conversation history regardless of intent
+                    # This ensures we capture names even in casual conversations
+                    extracted_user_name = self._extract_user_name(conversation_history)
+                    extracted_child_name = self._extract_child_name(conversation_history)
+                    
+                    if extracted_user_name:
+                        user_name = extracted_user_name
+                        child_name = extracted_child_name
+                        logger.info(f"🔍 Extracted names from conversation: user='{user_name}', child='{child_name}'")
+                    else:
+                        logger.info("🔍 No names found in conversation history")
                 else:
-                    logger.info("🔍 No names found in conversation history")
+                    # If no conversation history, try to extract from current query
+                    logger.info("🔍 No conversation history - trying to extract from current query")
+                    # Create a temporary conversation history with current query
+                    temp_history = [{"role": "user", "content": query}]
+                    extracted_user_name = self._extract_user_name(temp_history)
+                    extracted_child_name = self._extract_child_name(temp_history)
+                    
+                    if extracted_user_name:
+                        user_name = extracted_user_name
+                        child_name = extracted_child_name
+                        logger.info(f"🔍 Extracted names from current query: user='{user_name}', child='{child_name}'")
+                    else:
+                        logger.info("🔍 No names found in current query")
             
             # Update conversation memory
             if session_id:
+                logger.info(f"🧠 Updating memory - Session: {session_id}, User name: '{user_name}', Query: '{query}'")
                 user_memory = self.conversation_memory.update_user_memory(
                     session_id, user_name, query, conversation_history
                 )
                 logger.info(f"🧠 Updated memory for user: {user_memory.name}, topics: {list(user_memory.topics.keys())}")
+                
+                # Debug: Check if name was actually stored
+                stored_name = self.conversation_memory.get_user_name(session_id)
+                logger.info(f"🧠 Memory verification - Stored name: '{stored_name}'")
             
             # Special case: Handle name-related queries directly
             if any(phrase in query.lower() for phrase in ["what's my name", "what is my name", "my name", "who am i", "do you know my name"]):
@@ -359,7 +402,7 @@ class ChatBot:
             } if nlu_result else None
             
             response_text = await self.response_generator.generate_response(
-                query, context, detected_lang, conversation_history, nlu_info_dict, user_name, entities, confidence
+                query, context, response_lang, conversation_history, nlu_info_dict, user_name, entities, confidence
             )
             
             # Apply context-aware translation if needed
@@ -378,7 +421,7 @@ class ChatBot:
             return ChatResponse(
                 response=split_messages,
                 entities=[{"entity_type": e.entity_type, "value": e.value, "confidence": e.confidence} for e in entities],
-                detected_language=detected_lang,
+                detected_language=response_lang,
                 language_confidence=confidence,
                 is_split=len(split_messages) > 1,
                 message_count=len(split_messages),
@@ -487,10 +530,10 @@ class ChatBot:
         )
 
     async def _create_fallback_response(self, query: str, detected_lang: str, confidence: float, session_id: str = None) -> ChatResponse:
-        """Create fallback response using Groq - no hardcoded responses"""
+        """Create fallback response for gibberish/unclear input - always in English"""
         
-        # Use Groq to handle the query gracefully instead of hardcoded responses
-        context = "User has sent a message that may be unclear or unusual. Respond helpfully and ask for clarification if needed."
+        # For gibberish input, always respond in English and redirect to school inquiries
+        context = f"User has sent unclear input: '{query}'. Acknowledge that their message wasn't clear, but always redirect them to what TOMAS really is - a chatbot for school inquiries at Tomas SM. Bautista Elementary School. Ask them what they'd like to know about the school."
         
         # Get user name for personalization
         user_name = ""
@@ -498,9 +541,9 @@ class ChatBot:
             user_name = self.conversation_memory.get_user_name(session_id)
         
         try:
-            # Use Groq to generate a helpful response
+            # Always use English for gibberish responses
             response_text = await self.response_generator.generate_response(
-                query, context, detected_lang, [], None, user_name, [], confidence
+                query, context, "en", [], None, user_name, [], 0.8  # Force English
             )
             
             # Split long responses if needed
@@ -509,8 +552,8 @@ class ChatBot:
             return ChatResponse(
                 response=split_messages,
                 entities=[],
-                detected_language=detected_lang,
-                language_confidence=confidence,
+                detected_language="en",  # Always English for gibberish
+                language_confidence=0.8,
                 is_split=len(split_messages) > 1,
                 message_count=len(split_messages),
                 intent='fallback'
@@ -518,20 +561,18 @@ class ChatBot:
         except Exception as e:
             logger.error(f"❌ Error in fallback response generation: {e}")
             # Only use this as absolute last resort
-            if detected_lang == "tl" or detected_lang == "akl":
-                fallback_text = "Paumanhin, hindi ko maintindihan ang inyong tanong. Maaari ba ninyong ulitin ito sa ibang paraan?"
-            else:
-                fallback_text = "I'm sorry, I didn't quite understand that. Could you please rephrase your question?"
+            # Always use English for gibberish responses
+            fallback_text = "I'm sorry, I didn't understand your message. I'm TOMAS, your school assistant for Tomas SM. Bautista Elementary School. What would you like to know about our school?"
             
             return ChatResponse(
                 response=[fallback_text],
                 entities=[],
-            detected_language=detected_lang,
-            language_confidence=confidence,
-            is_split=False,
-            message_count=1,
+                detected_language="en",  # Always English for gibberish
+                language_confidence=0.8,
+                is_split=False,
+                message_count=1,
                 intent='fallback'
-        )
+            )
     
     def _create_error_response(self, detected_lang: str) -> ChatResponse:
         """Create error response"""
@@ -552,20 +593,21 @@ class ChatBot:
     
     def _detect_gibberish_input(self, query: str, nlu_result, entities: List, detected_lang: str, confidence: float) -> bool:
         """
-        Very lenient gibberish detection - trust NLU/NLP systems to handle most cases
-        Only catch extremely obvious gibberish patterns
+        Enhanced gibberish detection for meaningless input
         """
-        # 🚨 CRITICAL: Trust the NLU system - if it has any confidence, let it handle the input
-        if nlu_result and nlu_result.confidence > 0.05:  # Very low threshold - trust NLU
-            logger.info(f"✅ NLU has confidence {nlu_result.confidence:.3f} - not gibberish")
-            return False
-        
-        # Only catch extremely obvious patterns
         query_lower = query.lower().strip()
         
-        # Check for extremely obvious gibberish patterns
-        if len(query) > 15:  # Only check very long strings
-            # Count consecutive consonants - only flag if more than 8 consecutive consonants
+        # Check for obvious gibberish patterns first, regardless of NLU confidence
+        if len(query) > 8:
+            # Check if it's mostly the same few characters repeated
+            unique_chars = len(set(query_lower))
+            if unique_chars <= 6 and len(query) > 8:  # Too few unique characters
+                logger.info(f"🔍 Gibberish detected: too few unique characters ({unique_chars}) in '{query}'")
+                return True
+        
+        # Check for random character sequences
+        if len(query) > 6:
+            # Count consecutive consonants
             consecutive_consonants = 0
             max_consecutive = 0
             vowels = set('aeiou')
@@ -578,8 +620,8 @@ class ChatBot:
                     else:
                         consecutive_consonants = 0
             
-            if max_consecutive >= 8:  # Very strict - only obvious gibberish
-                logger.info(f"🔍 Obvious gibberish pattern detected: {max_consecutive} consecutive consonants")
+            if max_consecutive >= 4:  # More sensitive to gibberish
+                logger.info(f"🔍 Gibberish detected: {max_consecutive} consecutive consonants in '{query}'")
                 return True
         
         # Check for patterns that are clearly not human language
@@ -593,6 +635,11 @@ class ChatBot:
             if pattern in query_lower:
                 logger.info(f"🔍 Obvious gibberish pattern detected: '{pattern}'")
                 return True
+        
+        # Only trust NLU if it has high confidence AND the input looks reasonable
+        if nlu_result and nlu_result.confidence > 0.3:  # Higher threshold
+            logger.info(f"✅ NLU has high confidence {nlu_result.confidence:.3f} - not gibberish")
+            return False
         
         # If we get here, it's not gibberish - let Groq handle it with NLP/NLU
         logger.info("✅ Input passed gibberish detection - using Groq with NLP/NLU processing")
