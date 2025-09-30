@@ -76,7 +76,7 @@ class ChatBot:
                 
                 # Look for PERSON entities that could be names
                 for entity in entities:
-                    if entity.entity_type == "PERSON" and entity.confidence > 0.7:
+                    if entity.entity_type in ["PERSON", "person_name"] and entity.confidence > 0.7:
                         # Clean up the name (remove punctuation, capitalize properly)
                         name = ''.join(c for c in entity.value if c.isalnum() or c.isspace()).strip()
                         if name and len(name) > 1 and len(name) < 50:  # Reasonable name length
@@ -207,15 +207,27 @@ class ChatBot:
             # 4. Enhanced memory system - extract user info and update memory
             user_name = ""
             child_name = ""
-            if conversation_history:
-                # Only extract names if NLU detects name introduction intent
-                if nlu_result and nlu_result.intent.value in ['name_introduction', 'greeting_with_name']:
-                    user_name = self._extract_user_name(conversation_history)
-                    child_name = self._extract_child_name(conversation_history)
-                    if user_name:
-                        logger.info(f"🔍 Extracted names: user='{user_name}', child='{child_name}'")
+            
+            # First, try to get existing user name from memory
+            if session_id:
+                existing_name = self.conversation_memory.get_user_name(session_id)
+                if existing_name:
+                    user_name = existing_name
+                    logger.info(f"🧠 Retrieved existing user name from memory: {user_name}")
+            
+            # If no existing name, try to extract from conversation history
+            if not user_name and conversation_history:
+                # Extract names from conversation history regardless of intent
+                # This ensures we capture names even in casual conversations
+                extracted_user_name = self._extract_user_name(conversation_history)
+                extracted_child_name = self._extract_child_name(conversation_history)
+                
+                if extracted_user_name:
+                    user_name = extracted_user_name
+                    child_name = extracted_child_name
+                    logger.info(f"🔍 Extracted names from conversation: user='{user_name}', child='{child_name}'")
                 else:
-                    logger.info(f"🔍 Skipping name extraction - intent is '{nlu_result.intent.value if nlu_result else 'unknown'}'")
+                    logger.info("🔍 No names found in conversation history")
             
             # Update conversation memory
             if session_id:
@@ -224,38 +236,53 @@ class ChatBot:
                 )
                 logger.info(f"🧠 Updated memory for user: {user_memory.name}, topics: {list(user_memory.topics.keys())}")
             
-            # 🚨 CRITICAL: Check for special intents FIRST before database search
-            # These intents should skip database search entirely
-            if nlu_result and nlu_result.intent.value == 'contact_escalation':
-                logger.info("👥 Contact escalation requested - checking conversation history for persistence")
-                
-                # Check if user has been persistent about wanting to talk to someone
-                persistent_escalation = self._check_persistent_escalation(conversation_history)
-                
-                if persistent_escalation:
-                    logger.info("👥 Persistent escalation detected - providing direct contact option")
-                    # Provide direct escalation response
+            # Special case: Handle name-related queries directly
+            if any(phrase in query.lower() for phrase in ["what's my name", "what is my name", "my name", "who am i", "do you know my name"]):
+                if user_name:
+                    logger.info(f"👤 User asking about their name - we know it's: {user_name}")
+                    # Skip database search and provide direct response
                     search_results = []
                     best_result = None
-                    context = "User has been persistent about wanting to talk to a live person/admin. Provide the Facebook Messenger contact link immediately."
+                    context = f"User is asking about their name. Their name is {user_name}. Provide a friendly response confirming their name."
                 else:
-                    logger.info("👥 First escalation request - using helpful approach first")
-                    # Use helpful approach for first request
+                    logger.info("👤 User asking about their name - we don't know it yet")
+                    # Skip database search and ask for their name
                     search_results = []
                     best_result = None
-                    context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
+                    context = "User is asking about their name but we don't have it in memory. Ask them to introduce themselves."
             else:
-                # 3. Perform database search to get context for Groq
-                search_results = self.database_search.search_prompts(query, limit=10)
-                logger.info(f"🔍 Found {len(search_results)} search results")
-                
-                # 4. Select best result for context
-                best_result = None
-                if search_results:
-                    best_result = self.database_search.select_best_result(search_results, query)
-                    logger.info(f"🏆 Selected: {best_result['keywords'] if best_result else 'None'}")
+                # 🚨 CRITICAL: Check for special intents FIRST before database search
+                # These intents should skip database search entirely
+                if nlu_result and nlu_result.intent.value == 'contact_escalation':
+                    logger.info("👥 Contact escalation requested - checking conversation history for persistence")
+                    
+                    # Check if user has been persistent about wanting to talk to someone
+                    persistent_escalation = self._check_persistent_escalation(conversation_history)
+                    
+                    if persistent_escalation:
+                        logger.info("👥 Persistent escalation detected - providing direct contact option")
+                        # Provide direct escalation response
+                        search_results = []
+                        best_result = None
+                        context = "User has been persistent about wanting to talk to a live person/admin. Provide the Facebook Messenger contact link immediately."
+                    else:
+                        logger.info("👥 First escalation request - using helpful approach first")
+                        # Use helpful approach for first request
+                        search_results = []
+                        best_result = None
+                        context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
                 else:
-                    logger.info("❌ No search results found")
+                    # 3. Perform database search to get context for Groq
+                    search_results = self.database_search.search_prompts(query, limit=10)
+                    logger.info(f"🔍 Found {len(search_results)} search results")
+                    
+                    # 4. Select best result for context
+                    best_result = None
+                    if search_results:
+                        best_result = self.database_search.select_best_result(search_results, query)
+                        logger.info(f"🏆 Selected: {best_result['keywords'] if best_result else 'None'}")
+                    else:
+                        logger.info("❌ No search results found")
             
             # 5. Generate response using Groq with enhanced context
             if best_result:
