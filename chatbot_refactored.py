@@ -436,7 +436,7 @@ class ChatBot:
             } if nlu_result else None
             
             response_text = await self.response_generator.generate_response(
-                query, context, response_lang, conversation_history, nlu_info_dict, user_name, entities, confidence
+                query, context, response_lang, conversation_history, nlu_info_dict, user_name, entities, float(confidence)
             )
             
             # ML enhancement removed - it causes hallucinations

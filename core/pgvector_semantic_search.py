@@ -28,11 +28,14 @@ class PgVectorSemanticSearch:
     def _check_pgvector(self) -> bool:
         """Check if pgvector extension is available"""
         try:
-            # Try to create a test vector
+            # Try to call the check_pgvector function
             result = self.supabase.rpc('check_pgvector').execute()
             return True
         except Exception as e:
             logger.warning(f"⚠️ PgVector not available: {e}")
+            # Check if it's because the function doesn't exist
+            if "Could not find the function" in str(e):
+                logger.info("💡 PgVector SQL functions not set up yet. Run the SQL functions in your Supabase database.")
             return False
     
     def _load_model_if_needed(self):
@@ -85,7 +88,7 @@ class PgVectorSemanticSearch:
             self._unload_model()
             return None
     
-    async def pgvector_search(self, query: str, limit: int = 20, threshold: float = 0.7) -> List[Dict[str, Any]]:
+    async def pgvector_search(self, query: str, limit: int = 20, threshold: float = 0.3) -> List[Dict[str, Any]]:
         """Perform semantic search using pgvector (if available)"""
         if not self.pgvector_available:
             logger.warning("⚠️ PgVector not available, falling back to Python similarity")
@@ -193,35 +196,37 @@ class PgVectorSemanticSearch:
         """Hybrid search combining pgvector semantic and traditional methods"""
         try:
             # 1. PgVector semantic search
-            semantic_results = await self.pgvector_search(query, limit * 2, threshold=0.6)
+            semantic_results = await self.pgvector_search(query, limit * 2, threshold=0.2)
             
             # 2. Traditional search
             from core.database_search import DatabaseSearchEngine
-            traditional_engine = DatabaseSearchEngine(
-                self.supabase._url, 
-                self.supabase._key
-            )
+            # Get the URL and key from environment or store them
+            import os
+            supabase_url = os.environ.get("SUPABASE_URL")
+            supabase_key = os.environ.get("SUPABASE_KEY")
+            traditional_engine = DatabaseSearchEngine(supabase_url, supabase_key)
             traditional_results = traditional_engine.search_prompts(query, limit * 2)
             
             # 3. Combine results
             result_map = {}
             
-            # Add semantic results
+            # Add semantic results first (these are the most important)
             for result in semantic_results:
                 key = result.get('keywords', '')
-                if key not in result_map:
-                    result_map[key] = {
-                        'data': result,
-                        'semantic_score': result.get('similarity', 0.0),
-                        'traditional_score': 0.0,
-                        'hybrid_score': 0.0
-                    }
+                result_map[key] = {
+                    'data': result,
+                    'semantic_score': result.get('similarity', 0.0),
+                    'traditional_score': 0.0,
+                    'hybrid_score': 0.0
+                }
+                logger.info(f"🔍 Added semantic result: {key} (similarity: {result.get('similarity', 0.0):.3f})")
             
             # Add traditional results
             for i, result in enumerate(traditional_results):
                 key = result.get('keywords', '')
                 if key in result_map:
                     result_map[key]['traditional_score'] = 1.0 - (i / max(len(traditional_results), 1))
+                    logger.info(f"🔍 Updated traditional score for: {key}")
                 else:
                     result_map[key] = {
                         'data': result,
@@ -229,13 +234,41 @@ class PgVectorSemanticSearch:
                         'traditional_score': 1.0 - (i / max(len(traditional_results), 1)),
                         'hybrid_score': 0.0
                     }
+                    logger.info(f"🔍 Added traditional result: {key}")
             
-            # Calculate hybrid scores
+            # Calculate hybrid scores (prioritize semantic search when it finds good matches)
+            # First, check if we have any good semantic matches
+            has_good_semantic_matches = any(
+                result_info['semantic_score'] > 0.2 
+                for result_info in result_map.values()
+            )
+            
             for key, result_info in result_map.items():
-                result_info['hybrid_score'] = (
-                    result_info['semantic_score'] * 0.6 +  # Higher weight for semantic
-                    result_info['traditional_score'] * 0.4
-                )
+                semantic_score = result_info['semantic_score']
+                traditional_score = result_info['traditional_score']
+                
+                # If we have good semantic matches, heavily penalize results with no semantic similarity
+                if has_good_semantic_matches and semantic_score == 0.0:
+                    # Heavily penalize results that have no semantic similarity when good semantic matches exist
+                    result_info['hybrid_score'] = traditional_score * 0.1  # Very low score
+                elif semantic_score > 0.2:
+                    # Weight semantic search much more heavily (95% semantic, 5% traditional)
+                    # But also boost results that contain relevant keywords
+                    keywords = result_info['data'].get('keywords', '').lower()
+                    response = result_info['data'].get('response', '').lower()
+                    
+                    # Boost score for bathroom-related keywords
+                    bathroom_keywords = ['bathroom', 'cr', 'comfort room', 'banyo', 'restroom', 'toilet']
+                    keyword_boost = 0.0
+                    for keyword in bathroom_keywords:
+                        if keyword in keywords or keyword in response:
+                            keyword_boost = 0.2  # 20% boost
+                            break
+                    
+                    result_info['hybrid_score'] = (semantic_score * 0.95) + (traditional_score * 0.05) + keyword_boost
+                else:
+                    # If no good semantic match, use traditional search
+                    result_info['hybrid_score'] = (semantic_score * 0.2) + (traditional_score * 0.8)
             
             # Sort by hybrid score
             sorted_results = sorted(
@@ -252,10 +285,13 @@ class PgVectorSemanticSearch:
             
             search_type = "PgVector" if self.pgvector_available else "Python"
             logger.info(f"🔀 Hybrid search ({search_type}): {len(semantic_results)} semantic + {len(traditional_results)} traditional = {len(final_results)} unique results")
+            logger.info(f"🔍 Final hybrid results: {[r.get('keywords', 'N/A') for r in final_results[:limit]]}")
             return final_results[:limit]
             
         except Exception as e:
             logger.error(f"❌ Hybrid search failed: {e}")
+            import traceback
+            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
             # Fallback to traditional search
             from core.database_search import DatabaseSearchEngine
             traditional_engine = DatabaseSearchEngine(
