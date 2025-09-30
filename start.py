@@ -25,16 +25,28 @@ def main():
     # Get port from environment or default
     port = os.environ.get("PORT", "8000")
 
-    # Start uvicorn
-    cmd = f"python -m uvicorn app:app --host 0.0.0.0 --port {port}"
-    print(f"▶ Running: {cmd}")
-
+    # Try main app first, fallback to simple version
     try:
+        # Test if main app can be imported
+        import app
+        print("✅ Main app imported successfully")
+        cmd = f"python -m uvicorn app:app --host 0.0.0.0 --port {port}"
+        print(f"▶ Running: {cmd}")
+        os.system(cmd)
+    except ImportError as e:
+        print(f"⚠️ Main app import failed: {e}")
+        print("🔄 Falling back to simple version...")
+        cmd = f"python -m uvicorn app_simple:app --host 0.0.0.0 --port {port}"
+        print(f"▶ Running: {cmd}")
         os.system(cmd)
     except KeyboardInterrupt:
         print("\n🛑 Server stopped by user")
     except Exception as e:
         print(f"❌ Server failed: {e}")
+        print("🔄 Trying simple version as fallback...")
+        cmd = f"python -m uvicorn app_simple:app --host 0.0.0.0 --port {port}"
+        print(f"▶ Running: {cmd}")
+        os.system(cmd)
 
 if __name__ == "__main__":
     main()
