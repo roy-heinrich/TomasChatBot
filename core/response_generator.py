@@ -285,7 +285,7 @@ CRITICAL: The context provided contains the EXACT ANSWER from our school databas
         lang_analysis = f"\nLANGUAGE: {lang} (confidence: {confidence:.2f})" if confidence > 0 else f"\nLANGUAGE: {lang}"
         
         # Add current query with enhanced context - DATABASE CONTEXT TAKES PRIORITY
-        if context and context != "General school information query":
+        if context and context != "General school information query" and context != "No specific information available in database for this query":
             if context == "User is introducing themselves with their name":
                 return f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
@@ -336,6 +336,30 @@ NLP-BASED SUGGESTIONS: Use the intent and entities to suggest relevant topics. F
                 return f"""USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
 INSTRUCTIONS: {context} Use the NLP analysis to understand the user's intent and provide an appropriate response. Be helpful and intelligent in your response. If you don't have specific information about the school, be honest about it and suggest contacting the school office for detailed information. Keep response under 100 words and school-focused."""
+            elif context == "No specific information available in database for this query":
+                # Handle case when no database information is available
+                if lang in ["tl", "akl"]:
+                    return f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+
+INSTRUCTIONS: Walang specific na impormasyon sa database para sa tanong na ito. HUWAG MAG-INVENT ng mga sagot o impormasyon. Sabihin na hindi mo alam ang sagot at magtanong kung may iba pa silang gustong malaman tungkol sa school. Gamitin ang NLP analysis para mag-suggest ng relevant topics. Kung wala na talaga silang ibang tanong, magtanong kung gusto nilang makausap ang admin ng school.
+
+NLP-BASED SUGGESTIONS: Gamitin ang intent at entities para mag-suggest ng relevant topics. Halimbawa:
+- Kung enrollment-related ang intent, mag-suggest ng enrollment process, requirements, deadlines
+- Kung academic-related, mag-suggest ng programs, subjects, policies
+- Kung general school info, mag-suggest ng activities, services, facilities
+
+"""
+                else:
+                    return f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
+
+INSTRUCTIONS: No specific information is available in the database for this query. DO NOT INVENT answers or information. Say that you don't know the answer and ask if there's anything else they'd like to know about the school. Use the NLP analysis to suggest relevant topics. If they have no other questions, ask if they want to talk to a school admin.
+
+NLP-BASED SUGGESTIONS: Use the intent and entities to suggest relevant topics. For example:
+- If enrollment-related intent, suggest enrollment process, requirements, deadlines
+- If academic-related, suggest programs, subjects, policies
+- If general school info, suggest activities, services, facilities
+
+"""
             else:
                 # DATABASE CONTEXT TAKES HIGHEST PRIORITY
                 lang_instruction = "SUMAGOT SA TAGALOG/FILIPINO." if lang in ["tl", "akl"] else "RESPOND IN ENGLISH."

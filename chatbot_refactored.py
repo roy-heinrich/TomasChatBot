@@ -359,9 +359,9 @@ class ChatBot:
                     logger.warning(f"⚠️ Best result is not a dict: {type(best_result)} - {best_result}")
                     context = f"Database Information: {best_result}"
             else:
-                # Use Groq for intelligent responses when no database context
-                logger.info("🤖 No database context found - using Groq for intelligent response")
-                context = "General school information query"
+                # No database context found - handle appropriately
+                logger.info("❌ No database context found")
+                context = "No specific information available in database for this query"
             
             # Add personalized memory context
             if session_id:
