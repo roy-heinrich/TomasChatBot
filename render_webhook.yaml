@@ -1,0 +1,26 @@
+# Render Configuration for Auto Embedding Webhook
+services:
+  - type: web
+    name: tomas-embedding-webhook
+    env: python
+    plan: free
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+      python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+    startCommand: python webhook_app.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: LOG_LEVEL
+        value: INFO
+      - key: HF_HUB_DISABLE_SYMLINKS_WARNING
+        value: "1"
+      - key: TRANSFORMERS_CACHE
+        value: /opt/render/project/src/.cache
+      - key: HF_HOME
+        value: /opt/render/project/src/.cache/huggingface
