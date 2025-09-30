@@ -18,6 +18,7 @@ from core.language_detector import LanguageDetector
 from core.response_generator import ResponseGenerator
 from core.keyword_matcher import KeywordMatcher
 from core.conversation_memory import ConversationMemory
+# ML enhancements removed - they cause hallucinations
 
 # Import existing modules
 from nlu_engine import NLUEngine, Intent, NLUResult
@@ -69,6 +70,9 @@ class ChatBot:
     def _extract_user_name(self, conversation_history: List[Dict]) -> str:
         """Extract user name from conversation history using NLP entity extraction"""
         for msg in reversed(conversation_history):
+            if not isinstance(msg, dict):
+                logger.warning(f"⚠️ Skipping non-dict message: {type(msg)} - {msg}")
+                continue
             if msg.get("role") == "user":
                 content = msg.get("content", "")
                 logger.info(f"🔍 Extracting name from: '{content}'")
@@ -98,6 +102,9 @@ class ChatBot:
     def _extract_child_name(self, conversation_history: List[Dict]) -> str:
         """Extract child name from conversation history"""
         for msg in reversed(conversation_history):
+            if not isinstance(msg, dict):
+                logger.warning(f"⚠️ Skipping non-dict message: {type(msg)} - {msg}")
+                continue
             if msg.get("role") == "user":
                 content = msg.get("content", "").lower()
                 # Look for child name patterns
@@ -120,6 +127,9 @@ class ChatBot:
             language_scores = {"en": 0.0, "tl": 0.0, "akl": 0.0}
             
             for msg in recent_messages:
+                if not isinstance(msg, dict):
+                    logger.warning(f"⚠️ Skipping non-dict message: {type(msg)} - {msg}")
+                    continue
                 if msg.get("role") == "user":
                     content = msg.get("content", "")
                     if content:
@@ -155,7 +165,7 @@ class ChatBot:
         ]
         
         # Only count user messages, not assistant responses
-        user_messages = [msg for msg in recent_messages if msg.get('role') == 'user']
+        user_messages = [msg for msg in recent_messages if isinstance(msg, dict) and msg.get('role') == 'user']
         
         for message in user_messages:
             content = message.get('content', '').lower()
@@ -216,6 +226,11 @@ class ChatBot:
             
             # 2. Get NLU analysis for intent
             nlu_result = await self.nlu_engine.analyze_intent(query)
+            
+            # CRITICAL SAFETY: Check for medical emergencies (HIGHEST PRIORITY)
+            if nlu_result.intent.value == "emergency":
+                logger.warning(f"🚨 EMERGENCY DETECTED: {query}")
+                return self._handle_emergency_response(query, response_lang)
             
             # 3. Enhanced entity extraction with relationships
             entities = self.entity_extractor.extract_entities(query, nlu_result.intent.value if nlu_result else None)
@@ -316,14 +331,19 @@ class ChatBot:
                         context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
                 else:
                     # 3. Perform database search to get context for Groq
-                    search_results = self.database_search.search_prompts(query, limit=10)
+                    # Pass NLU intent to guide search strategy
+                    intent_name = nlu_result.intent.name.lower() if nlu_result and nlu_result.intent else None
+                    search_results = self.database_search.search_prompts(query, limit=10, intent=intent_name)
                     logger.info(f"🔍 Found {len(search_results)} search results")
                     
-                    # 4. Select best result for context
+                    # 4. Use database search results directly (already properly ranked)
                     best_result = None
                     if search_results:
-                        best_result = self.database_search.select_best_result(search_results, query)
-                        logger.info(f"🏆 Selected: {best_result['keywords'] if best_result else 'None'}")
+                        logger.info("🎯 Using database search results (already properly ranked)")
+                        # The database search has already applied intent-based ranking
+                        # Just use the first result (highest ranked)
+                        best_result = search_results[0]
+                        logger.info(f"🏆 Using top-ranked result: {best_result['keywords'] if best_result else 'None'}")
                     else:
                         logger.info("❌ No search results found")
             
@@ -331,9 +351,13 @@ class ChatBot:
             if best_result:
                 logger.info("📚 Using database context for Groq response")
                 # Provide complete database information as context
-                keywords = best_result.get('keywords', '')
-                response = best_result.get('response', '')
-                context = f"Database Information: {keywords} - {response}"
+                if isinstance(best_result, dict):
+                    keywords = best_result.get('keywords', '')
+                    response = best_result.get('response', '')
+                    context = f"Database Information: {keywords} - {response}"
+                else:
+                    logger.warning(f"⚠️ Best result is not a dict: {type(best_result)} - {best_result}")
+                    context = f"Database Information: {best_result}"
             else:
                 # Use Groq for intelligent responses when no database context
                 logger.info("🤖 No database context found - using Groq for intelligent response")
@@ -404,6 +428,9 @@ class ChatBot:
             response_text = await self.response_generator.generate_response(
                 query, context, response_lang, conversation_history, nlu_info_dict, user_name, entities, confidence
             )
+            
+            # ML enhancement removed - it causes hallucinations
+            # Use the response as-is from the AI model
             
             # Apply context-aware translation if needed
             if detected_lang != "en" and confidence < 0.8:
@@ -530,10 +557,16 @@ class ChatBot:
         )
 
     async def _create_fallback_response(self, query: str, detected_lang: str, confidence: float, session_id: str = None) -> ChatResponse:
-        """Create fallback response for gibberish/unclear input - always in English"""
+        """Create fallback response for gibberish/unclear input - respect language mapping"""
         
-        # For gibberish input, always respond in English and redirect to school inquiries
-        context = f"User has sent unclear input: '{query}'. Acknowledge that their message wasn't clear, but always redirect them to what TOMAS really is - a chatbot for school inquiries at Tomas SM. Bautista Elementary School. Ask them what they'd like to know about the school."
+        # Map to response language (English queries = English, Tagalog/Aklanon = Tagalog)
+        response_lang = self._map_to_response_language(detected_lang)
+        
+        # For unclear input, acknowledge and redirect to school inquiries in appropriate language
+        if response_lang == "tl":
+            context = f"User has sent unclear input: '{query}'. Acknowledge that their message wasn't clear, but always redirect them to what TOMAS really is - a chatbot for school inquiries at Tomas SM. Bautista Elementary School. Ask them what they'd like to know about the school. Respond in Tagalog."
+        else:
+            context = f"User has sent unclear input: '{query}'. Acknowledge that their message wasn't clear, but always redirect them to what TOMAS really is - a chatbot for school inquiries at Tomas SM. Bautista Elementary School. Ask them what they'd like to know about the school."
         
         # Get user name for personalization
         user_name = ""
@@ -541,9 +574,9 @@ class ChatBot:
             user_name = self.conversation_memory.get_user_name(session_id)
         
         try:
-            # Always use English for gibberish responses
+            # Use appropriate language for fallback responses
             response_text = await self.response_generator.generate_response(
-                query, context, "en", [], None, user_name, [], 0.8  # Force English
+                query, context, response_lang, [], None, user_name, [], 0.8
             )
             
             # Split long responses if needed
@@ -552,7 +585,7 @@ class ChatBot:
             return ChatResponse(
                 response=split_messages,
                 entities=[],
-                detected_language="en",  # Always English for gibberish
+                detected_language=response_lang,  # Use mapped response language
                 language_confidence=0.8,
                 is_split=len(split_messages) > 1,
                 message_count=len(split_messages),
@@ -561,13 +594,16 @@ class ChatBot:
         except Exception as e:
             logger.error(f"❌ Error in fallback response generation: {e}")
             # Only use this as absolute last resort
-            # Always use English for gibberish responses
-            fallback_text = "I'm sorry, I didn't understand your message. I'm TOMAS, your school assistant for Tomas SM. Bautista Elementary School. What would you like to know about our school?"
+            # Use appropriate language for fallback
+            if response_lang == "tl":
+                fallback_text = "Paumanhin, hindi ko naintindihan ang inyong mensahe. Ako si TOMAS, ang inyong school assistant para sa Tomas SM. Bautista Elementary School. Ano ang gusto ninyong malaman tungkol sa aming paaralan?"
+            else:
+                fallback_text = "I'm sorry, I didn't understand your message. I'm TOMAS, your school assistant for Tomas SM. Bautista Elementary School. What would you like to know about our school?"
             
             return ChatResponse(
                 response=[fallback_text],
                 entities=[],
-                detected_language="en",  # Always English for gibberish
+                detected_language=response_lang,  # Use mapped response language
                 language_confidence=0.8,
                 is_split=False,
                 message_count=1,
@@ -593,9 +629,19 @@ class ChatBot:
     
     def _detect_gibberish_input(self, query: str, nlu_result, entities: List, detected_lang: str, confidence: float) -> bool:
         """
-        Enhanced gibberish detection for meaningless input
+        Enhanced gibberish detection for meaningless input - language-aware
         """
         query_lower = query.lower().strip()
+        
+        # If NLU has high confidence, trust it (especially for Tagalog/Aklanon)
+        if nlu_result and nlu_result.confidence > 0.4:
+            logger.info(f"✅ NLU has high confidence {nlu_result.confidence:.3f} - not gibberish")
+            return False
+        
+        # If language detection is confident for Tagalog/Aklanon, don't flag as gibberish
+        if detected_lang in ['tl', 'akl'] and confidence > 0.7:
+            logger.info(f"✅ High confidence {detected_lang} detection ({confidence:.3f}) - not gibberish")
+            return False
         
         # Check for obvious gibberish patterns first, regardless of NLU confidence
         if len(query) > 8:
@@ -605,7 +651,7 @@ class ChatBot:
                 logger.info(f"🔍 Gibberish detected: too few unique characters ({unique_chars}) in '{query}'")
                 return True
         
-        # Check for random character sequences
+        # Check for random character sequences (but be more lenient for Filipino languages)
         if len(query) > 6:
             # Count consecutive consonants
             consecutive_consonants = 0
@@ -620,7 +666,9 @@ class ChatBot:
                     else:
                         consecutive_consonants = 0
             
-            if max_consecutive >= 4:  # More sensitive to gibberish
+            # Be more lenient for Filipino languages (Tagalog/Aklanon have more consonant clusters)
+            threshold = 5 if detected_lang in ['tl', 'akl'] else 4
+            if max_consecutive >= threshold:
                 logger.info(f"🔍 Gibberish detected: {max_consecutive} consecutive consonants in '{query}'")
                 return True
         
@@ -644,3 +692,45 @@ class ChatBot:
         # If we get here, it's not gibberish - let Groq handle it with NLP/NLU
         logger.info("✅ Input passed gibberish detection - using Groq with NLP/NLU processing")
         return False
+    
+    def _handle_emergency_response(self, query: str, response_lang: str) -> ChatResponse:
+        """Handle medical emergency responses with immediate action guidance"""
+        logger.warning(f"🚨 PROCESSING EMERGENCY: {query}")
+        
+        # Emergency response messages in multiple languages
+        emergency_responses = {
+            'en': [
+                "🚨 MEDICAL EMERGENCY DETECTED! Please call 911 or your local emergency services immediately.",
+                "This is a life-threatening situation that requires immediate medical attention. Do not wait - call emergency services now!",
+                "If you are having a heart attack, stroke, or any medical emergency, call 911 immediately.",
+                "Do not use this chatbot for medical emergencies. Call emergency services right now!",
+                "Your safety is the top priority. Please hang up and call 911 immediately."
+            ],
+            'tl': [
+                "🚨 MEDICAL EMERGENCY DETECTED! Tawagan ang 911 o ang inyong lokal na emergency services kaagad.",
+                "Ito ay isang life-threatening na sitwasyon na nangangailangan ng agarang medical attention. Huwag maghintay - tawagan ang emergency services ngayon!",
+                "Kung kayo ay may heart attack, stroke, o anumang medical emergency, tawagan ang 911 kaagad.",
+                "Huwag gamitin ang chatbot na ito para sa medical emergencies. Tawagan ang emergency services ngayon!",
+                "Ang inyong kaligtasan ang pinakamahalaga. Pakitawagan ang 911 kaagad."
+            ]
+        }
+        
+        # Get appropriate response based on language
+        if response_lang in emergency_responses:
+            response_text = emergency_responses[response_lang]
+        else:
+            # Default to English if language not supported
+            response_text = emergency_responses['en']
+        
+        # Log the emergency for monitoring
+        logger.critical(f"🚨 EMERGENCY RESPONSE SENT: {query} -> {response_text[0]}")
+        
+        return ChatResponse(
+            response=response_text,
+            detected_language=response_lang,
+            language_confidence=1.0,
+            entities=[],
+            intent="emergency",
+            is_split=len(response_text) > 1,
+            message_count=len(response_text)
+        )

@@ -62,6 +62,9 @@ except ImportError:
 
 class Intent(Enum):
     """Defined intents for the school chatbot"""
+    # CRITICAL SAFETY: Medical emergency detection (HIGHEST PRIORITY)
+    EMERGENCY = "emergency"  # Medical emergencies, 911 calls, life-threatening situations
+    
     # Enhanced greeting intents for better personalization
     GREETING_WITH_NAME = "greeting_with_name"
     GREETING_SIMPLE = "greeting_simple"
@@ -243,7 +246,56 @@ class NLUEngine:
         Analyze user input to determine intent and extract entities using advanced NLP
         """
         
-        # First, try semantic classification with the new multilingual NLP engine
+        # FIRST PRIORITY: Check for medical emergencies (CRITICAL SAFETY)
+        user_lower = user_input.lower()
+        
+        # Medical emergency keywords (highest priority - overrides everything)
+        emergency_keywords = [
+            'heart attack', 'heartattack', 'heart-attack', 'cardiac arrest', 'stroke',
+            'emergency', 'ambulance', '911', 'help me', 'dying', 'can\'t breathe',
+            'chest pain', 'chestpain', 'shortness of breath', 'unconscious',
+            'bleeding', 'severe pain', 'severe injury', 'accident', 'hurt badly',
+            'medical emergency', 'need help', 'urgent', 'critical', 'life threatening'
+        ]
+        
+        # Check for emergency patterns
+        for keyword in emergency_keywords:
+            if keyword in user_lower:
+                logger.warning(f"🚨 MEDICAL EMERGENCY DETECTED: '{keyword}' in '{user_input}'")
+                return NLUResult(Intent.EMERGENCY, 1.0, [])
+        
+        # Check for emergency patterns in different languages
+        emergency_patterns = [
+            r'\b(heart|cardiac|stroke|emergency|ambulance|911|help|dying|bleeding|hurt|pain|accident)\b',
+            r'\b(emergency|urgent|critical|life|threatening|medical)\b',
+            r'\b(can\'t breathe|can\'t breath|shortness|chest|unconscious)\b'
+        ]
+        
+        for pattern in emergency_patterns:
+            if re.search(pattern, user_lower):
+                logger.warning(f"🚨 EMERGENCY PATTERN DETECTED: '{pattern}' in '{user_input}'")
+                return NLUResult(Intent.EMERGENCY, 1.0, [])
+        
+        # Normalize common typos and variations
+        normalized_input = user_lower
+        typo_corrections = {
+            'kayo': ['kayO', 'kay0', 'kayoo', 'kayou'],
+            'prinsipal': ['principal', 'prinsipal', 'prinsipal', 'prinsipal'],
+            'sino': ['sino', 'sino', 'sino', 'sino'],
+            'may': ['may', 'may', 'may', 'may']
+        }
+        
+        # Apply typo corrections
+        for correct, typos in typo_corrections.items():
+            for typo in typos:
+                normalized_input = normalized_input.replace(typo, correct)
+        
+        # Check for staff inquiry patterns with typo tolerance
+        if "may prinsipal" in normalized_input or "may principal" in normalized_input:
+            logger.info(f"🎯 Rule-based staff inquiry detected: 'may prinsipal' pattern (normalized from '{user_input}')")
+            return NLUResult(Intent.STAFF_INQUIRY, 0.9, [])
+        
+        # Then try semantic classification with the new multilingual NLP engine
         if MULTILINGUAL_NLP_AVAILABLE:
             try:
                 # Detect language semantically
@@ -530,6 +582,15 @@ class NLUEngine:
                             logger.info(f"🎯 Name introduction detected (fallback): pattern='{pattern}', text_after='{text_after}'")
                             return NLUResult(Intent.NAME_INTRODUCTION, 0.95, [])
 
+        # Priority 2: Staff inquiries (moved up to catch principal queries before greetings)
+        # Special pattern for "may prinsipal" queries - highest priority
+        if "may prinsipal" in user_lower or "may principal" in user_lower:
+            return NLUResult(Intent.STAFF_INQUIRY, 0.9, [])
+        
+        staff_words = ["teacher", "teachers", "staff", "principal", "prinsipal", "head teacher", "school head", "head", "director", "administrator", "guro", "maestro", "faculty", "guidance", "counselor", "adviser", "advisor", "advisers", "advisors"]
+        if any(word in user_lower for word in staff_words):
+            return NLUResult(Intent.STAFF_INQUIRY, 0.7, [])
+        
         # Priority 3: Enhanced greeting classification with mood/style detection
         greeting_keywords = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", "good afternoon", "good evening", "magandang umaga", "magandang hapon", "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", "evening", "greetings", "hiya", "wassup", "howdy", "sup", "yo"]
         
@@ -577,10 +638,7 @@ class NLUEngine:
         if any(word in user_lower for word in safety_words):
             return NLUResult(Intent.SCHOOL_INFO, 0.8, [])
         
-        # Priority 8: Staff inquiries
-        staff_words = ["teacher", "teachers", "staff", "principal", "head teacher", "school head", "head", "director", "administrator", "guro", "maestro", "faculty", "guidance", "counselor", "adviser", "advisor", "advisers", "advisors"]
-        if any(word in user_lower for word in staff_words):
-            return NLUResult(Intent.STAFF_INQUIRY, 0.7, [])
+        # Priority 8: Staff inquiries (moved up to Priority 2.5)
         
         # Priority 9.5: Financial inquiries (moved up before school info to catch "school fees")
         financial_patterns = [
@@ -1121,7 +1179,9 @@ class NLUEngine:
             'do', 'does', 'did', 'will', 'would', 'can', 'could', 'should', 'may', 'might',
             'what', 'where', 'when', 'why', 'how', 'who', 'which', 'this', 'that', 'these', 'those',
             'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them',
-            'my', 'your', 'his', 'her', 'its', 'our', 'their', 'mine', 'yours', 'hers', 'ours', 'theirs'
+            'my', 'your', 'his', 'her', 'its', 'our', 'their', 'mine', 'yours', 'hers', 'ours', 'theirs',
+            # Tagalog question words
+            'sino', 'ano', 'saan', 'kailan', 'bakit', 'paano'
         }
         
         if word.lower() in common_words:

@@ -37,7 +37,5 @@ huggingface-hub==0.34.4
 # HTTP Client for AI APIs
 aiohttp==3.12.15
 
-# Machine Learning
-scikit-learn==1.7.1
-gensim==4.3.3
+# Lightweight ML (Render-compatible)
 textblob==0.17.1

@@ -129,7 +129,7 @@ class AdvancedEntityExtractor:
         text_lower = text.lower()
         
         # Extract different entity types using pattern matching
-        entities.extend(self._extract_person_names(text, text_lower))
+        entities.extend(self._extract_person_names(text, text_lower, intent_context))
         entities.extend(self._extract_grade_levels(text, text_lower))
         entities.extend(self._extract_subjects(text, text_lower))
         entities.extend(self._extract_dates(text, text_lower))
@@ -276,7 +276,7 @@ class AdvancedEntityExtractor:
         text_lower = text.lower()
         
         # Extract different entity types using pattern matching
-        entities.extend(self._extract_person_names(text, text_lower))
+        entities.extend(self._extract_person_names(text, text_lower, intent_context))
         entities.extend(self._extract_grade_levels(text, text_lower))
         entities.extend(self._extract_subjects(text, text_lower))
         entities.extend(self._extract_dates(text, text_lower))
@@ -406,9 +406,18 @@ class AdvancedEntityExtractor:
             "curriculum", "lesson plan", "homework", "assignment", "project"
         ]
     
-    def _extract_person_names(self, text: str, text_lower: str) -> List[ExtractedEntity]:
-        """Extract person names with context awareness"""
+    def _extract_person_names(self, text: str, text_lower: str, intent_context: str = None) -> List[ExtractedEntity]:
+        """Extract person names with context awareness and intent-based filtering"""
         entities = []
+        
+        # 🚨 CRITICAL FIX: Skip name extraction for location/facilities inquiries
+        # These intents often contain question words that shouldn't be names
+        if intent_context in ['location_inquiry', 'facilities_inquiry']:
+            # Check if this looks like a question (contains question words)
+            question_indicators = ['diin', 'saan', 'where', 'what', 'how', 'when', 'why', 'which']
+            if any(indicator in text_lower for indicator in question_indicators):
+                logger.info(f"🔍 Skipping name extraction for {intent_context} with question indicators")
+                return entities
         
         for pattern in self.name_patterns:
             matches = re.finditer(pattern, text, re.IGNORECASE)
@@ -713,6 +722,8 @@ class AdvancedEntityExtractor:
             "the", "and", "or", "but", "for", "with", "from", "about",
             "good", "great", "nice", "fine", "okay", "yes", "no",
             "interested", "in", "who", "what", "when", "where", "how",
+            # Tagalog question words
+            "sino", "ano", "saan", "kailan", "bakit", "paano",
             "this", "that", "these", "those", "all", "some", "many",
             # Common emotions and states
             "sad", "happy", "angry", "tired", "sick", "well", "fine", "ok",
@@ -725,6 +736,10 @@ class AdvancedEntityExtractor:
             "school", "teacher", "student", "class", "grade", "principal", "head",
             "staff", "office", "library", "cafeteria", "gym", "playground",
             "enrollment", "admission", "registration", "application", "form",
+            # Building and location names that shouldn't be person names
+            "building", "administration", "administrasyon", "compound", "campus",
+            "facility", "room", "hall", "center", "center", "area", "zone",
+            "entrance", "exit", "door", "floor", "level", "ground", "first", "second",
             # Common Filipino/Aklanon words
             "ako", "si", "ang", "ng", "sa", "ko", "mo", "niya", "namin", "ninyo", "nila",
             "kumusta", "kamusta", "salamat", "magandang", "maayong", "paaralan", "eskwelahan",
@@ -745,6 +760,7 @@ class AdvancedEntityExtractor:
             "etc", "vs", "aka", "asap", "rsvp", "p.s", "p.s.", "n/a", "tba", "tbd"
         ]
         
+        
         # Check for name-like characteristics
         words = name.split()
         for word in words:
@@ -759,6 +775,11 @@ class AdvancedEntityExtractor:
             # 🚨 FIX: Names shouldn't be all lowercase common words
             if word.islower() and word in false_positives:
                 return False
+        
+        # 🚨 FIX: Check for building/location names that shouldn't be person names
+        building_indicators = ["building", "administration", "administrasyon", "compound", "campus", "facility", "room", "hall", "center", "area", "zone"]
+        if any(indicator in name.lower() for indicator in building_indicators):
+            return False
         
         # 🚨 FIX: Additional validation - names should have at least one character that's not a common word
         # This prevents single common words from being extracted as names

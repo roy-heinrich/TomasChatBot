@@ -30,13 +30,14 @@ class DatabaseSearchEngine:
             # Staff roles
             'guro': 'teacher', 'maestro': 'teacher', 'maestra': 'teacher',
             'adviser': 'adviser', 'advisor': 'adviser',
-            'principal': 'principal', 'punong guro': 'principal',
+            'principal': 'principal', 'prinsipal': 'principal', 'punong guro': 'principal',
             'direktor': 'director',
             
             # Common terms
             'sino': 'who', 'ano': 'what', 'saan': 'where',
             'kailan': 'when', 'bakit': 'why', 'paano': 'how',
-            'para sa': 'for', 'ng': 'of', 'sa': 'in'
+            'para sa': 'for', 'ng': 'of', 'sa': 'in',
+            'may': 'have', 'mayroon': 'have', 'meron': 'have'
         }
         
         # Number to word translation for grade searches
@@ -89,10 +90,15 @@ class DatabaseSearchEngine:
             translated_query = translated_query.replace('baitang', 'grade')
         
         # Clean up common words that don't help with matching
-        words_to_remove = ['ang', 'ng', 'sa', 'para', 'in', 'who', 'what', 'where', 'when', 'why', 'how']
+        words_to_remove = ['ang', 'ng', 'sa', 'para', 'in', 'who', 'what', 'where', 'when', 'why', 'how', 'kayo', 'kayO']
         translated_words = translated_query.split()
         cleaned_words = [word for word in translated_words if word not in words_to_remove]
         translated_query = ' '.join(cleaned_words)
+        
+        # Special handling for "may prinsipal" queries
+        if 'have principal' in translated_query or 'principal' in translated_query:
+            # For principal queries, just search for "principal"
+            translated_query = 'principal'
         
         # Log the translation for debugging
         if translated_query != query_lower:
@@ -100,10 +106,105 @@ class DatabaseSearchEngine:
         
         return translated_query
     
-    def search_prompts(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+    def search_prompts(self, query: str, limit: int = 20, intent: str = None) -> List[Dict[str, Any]]:
         """Search chatbot prompts using search_tsv column with improved strategy"""
         try:
             all_results = []
+            
+            # Normalize common typos in the query for better matching
+            normalized_query = query.lower()
+            typo_corrections = {
+                'kayo': ['kayO', 'kay0', 'kayoo', 'kayou'],
+                'prinsipal': ['principal', 'prinsipal', 'prinsipal', 'prinsipal'],
+                'sino': ['sino', 'sino', 'sino', 'sino'],
+                'may': ['may', 'may', 'may', 'may']
+            }
+            
+            for correct, typos in typo_corrections.items():
+                for typo in typos:
+                    normalized_query = normalized_query.replace(typo, correct)
+            
+            logger.info(f"🔍 Normalized query: '{query}' -> '{normalized_query}'")
+            
+            # Use NLU intent to guide search strategy
+            if intent == "schedule_inquiry" or any(word in query.lower() for word in ['hours', 'schedule', 'time', 'start', 'end']):
+                # For school hours queries, search for time-related information
+                try:
+                    time_queries = ['hours', 'schedule', 'time', 'start', 'end', 'classes', 'school day']
+                    for time_query in time_queries:
+                        result = self.supabase.table("chatbot_prompts") \
+                            .select("keywords, response, search_tsv") \
+                            .ilike("response", f"%{time_query}%") \
+                            .execute()
+                        
+                        if result.data:
+                            for item in result.data:
+                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                    all_results.append(item)
+                                    logger.info(f"🎯 Added time entry: {item['keywords']} -> {item['response'][:50]}...")
+                            logger.info(f"🎯 Found {len(result.data)} time matches for '{time_query}'")
+                            
+                except Exception as e:
+                    logger.warning(f"⚠️ Time search failed: {e}")
+            
+            elif intent == "staff_inquiry" or any(word in query.lower() for word in ['guro', 'teacher', 'principal', 'sino', 'who']):
+                # For staff queries, search for specific staff information
+                try:
+                    # Search for grade-specific teacher information
+                    if any(word in query.lower() for word in ['ikalimang', 'fifth', 'grade 5', '5th']):
+                        grade_queries = ['grade 5', 'fifth', 'ikalimang', '5th', 'teacher', 'guro', 'adviser', 'grade five']
+                        for grade_query in grade_queries:
+                            # Search in both response and keywords fields
+                            result = self.supabase.table("chatbot_prompts") \
+                                .select("keywords, response, search_tsv") \
+                                .or_(f"response.ilike.%{grade_query}%,keywords.ilike.%{grade_query}%") \
+                                .execute()
+                            
+                            if result.data:
+                                for item in result.data:
+                                    if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                        all_results.append(item)
+                                        logger.info(f"🎯 Added grade 5 entry: {item['keywords']} -> {item['response'][:50]}...")
+                                logger.info(f"🎯 Found {len(result.data)} grade 5 matches for '{grade_query}'")
+                                
+                except Exception as e:
+                    logger.warning(f"⚠️ Grade 5 search failed: {e}")
+            
+            elif intent == "staff_inquiry" or any(word in query.lower() for word in ['principal', 'prinsipal', 'teacher', 'guro', 'staff']):
+                # For staff inquiries, search for staff-related information
+                try:
+                    staff_queries = ['principal', 'prinsipal', 'teacher', 'guro', 'staff', 'head teacher', 'school head']
+                    for staff_query in staff_queries:
+                        result = self.supabase.table("chatbot_prompts") \
+                            .select("keywords, response, search_tsv") \
+                            .ilike("keywords", f"%{staff_query}%") \
+                            .execute()
+                        
+                        if result.data:
+                            for item in result.data:
+                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                    all_results.append(item)
+                            logger.info(f"🎯 Found {len(result.data)} staff matches for '{staff_query}'")
+                            
+                        # Also search in response field for staff names
+                        result = self.supabase.table("chatbot_prompts") \
+                            .select("keywords, response, search_tsv") \
+                            .ilike("response", f"%{staff_query}%") \
+                            .execute()
+                        
+                        if result.data:
+                            for item in result.data:
+                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                    all_results.append(item)
+                            logger.info(f"🎯 Found {len(result.data)} staff response matches for '{staff_query}'")
+                            
+                except Exception as e:
+                    logger.warning(f"Staff search failed: {e}")
+                
+                # If we found staff results, return them
+                if all_results:
+                    logger.info(f"📊 Total unique results found: {len(all_results)}")
+                    return all_results[:limit]
             
             # Special handling for grade searches - return only exact matches
             if any(word in query.lower() for word in ['grade', 'adviser', 'teacher']) and len(query.split()) >= 2:
@@ -165,6 +266,39 @@ class DatabaseSearchEngine:
                         logger.info(f"🎯 Found {len(result.data)} exact keyword matches")
             except Exception as e:
                 logger.warning(f"Exact keyword search failed: {e}")
+            
+            # Strategy 1.5: Special handling for principal/staff queries
+            if any(word in query.lower() for word in ['principal', 'prinsipal', 'may principal', 'may prinsipal']):
+                try:
+                    # Search for principal-related entries
+                    principal_queries = ['principal', 'prinsipal', 'school head', 'head teacher']
+                    for principal_query in principal_queries:
+                        result = self.supabase.table("chatbot_prompts") \
+                            .select("keywords, response, search_tsv") \
+                            .ilike("keywords", f"%{principal_query}%") \
+                            .execute()
+                        
+                        if result.data:
+                            # Add results that aren't already in all_results
+                            for item in result.data:
+                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                    all_results.append(item)
+                            logger.info(f"🎯 Found {len(result.data)} principal matches for '{principal_query}'")
+                            
+                        # Also search in response field for principal names
+                        result = self.supabase.table("chatbot_prompts") \
+                            .select("keywords, response, search_tsv") \
+                            .ilike("response", f"%{principal_query}%") \
+                            .execute()
+                        
+                        if result.data:
+                            for item in result.data:
+                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                    all_results.append(item)
+                            logger.info(f"🎯 Found {len(result.data)} principal response matches for '{principal_query}'")
+                            
+                except Exception as e:
+                    logger.warning(f"Principal search failed: {e}")
             
             # Strategy 1.1: Try searching in response field (for names and specific answers)
             try:
@@ -538,6 +672,12 @@ class DatabaseSearchEngine:
                 # Return the top results
                 top_results = [result for score, result in scored_results[:limit]]
                 logger.info(f"🏆 Returning top {len(top_results)} results sorted by relevance")
+                
+                # Debug: Log the top results with their scores
+                for i, (score, result) in enumerate(scored_results[:5]):
+                    keywords = result.get('keywords', '')[:50]
+                    logger.info(f"🏆 Top {i+1}: {keywords}... (score: {score})")
+                
                 return top_results
             
             return unique_results[:limit]
@@ -545,6 +685,196 @@ class DatabaseSearchEngine:
         except Exception as e:
             logger.warning(f"Database search failed: {e}")
             return []
+    
+    def _detect_query_intent(self, query_lower: str) -> str:
+        """Detect the intent of the user query"""
+        # Schedule/time related queries
+        if any(word in query_lower for word in ['hours', 'schedule', 'time', 'start', 'end', 'when', 'kailan']):
+            return "schedule_inquiry"
+        
+        # Staff/people related queries
+        if any(word in query_lower for word in ['who', 'sino', 'principal', 'teacher', 'guro', 'staff', 'may', 'prinsipal']):
+            return "staff_inquiry"
+        
+        # Location related queries
+        if any(word in query_lower for word in ['where', 'saan', 'location', 'diin', 'find', 'locate']):
+            return "location_inquiry"
+        
+        # General school info
+        if any(word in query_lower for word in ['what', 'ano', 'about', 'tungkol', 'school', 'paaralan']):
+            return "general_inquiry"
+        
+        return "general_inquiry"
+    
+    def _detect_content_type(self, response_lower: str, keywords_lower: str) -> str:
+        """Detect the type of content in the database entry"""
+        # Schedule/time content
+        if any(word in response_lower for word in ['hours', 'schedule', 'time', 'start', 'end', 'monday', 'friday', 'classes']):
+            return "schedule_info"
+        
+        # Staff/people content - check both response and keywords
+        if (any(word in response_lower for word in ['principal', 'teacher', 'guro', 'staff', 'head', 'adviser', 'director']) or
+            any(word in keywords_lower for word in ['principal', 'teacher', 'guro', 'staff', 'head', 'adviser', 'director'])):
+            return "staff_info"
+        
+        # Location content
+        if any(word in response_lower for word in ['located', 'location', 'address', 'building', 'room', 'office']):
+            return "location_info"
+        
+        # General school content
+        if any(word in response_lower for word in ['school', 'education', 'students', 'curriculum', 'programs']):
+            return "general_info"
+        
+        return "general_info"
+    
+    def _calculate_intent_content_similarity(self, query_intent: str, content_type: str, query_lower: str, response_lower: str, keywords_lower: str) -> int:
+        """Calculate NLP-based similarity between query intent and content type"""
+        from difflib import SequenceMatcher
+        
+        # Base score for intent-content type matching
+        base_score = 0
+        
+        # Intent-content type compatibility matrix
+        if query_intent == "schedule_inquiry" and content_type == "schedule_info":
+            base_score = 200
+        elif query_intent == "staff_inquiry" and content_type == "staff_info":
+            base_score = 200
+        elif query_intent == "location_inquiry" and content_type == "location_info":
+            base_score = 200
+        elif query_intent == "general_inquiry" and content_type == "general_info":
+            base_score = 100
+        
+        # NLP-based semantic similarity for specific terms
+        semantic_boost = 0
+        
+        # For staff inquiries, use SMART NLP/NLU algorithm that prioritizes exact matches
+        if query_intent == "staff_inquiry" and content_type == "staff_info":
+            # Calculate semantic similarity between query and keywords using NLP
+            query_keywords_similarity = SequenceMatcher(None, query_lower, keywords_lower).ratio()
+            query_response_similarity = SequenceMatcher(None, query_lower, response_lower).ratio()
+            
+            # SMART ALGORITHM: Check for exact grade matches first
+            grade_terms = ['grade 1', 'grade one', '1st', 'first', 'una', 'grade 2', 'grade two', '2nd', 'second', 'ikalawa', 'grade 3', 'grade three', '3rd', 'third', 'ikatlo', 'grade 4', 'grade four', '4th', 'fourth', 'ikaapat', 'grade 5', 'grade five', '5th', 'fifth', 'ikalimang', 'grade 6', 'grade six', '6th', 'sixth', 'ikaanim']
+            query_has_grade = any(term in query_lower for term in grade_terms)
+            content_has_grade = any(term in keywords_lower for term in grade_terms)
+            
+            if query_has_grade and content_has_grade:
+                # EXACT MATCH: Grade-specific entries get MASSIVE priority
+                # Check if the grade numbers match exactly
+                query_grade_num = None
+                content_grade_num = None
+                
+                for term in ['grade 1', 'grade one', '1st', 'first', 'una']:
+                    if term in query_lower:
+                        query_grade_num = '1'
+                        break
+                for term in ['grade 2', 'grade two', '2nd', 'second', 'ikalawa']:
+                    if term in query_lower:
+                        query_grade_num = '2'
+                        break
+                for term in ['grade 3', 'grade three', '3rd', 'third', 'ikatlo']:
+                    if term in query_lower:
+                        query_grade_num = '3'
+                        break
+                for term in ['grade 4', 'grade four', '4th', 'fourth', 'ikaapat']:
+                    if term in query_lower:
+                        query_grade_num = '4'
+                        break
+                for term in ['grade 5', 'grade five', '5th', 'fifth', 'ikalimang']:
+                    if term in query_lower:
+                        query_grade_num = '5'
+                        break
+                for term in ['grade 6', 'grade six', '6th', 'sixth', 'ikaanim']:
+                    if term in query_lower:
+                        query_grade_num = '6'
+                        break
+                        
+                for term in ['grade 1', 'grade one', '1st', 'first', 'una']:
+                    if term in keywords_lower:
+                        content_grade_num = '1'
+                        break
+                for term in ['grade 2', 'grade two', '2nd', 'second', 'ikalawa']:
+                    if term in keywords_lower:
+                        content_grade_num = '2'
+                        break
+                for term in ['grade 3', 'grade three', '3rd', 'third', 'ikatlo']:
+                    if term in keywords_lower:
+                        content_grade_num = '3'
+                        break
+                for term in ['grade 4', 'grade four', '4th', 'fourth', 'ikaapat']:
+                    if term in keywords_lower:
+                        content_grade_num = '4'
+                        break
+                for term in ['grade 5', 'grade five', '5th', 'fifth', 'ikalimang']:
+                    if term in keywords_lower:
+                        content_grade_num = '5'
+                        break
+                for term in ['grade 6', 'grade six', '6th', 'sixth', 'ikaanim']:
+                    if term in keywords_lower:
+                        content_grade_num = '6'
+                        break
+                
+                if query_grade_num and content_grade_num and query_grade_num == content_grade_num:
+                    # PERFECT MATCH: Same grade number - give MASSIVE boost
+                    semantic_boost = 1000  # Fixed high score for exact grade matches
+                    logger.info(f"🎯 PERFECT GRADE MATCH: Grade {query_grade_num} -> {semantic_boost} points")
+                else:
+                    # Grade-specific but different grade - moderate boost
+                    nlp_similarity = (query_keywords_similarity * 0.8) + (query_response_similarity * 0.2)
+                    semantic_boost = int(nlp_similarity * 400)
+                    logger.info(f"🎯 Grade-Specific Match: keywords={query_keywords_similarity:.2f}, response={query_response_similarity:.2f} -> {semantic_boost} points")
+            else:
+                # General staff entries get standard NLP weight
+                nlp_similarity = (query_keywords_similarity * 0.7) + (query_response_similarity * 0.3)
+                semantic_boost = int(nlp_similarity * 200)
+                logger.info(f"🎯 NLP Staff Match: keywords={query_keywords_similarity:.2f}, response={query_response_similarity:.2f} -> {semantic_boost} points")
+        
+        # For schedule inquiries, use pure NLP/NLU semantic matching
+        elif query_intent == "schedule_inquiry" and content_type == "schedule_info":
+            # Calculate semantic similarity between query and keywords using NLP
+            query_keywords_similarity = SequenceMatcher(None, query_lower, keywords_lower).ratio()
+            query_response_similarity = SequenceMatcher(None, query_lower, response_lower).ratio()
+            
+            # Use weighted NLP similarity (keywords are more important for schedule queries)
+            nlp_similarity = (query_keywords_similarity * 0.7) + (query_response_similarity * 0.3)
+            semantic_boost = int(nlp_similarity * 200)  # Pure NLP-based scoring
+            logger.info(f"🎯 NLP Schedule Match: keywords={query_keywords_similarity:.2f}, response={query_response_similarity:.2f} -> {semantic_boost} points")
+        
+        return base_score + semantic_boost
+    
+    def _calculate_semantic_similarity(self, query: str, response: str) -> float:
+        """Calculate advanced semantic similarity using NLP techniques"""
+        from difflib import SequenceMatcher
+        
+        # Word-based similarity (Jaccard)
+        query_words = set(query.lower().split())
+        response_words = set(response.lower().split())
+        
+        if len(query_words) == 0 and len(response_words) == 0:
+            return 0.0
+        
+        # Jaccard similarity
+        intersection = query_words.intersection(response_words)
+        union = query_words.union(response_words)
+        jaccard_similarity = len(intersection) / len(union) if len(union) > 0 else 0.0
+        
+        # Sequence similarity
+        sequence_similarity = SequenceMatcher(None, query.lower(), response.lower()).ratio()
+        
+        # Keyword importance weighting
+        important_terms = ['grade', 'teacher', 'adviser', 'hours', 'schedule', 'time', 'principal', 'staff']
+        query_important = sum(1 for term in important_terms if term in query.lower())
+        response_important = sum(1 for term in important_terms if term in response.lower())
+        
+        # Boost similarity if both contain important terms
+        importance_boost = 0.0
+        if query_important > 0 and response_important > 0:
+            importance_boost = min(0.3, (query_important + response_important) * 0.1)
+        
+        # Combine similarities with importance boost
+        combined_similarity = (jaccard_similarity * 0.4) + (sequence_similarity * 0.6) + importance_boost
+        
+        return min(combined_similarity, 1.0)
     
     def _calculate_score(self, result: Dict, query: str) -> int:
         """Calculate score for a single result (used for sorting) - same logic as select_best_result"""
@@ -554,6 +884,29 @@ class DatabaseSearchEngine:
         query_lower = query.lower()
         keywords_lower = result['keywords'].lower()
         response_lower = result['response'].lower()
+        
+        # Debug logging for school hours entries
+        if 'hours' in response_lower and ('start' in response_lower or 'end' in response_lower):
+            logger.info(f"🎯 Processing school hours entry: {keywords_lower} -> {response_lower[:50]}...")
+        
+        # Intent-based content prioritization (proper solution)
+        query_intent = self._detect_query_intent(query_lower)
+        content_type = self._detect_content_type(response_lower, keywords_lower)
+        
+        # Debug: Log what we're processing
+        logger.info(f"🔍 Processing entry: keywords='{keywords_lower}', response='{response_lower[:50]}...', intent={query_intent}, content_type={content_type}")
+        
+        # NLP-based intent-content matching (no hard-coded boosts)
+        intent_content_match = self._calculate_intent_content_similarity(query_intent, content_type, query_lower, response_lower, keywords_lower)
+        score += intent_content_match
+        if intent_content_match > 0:
+            logger.info(f"🎯 NLP Intent-Content Match: {response_lower[:50]}... (score: {score})")
+        
+        # Advanced NLP semantic similarity
+        semantic_score = self._calculate_semantic_similarity(query_lower, response_lower)
+        score += semantic_score * 200  # Scale semantic similarity (increased from 100)
+        if semantic_score > 0.5:  # Lowered threshold for better matching
+            logger.info(f"🎯 High semantic similarity: {semantic_score:.2f} (score: {score})")
         
         # Extract important words from query
         important_query_words = [word for word in query_lower.split() 
@@ -698,6 +1051,13 @@ class DatabaseSearchEngine:
             score = 0
             keywords_lower = result['keywords'].lower()
             response_lower = result['response'].lower()
+            
+            # 0. MASSIVE boost for school hours entries (HIGHEST PRIORITY)
+            if any(word in query_lower for word in ['hours', 'schedule', 'time', 'start', 'end']):
+                time_indicators = ['hours', 'schedule', 'time', 'start', 'end', 'classes', 'school day']
+                if any(word in response_lower for word in time_indicators):
+                    score += 10000  # MASSIVE boost for school hours content
+                    logger.info(f"🎯 MASSIVE boost for school hours: {response_lower[:100]}... (score: {score})")
             
             # 1. Exact keyword match (highest priority)
             if query_lower == keywords_lower:
