@@ -32,11 +32,13 @@ class ContextAwareNLU:
                 r"who is\s+", r"who is the", r"what is\s+", r"what is the",
                 r"grade\s+\d+\s+teacher", r"grade\s+\d+\s+adviser", 
                 r"principal", r"head teacher", r"guidance counselor",
-                r"where is\s+", r"where is the", r"saan ang"
+                r"where is\s+", r"where is the", r"saan ang",
+                r"sino ang", r"sino ang\s+", r"ano ang", r"ano ang\s+",
+                r"grade\s+\d+\s+guro", r"grade\s+\d+\s+adviser"
             ],
             "medium": [
                 r"teacher", r"staff", r"where", r"when", r"how many",
-                r"guro", r"faculty", r"adviser"
+                r"guro", r"faculty", r"adviser", r"sino", r"ano"
             ],
             "low": [
                 r"help", r"information", r"what", r"tell me", r"explain",

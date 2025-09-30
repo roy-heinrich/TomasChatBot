@@ -221,7 +221,7 @@ class ChatBot:
             
             # Check for mixed-language input
             if confidence < 0.7:
-                logger.info("🔍 Low confidence language detection - may be mixed language")
+                # logger.info("🔍 Low confidence language detection - may be mixed language")  # Commented out debug logs
                 # Use context-aware translation for mixed languages
                 if conversation_history:
                     context_lang, context_confidence = self._detect_context_language(conversation_history)
@@ -229,7 +229,7 @@ class ChatBot:
                         detected_lang = context_lang
                         response_lang = self._map_to_response_language(detected_lang)
                         confidence = context_confidence
-                        logger.info(f"🌍 Context-based language detection: {detected_lang} → {response_lang} (confidence: {confidence:.2f})")
+                        # logger.info(f"🌍 Context-based language detection: {detected_lang} → {response_lang} (confidence: {confidence:.2f})")  # Commented out debug logs
             
             # 2. Get NLU analysis for intent
             nlu_result = await self.nlu_engine.analyze_intent(query)
@@ -241,13 +241,14 @@ class ChatBot:
             
             # 3. Enhanced entity extraction with relationships
             entities = self.entity_extractor.extract_entities(query, nlu_result.intent.value if nlu_result else None)
-            logger.info(f"🔍 Enhanced entity extraction: {len(entities)} entities with relationships")
+            # logger.info(f"🔍 Enhanced entity extraction: {len(entities)} entities with relationships")  # Commented out debug logs
             
             # Log entity relationships
             for entity in entities:
                 if hasattr(entity, 'relationships') and entity.relationships:
                     for rel in entity.relationships:
-                        logger.info(f"🔗 Relationship: {entity.value} -> {rel['entity'].value} ({rel['relationship']['type']})")
+                        # logger.info(f"🔗 Relationship: {entity.value} -> {rel['entity'].value} ({rel['relationship']['type']})")  # Commented out debug logs
+                        pass
             
             # 4. Enhanced memory system - extract user info and update memory
             user_name = ""
@@ -258,7 +259,7 @@ class ChatBot:
                 existing_name = self.conversation_memory.get_user_name(session_id)
                 if existing_name:
                     user_name = existing_name
-                    logger.info(f"🧠 Retrieved existing user name from memory: {user_name}")
+                    # logger.info(f"🧠 Retrieved existing user name from memory: {user_name}")  # Commented out debug logs
             
             # If no existing name, try to extract from conversation history
             if not user_name:
@@ -271,12 +272,13 @@ class ChatBot:
                     if extracted_user_name:
                         user_name = extracted_user_name
                         child_name = extracted_child_name
-                        logger.info(f"🔍 Extracted names from conversation: user='{user_name}', child='{child_name}'")
+                        # logger.info(f"🔍 Extracted names from conversation: user='{user_name}', child='{child_name}'")  # Commented out debug logs
                     else:
-                        logger.info("🔍 No names found in conversation history")
+                        # logger.info("🔍 No names found in conversation history")  # Commented out debug logs
+                        pass
                 else:
                     # If no conversation history, try to extract from current query
-                    logger.info("🔍 No conversation history - trying to extract from current query")
+                    # logger.info("🔍 No conversation history - trying to extract from current query")  # Commented out debug logs
                     # Create a temporary conversation history with current query
                     temp_history = [{"role": "user", "content": query}]
                     extracted_user_name = self._extract_user_name(temp_history)
@@ -285,32 +287,33 @@ class ChatBot:
                     if extracted_user_name:
                         user_name = extracted_user_name
                         child_name = extracted_child_name
-                        logger.info(f"🔍 Extracted names from current query: user='{user_name}', child='{child_name}'")
+                        # logger.info(f"🔍 Extracted names from current query: user='{user_name}', child='{child_name}'")  # Commented out debug logs
                     else:
-                        logger.info("🔍 No names found in current query")
+                        # logger.info("🔍 No names found in current query")  # Commented out debug logs
+                        pass
             
             # Update conversation memory
             if session_id:
-                logger.info(f"🧠 Updating memory - Session: {session_id}, User name: '{user_name}', Query: '{query}'")
+                # logger.info(f"🧠 Updating memory - Session: {session_id}, User name: '{user_name}', Query: '{query}'")  # Commented out debug logs
                 user_memory = self.conversation_memory.update_user_memory(
                     session_id, user_name, query, conversation_history
                 )
-                logger.info(f"🧠 Updated memory for user: {user_memory.name}, topics: {list(user_memory.topics.keys())}")
+                # logger.info(f"🧠 Updated memory for user: {user_memory.name}, topics: {list(user_memory.topics.keys())}")  # Commented out debug logs
                 
                 # Debug: Check if name was actually stored
                 stored_name = self.conversation_memory.get_user_name(session_id)
-                logger.info(f"🧠 Memory verification - Stored name: '{stored_name}'")
+                # logger.info(f"🧠 Memory verification - Stored name: '{stored_name}'")  # Commented out debug logs
             
             # Special case: Handle name-related queries directly
             if any(phrase in query.lower() for phrase in ["what's my name", "what is my name", "my name", "who am i", "do you know my name"]):
                 if user_name:
-                    logger.info(f"👤 User asking about their name - we know it's: {user_name}")
+                    # logger.info(f"👤 User asking about their name - we know it's: {user_name}")  # Commented out debug logs
                     # Skip database search and provide direct response
                     search_results = []
                     best_result = None
                     context = f"User is asking about their name. Their name is {user_name}. Provide a friendly response confirming their name."
                 else:
-                    logger.info("👤 User asking about their name - we don't know it yet")
+                    # logger.info("👤 User asking about their name - we don't know it yet")  # Commented out debug logs
                     # Skip database search and ask for their name
                     search_results = []
                     best_result = None
@@ -319,19 +322,19 @@ class ChatBot:
                 # 🚨 CRITICAL: Check for special intents FIRST before database search
                 # These intents should skip database search entirely
                 if nlu_result and nlu_result.intent.value == 'contact_escalation':
-                    logger.info("👥 Contact escalation requested - checking conversation history for persistence")
+                    # logger.info("👥 Contact escalation requested - checking conversation history for persistence")  # Commented out debug logs
                     
                     # Check if user has been persistent about wanting to talk to someone
                     persistent_escalation = self._check_persistent_escalation(conversation_history)
                     
                     if persistent_escalation:
-                        logger.info("👥 Persistent escalation detected - providing direct contact option")
+                        # logger.info("👥 Persistent escalation detected - providing direct contact option")  # Commented out debug logs
                         # Provide direct escalation response
                         search_results = []
                         best_result = None
                         context = "User has been persistent about wanting to talk to a live person/admin. Provide the Facebook Messenger contact link immediately."
                     else:
-                        logger.info("👥 First escalation request - using helpful approach first")
+                        # logger.info("👥 First escalation request - using helpful approach first")  # Commented out debug logs
                         # Use helpful approach for first request
                         search_results = []
                         best_result = None
@@ -340,7 +343,7 @@ class ChatBot:
                     # 3. Perform traditional database search to get context for Groq
                     intent_name = nlu_result.intent.name.lower() if nlu_result and nlu_result.intent else None
                     search_results = self.database_search.search_prompts(query, limit=10, intent=intent_name)
-                    logger.info(f"🔍 Traditional search found {len(search_results)} results")
+                    # logger.info(f"🔍 Traditional search found {len(search_results)  # Commented out debug logs} results")
                     
                     # 4. Use context-aware NLU to determine if we should use database results
                     context_analysis = self.context_aware_nlu.analyze_context_usage(
@@ -350,30 +353,31 @@ class ChatBot:
                     
                     best_result = None
                     if context_analysis.should_use_context and search_results:
-                        logger.info("🎯 Context-aware NLU: Using database results")
-                        logger.info(f"🎯 Reasoning: {context_analysis.reasoning}")
+                        # logger.info("🎯 Context-aware NLU: Using database results")  # Commented out debug logs
+                        # logger.info(f"🎯 Reasoning: {context_analysis.reasoning}")  # Commented out debug logs
                         best_result = search_results[0]
-                        logger.info(f"🏆 Using top-ranked result: {best_result.get('keywords', 'No keywords') if best_result else 'None'}")
+                        # logger.info(f"🏆 Using top-ranked result: {best_result.get('keywords', 'No keywords') if best_result else 'None'}")  # Commented out debug logs
                     else:
-                        logger.info("🎯 Context-aware NLU: Not using database results")
-                        logger.info(f"🎯 Reasoning: {context_analysis.reasoning}")
-                        logger.info(f"🎯 Fallback suggestions: {context_analysis.fallback_suggestions}")
+                        # logger.info("🎯 Context-aware NLU: Not using database results")  # Commented out debug logs
+                        # logger.info(f"🎯 Reasoning: {context_analysis.reasoning}")  # Commented out debug logs
+                        # logger.info(f"🎯 Fallback suggestions: {context_analysis.fallback_suggestions}")  # Commented out debug logs
+                        pass
             
             # 5. Generate response using Groq with context-aware analysis
             if best_result and context_analysis.should_use_context:
-                logger.info("📚 Using database context for Groq response")
+                # logger.info("📚 Using database context for Groq response")  # Commented out debug logs
                 # Provide complete database information as context
                 if isinstance(best_result, dict):
                     keywords = best_result.get('keywords', '')
                     response = best_result.get('response', '')
                     context = f"Database Information: {keywords} - {response}"
-                    logger.info(f"📚 Context built: {context[:100]}...")
+                    # logger.info(f"📚 Context built: {context[:100]}...")  # Commented out debug logs
                 else:
                     logger.warning(f"⚠️ Best result is not a dict: {type(best_result)} - {best_result}")
                     context = f"Database Information: {best_result}"
             else:
                 # Context-aware NLU determined not to use database context
-                logger.info("🎯 Context-aware NLU: Not using database context")
+                # logger.info("🎯 Context-aware NLU: Not using database context")  # Commented out debug logs
                 context = "No specific information available in database for this query"
             
             # Add personalized memory context
@@ -381,14 +385,14 @@ class ChatBot:
                 memory_context = self.conversation_memory.get_conversation_context(session_id, user_name)
                 if memory_context:
                     context += f"\n\nPersonal Context: {memory_context}"
-                    logger.info(f"🧠 Added memory context: {memory_context}")
+                    # logger.info(f"🧠 Added memory context: {memory_context}")  # Commented out debug logs
                 
                 # Check if this is a greeting/returning user
                 if any(word in query.lower() for word in ["hi", "hello", "hey", "kumusta", "kamusta"]):
                     personalized_greeting = self.conversation_memory.get_personalized_greeting(session_id, user_name)
                     if personalized_greeting:
                         context += f"\n\nPersonalized Greeting: {personalized_greeting}"
-                        logger.info(f"👋 Added personalized greeting: {personalized_greeting}")
+                        # logger.info(f"👋 Added personalized greeting: {personalized_greeting}")  # Commented out debug logs
             
             # Get NLU info for better context (already analyzed above)
             nlu_info = {
@@ -401,32 +405,32 @@ class ChatBot:
             is_gibberish = self._detect_gibberish_input(query, nlu_result, entities, detected_lang, confidence)
             
             if is_gibberish:
-                logger.info("🚫 Obvious gibberish detected - using fallback response")
+                # logger.info("🚫 Obvious gibberish detected - using fallback response")  # Commented out debug logs
                 return await self._create_fallback_response(query, detected_lang, confidence, session_id)
             
             # 🚨 FIX: Handle name introductions and greeting with name even without database context
             if nlu_result and nlu_result.intent.value in ['name_introduction', 'greeting_with_name']:
-                logger.info(f"👋 {nlu_result.intent.value} detected - handling with Groq even without database context")
+                # logger.info(f"👋 {nlu_result.intent.value} detected - handling with Groq even without database context")  # Commented out debug logs
                 # For name introductions, we don't need database context
                 context = "User is introducing themselves with their name"
             elif nlu_result and nlu_result.intent.value == 'emotional_expression':
-                logger.info(f"😊 {nlu_result.intent.value} detected - handling emotional expression")
+                # logger.info(f"😊 {nlu_result.intent.value} detected - handling emotional expression")  # Commented out debug logs
                 # For emotional expressions, provide empathetic response
                 context = "User is expressing their emotional state"
             elif nlu_result and nlu_result.intent.value == 'appreciation':
-                logger.info(f"🙏 {nlu_result.intent.value} detected - handling appreciation/thanks")
+                # logger.info(f"🙏 {nlu_result.intent.value} detected - handling appreciation/thanks")  # Commented out debug logs
                 # For appreciation/thanks, provide friendly acknowledgment
                 context = "User is expressing appreciation or thanks"
             elif nlu_result and nlu_result.intent.value == 'greeting_simple':
-                logger.info(f"👋 {nlu_result.intent.value} detected - handling simple greeting")
+                # logger.info(f"👋 {nlu_result.intent.value} detected - handling simple greeting")  # Commented out debug logs
                 # For simple greetings, provide friendly response
                 context = "User is giving a simple greeting"
             elif nlu_result and nlu_result.intent.value == 'medical_emergency':
-                logger.info(f"🚨 {nlu_result.intent.value} detected - handling medical emergency")
+                # logger.info(f"🚨 {nlu_result.intent.value} detected - handling medical emergency")  # Commented out debug logs
                 # For medical emergencies, provide immediate emergency response
                 context = "MEDICAL EMERGENCY DETECTED - User is experiencing a medical emergency requiring immediate attention"
             elif nlu_result and nlu_result.intent.value == 'contact_escalation':
-                logger.info(f"👥 {nlu_result.intent.value} detected - using helpful approach first")
+                # logger.info(f"👥 {nlu_result.intent.value} detected - using helpful approach first")  # Commented out debug logs
                 # For contact escalation, use helpful approach: ask about other school topics first
                 context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
             # Remove the old fallback logic - let Groq handle all cases intelligently
@@ -459,13 +463,13 @@ class ChatBot:
             
             # Apply context-aware translation if needed
             if detected_lang != "en" and confidence < 0.8:
-                logger.info("🌐 Applying context-aware translation")
+                # logger.info("🌐 Applying context-aware translation")  # Commented out debug logs
                 translated_response, translation_confidence = self.context_translator.translate_with_context(
                     response_text, detected_lang, conversation_history, session_id
                 )
                 if translation_confidence > 0.7:
                     response_text = translated_response
-                    logger.info(f"🌐 Context-aware translation applied (confidence: {translation_confidence:.2f})")
+                    # logger.info(f"🌐 Context-aware translation applied (confidence: {translation_confidence:.2f})  # Commented out debug logs")
             
             # 6. Split long responses if needed
             split_messages = self.response_generator.split_long_response(response_text)
@@ -486,7 +490,7 @@ class ChatBot:
             try:
                 keyword_response = self.keyword_matcher.find_match(query, detected_lang if 'detected_lang' in locals() else "en")
                 if keyword_response:
-                    logger.info("🔄 Using keyword fallback due to error")
+                    # logger.info("🔄 Using keyword fallback due to error")  # Commented out debug logs
                     return self._create_response(keyword_response, entities if 'entities' in locals() else [], detected_lang if 'detected_lang' in locals() else "en", confidence if 'confidence' in locals() else 0.5)
             except:
                 pass
@@ -660,12 +664,12 @@ class ChatBot:
         
         # If NLU has high confidence, trust it (especially for Tagalog/Aklanon)
         if nlu_result and nlu_result.confidence > 0.4:
-            logger.info(f"✅ NLU has high confidence {nlu_result.confidence:.3f} - not gibberish")
+            # logger.info(f"✅ NLU has high confidence {nlu_result.confidence:.3f} - not gibberish")  # Commented out debug logs
             return False
         
         # If language detection is confident for Tagalog/Aklanon, don't flag as gibberish
         if detected_lang in ['tl', 'akl'] and confidence > 0.7:
-            logger.info(f"✅ High confidence {detected_lang} detection ({confidence:.3f}) - not gibberish")
+            # logger.info(f"✅ High confidence {detected_lang} detection ({confidence:.3f})  # Commented out debug logs - not gibberish")
             return False
         
         # Check for obvious gibberish patterns first, regardless of NLU confidence
@@ -673,7 +677,7 @@ class ChatBot:
             # Check if it's mostly the same few characters repeated
             unique_chars = len(set(query_lower))
             if unique_chars <= 6 and len(query) > 8:  # Too few unique characters
-                logger.info(f"🔍 Gibberish detected: too few unique characters ({unique_chars}) in '{query}'")
+                # logger.info(f"🔍 Gibberish detected: too few unique characters ({unique_chars})  # Commented out debug logs in '{query}'")
                 return True
         
         # Check for random character sequences (but be more lenient for Filipino languages)
@@ -694,7 +698,7 @@ class ChatBot:
             # Be more lenient for Filipino languages (Tagalog/Aklanon have more consonant clusters)
             threshold = 5 if detected_lang in ['tl', 'akl'] else 4
             if max_consecutive >= threshold:
-                logger.info(f"🔍 Gibberish detected: {max_consecutive} consecutive consonants in '{query}'")
+                # logger.info(f"🔍 Gibberish detected: {max_consecutive} consecutive consonants in '{query}'")  # Commented out debug logs
                 return True
         
         # Check for patterns that are clearly not human language
@@ -706,16 +710,16 @@ class ChatBot:
         
         for pattern in obvious_gibberish_patterns:
             if pattern in query_lower:
-                logger.info(f"🔍 Obvious gibberish pattern detected: '{pattern}'")
+                # logger.info(f"🔍 Obvious gibberish pattern detected: '{pattern}'")  # Commented out debug logs
                 return True
         
         # Only trust NLU if it has high confidence AND the input looks reasonable
         if nlu_result and nlu_result.confidence > 0.3:  # Higher threshold
-            logger.info(f"✅ NLU has high confidence {nlu_result.confidence:.3f} - not gibberish")
+            # logger.info(f"✅ NLU has high confidence {nlu_result.confidence:.3f} - not gibberish")  # Commented out debug logs
             return False
         
         # If we get here, it's not gibberish - let Groq handle it with NLP/NLU
-        logger.info("✅ Input passed gibberish detection - using Groq with NLP/NLU processing")
+        # logger.info("✅ Input passed gibberish detection - using Groq with NLP/NLU processing")  # Commented out debug logs
         return False
     
     def _handle_emergency_response(self, query: str, response_lang: str) -> ChatResponse:

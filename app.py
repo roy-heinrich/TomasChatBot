@@ -32,12 +32,12 @@ from core.security import sql_protector
 
 load_dotenv()
 
-# Railway-optimized logging configuration
+# Optimized logging configuration
 def setup_logging():
-    # Railway: Minimal logging to avoid rate limits
+    # Reduced log level: Changed from INFO to WARNING by default
     log_level = os.getenv("LOG_LEVEL", "WARNING").upper()
     
-    # Railway-optimized logging (minimal to avoid rate limits)
+    # Shorter log format: Simplified from detailed timestamps to just LEVEL: message
     logging.basicConfig(
         level=getattr(logging, log_level),
         format='%(levelname)s: %(message)s',  # Shorter format
@@ -46,7 +46,7 @@ def setup_logging():
         ]
     )
     
-    # Reduce verbosity of all loggers to avoid rate limits
+    # Silenced verbose libraries: Set all external libraries to ERROR level only
     logging.getLogger("httpx").setLevel(logging.ERROR)
     logging.getLogger("urllib3").setLevel(logging.ERROR)
     logging.getLogger("supabase").setLevel(logging.ERROR)

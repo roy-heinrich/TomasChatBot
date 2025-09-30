@@ -227,13 +227,14 @@ class HuggingFaceProvider(AIProvider):
             except Exception as e:
                 logger.warning(f"⚠️ Hugging Face model {model} error: {e}")
             
-            # If all models failed, return a simple response
-            logger.info("🔄 All Hugging Face models failed, using enhanced fallback response")
+            # If all models failed, return failure to allow fallback to other providers
+            logger.warning("🔄 All Hugging Face models failed, allowing fallback to other providers")
             return AIResponse(
-                content=self._generate_simple_response(prompt),
+                content="",
                 provider="huggingface",
                 model="fallback",
-                success=True
+                success=False,
+                error="All Hugging Face models failed"
             )
                 
         except Exception as e:
@@ -376,7 +377,7 @@ class MultiProviderAI:
         """Initialize all available providers"""
         import os
         
-        # Initialize providers in order of preference
+        # Initialize providers in order of preference: Groq → Cohere → HuggingFace → Local AI
         providers_config = [
             {
                 "class": GroqProvider,
@@ -384,14 +385,14 @@ class MultiProviderAI:
                 "model": "llama-3.1-8b-instant"
             },
             {
-                "class": HuggingFaceProvider,
-                "api_key": os.environ.get("HUGGINGFACE_API_KEY"),  # Optional
-                "model": "deepseek-ai/DeepSeek-V3-0324"
-            },
-            {
                 "class": CohereProvider,
                 "api_key": os.environ.get("COHERE_API_KEY"),
                 "model": "command-a-03-2025"
+            },
+            {
+                "class": HuggingFaceProvider,
+                "api_key": os.environ.get("HUGGINGFACE_API_KEY"),  # Optional
+                "model": "deepseek-ai/DeepSeek-V3-0324"
             }
         ]
         
