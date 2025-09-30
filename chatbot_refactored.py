@@ -19,6 +19,7 @@ from core.language_detector import LanguageDetector
 from core.response_generator import ResponseGenerator
 from core.keyword_matcher import KeywordMatcher
 from core.conversation_memory import ConversationMemory
+from core.context_aware_nlu import ContextAwareNLU
 # ML enhancements removed - they cause hallucinations
 
 # Import existing modules
@@ -63,6 +64,9 @@ class ChatBot:
         
         # Initialize conversation memory
         self.conversation_memory = ConversationMemory()
+        
+        # Initialize context-aware NLU
+        self.context_aware_nlu = ContextAwareNLU()
         
         # Initialize context-aware translation
         from core.context_translator import ContextTranslator
@@ -338,31 +342,38 @@ class ChatBot:
                     search_results = self.database_search.search_prompts(query, limit=10, intent=intent_name)
                     logger.info(f"🔍 Traditional search found {len(search_results)} results")
                     
-                    # 4. Use database search results directly (already properly ranked)
+                    # 4. Use context-aware NLU to determine if we should use database results
+                    context_analysis = self.context_aware_nlu.analyze_context_usage(
+                        query, search_results, 
+                        intent_name, entities
+                    )
+                    
                     best_result = None
-                    if search_results:
-                        logger.info("🎯 Using database search results (already properly ranked)")
-                        # The database search has already applied intent-based ranking
-                        # Just use the first result (highest ranked)
+                    if context_analysis.should_use_context and search_results:
+                        logger.info("🎯 Context-aware NLU: Using database results")
+                        logger.info(f"🎯 Reasoning: {context_analysis.reasoning}")
                         best_result = search_results[0]
-                        logger.info(f"🏆 Using top-ranked result: {best_result['keywords'] if best_result else 'None'}")
+                        logger.info(f"🏆 Using top-ranked result: {best_result.get('keywords', 'No keywords') if best_result else 'None'}")
                     else:
-                        logger.info("❌ No search results found")
+                        logger.info("🎯 Context-aware NLU: Not using database results")
+                        logger.info(f"🎯 Reasoning: {context_analysis.reasoning}")
+                        logger.info(f"🎯 Fallback suggestions: {context_analysis.fallback_suggestions}")
             
-            # 5. Generate response using Groq with enhanced context
-            if best_result:
+            # 5. Generate response using Groq with context-aware analysis
+            if best_result and context_analysis.should_use_context:
                 logger.info("📚 Using database context for Groq response")
                 # Provide complete database information as context
                 if isinstance(best_result, dict):
                     keywords = best_result.get('keywords', '')
                     response = best_result.get('response', '')
                     context = f"Database Information: {keywords} - {response}"
+                    logger.info(f"📚 Context built: {context[:100]}...")
                 else:
                     logger.warning(f"⚠️ Best result is not a dict: {type(best_result)} - {best_result}")
                     context = f"Database Information: {best_result}"
             else:
-                # No database context found - handle appropriately
-                logger.info("❌ No database context found")
+                # Context-aware NLU determined not to use database context
+                logger.info("🎯 Context-aware NLU: Not using database context")
                 context = "No specific information available in database for this query"
             
             # Add personalized memory context
@@ -427,8 +438,20 @@ class ChatBot:
                 'confidence': nlu_result.confidence if nlu_result else 0.0
             } if nlu_result else None
             
+            # Add context analysis to nlu_info if available
+            if 'context_analysis' in locals():
+                nlu_info_dict['context_analysis'] = {
+                    'should_use_context': context_analysis.should_use_context,
+                    'confidence_level': context_analysis.confidence_level.value,
+                    'reasoning': context_analysis.reasoning,
+                    'fallback_suggestions': context_analysis.fallback_suggestions
+                }
+            
+            # Extract context analysis from nlu_info if available
+            context_analysis = nlu_info_dict.get('context_analysis') if nlu_info_dict else None
+            
             response_text = await self.response_generator.generate_response(
-                query, context, response_lang, conversation_history, nlu_info_dict, user_name, entities, float(confidence)
+                query, context, response_lang, conversation_history, nlu_info_dict, user_name, entities, float(confidence), context_analysis
             )
             
             # ML enhancement removed - it causes hallucinations
