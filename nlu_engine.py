@@ -240,41 +240,275 @@ class NLUEngine:
         except Exception as e:
             logger.warning(f"Semantic similarity calculation failed: {e}")
             return 0.0
+    
+    async def _detect_emergency_with_context(self, user_input: str, user_lower: str) -> Optional[NLUResult]:
+        """
+        Enhanced emergency detection with NLP context analysis to avoid false positives
+        """
+        try:
+            # Step 1: Check for humor/sarcasm indicators first (highest priority)
+            humor_indicators = await self._detect_humor_context(user_input, user_lower)
+            if humor_indicators['is_humor']:
+                logger.info(f"😄 Humor detected: {humor_indicators['reason']} - NOT an emergency")
+                return None
+            
+            # Step 2: Check for emotional context (jokes, expressions, metaphors)
+            emotional_context = await self._analyze_emotional_context(user_input, user_lower)
+            if emotional_context['is_expression']:
+                logger.info(f"💭 Emotional expression detected: {emotional_context['reason']} - NOT an emergency")
+                return None
+            
+            # Step 3: Check for serious emergency indicators with context
+            emergency_indicators = await self._detect_serious_emergency_indicators(user_input, user_lower)
+            if emergency_indicators['is_emergency']:
+                logger.warning(f"🚨 REAL EMERGENCY DETECTED: {emergency_indicators['reason']}")
+                return NLUResult(Intent.EMERGENCY, 0.95, [])
+            
+            # Step 4: Check for standalone medical terms (likely not emergencies)
+            standalone_medical = self._check_standalone_medical_terms(user_lower)
+            if standalone_medical['is_standalone']:
+                logger.info(f"ℹ️ Standalone medical term: {standalone_medical['reason']} - NOT emergency")
+                return None
+            
+            # Step 5: Fallback to original keyword detection (but with lower confidence)
+            fallback_emergency = self._fallback_emergency_detection(user_lower)
+            if fallback_emergency:
+                logger.warning(f"🚨 FALLBACK EMERGENCY DETECTED: {fallback_emergency}")
+                return NLUResult(Intent.EMERGENCY, 0.7, [])  # Lower confidence for fallback
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Emergency detection failed: {e}")
+            # Fallback to original simple detection
+            return self._fallback_emergency_detection(user_lower)
+    
+    async def _detect_humor_context(self, user_input: str, user_lower: str) -> Dict:
+        """
+        Detect humor, sarcasm, and non-literal language using NLP patterns
+        """
+        humor_indicators = {
+            'is_humor': False,
+            'reason': '',
+            'confidence': 0.0
+        }
+        
+        # Strong humor indicators (high confidence)
+        strong_humor_patterns = [
+            r'\b(haha|hehe|hihi|lol|lmao|rofl|funny|joke|joking|kidding|just kidding)\b',
+            r'\b(thought|thinking|gonna|going to|almost|nearly|close call)\b',
+            r'\b(you made me|you gave me|you almost|you nearly)\b',
+            r'\b(that was|that\'s|this is)\s+(funny|hilarious|amusing|comical)\b',
+            r'\b(not serious|not really|just saying|just messing)\b'
+        ]
+        
+        for pattern in strong_humor_patterns:
+            if re.search(pattern, user_lower):
+                humor_indicators['is_humor'] = True
+                humor_indicators['reason'] = f"Humor pattern: {pattern}"
+                humor_indicators['confidence'] = 0.9
+                return humor_indicators
+        
+        # Medium humor indicators
+        medium_humor_patterns = [
+            r'\b(almost|nearly|close|scared|worried|nervous)\b.*\b(heart|attack|stroke|emergency)\b',
+            r'\b(heart|attack|stroke|emergency)\b.*\b(almost|nearly|close|scared|worried|nervous)\b',
+            r'\b(you|that|this)\s+(almost|nearly|gave|made)\s+(me|us)\b',
+            r'\b(thought|thinking|was thinking|was worried)\b.*\b(you|that|this)\b'
+        ]
+        
+        for pattern in medium_humor_patterns:
+            if re.search(pattern, user_lower):
+                humor_indicators['is_humor'] = True
+                humor_indicators['reason'] = f"Contextual humor: {pattern}"
+                humor_indicators['confidence'] = 0.7
+                return humor_indicators
+        
+        # Check for laughter patterns
+        laughter_patterns = [r'ha{2,}', r'he{2,}', r'hi{2,}', r'lol+', r'rofl+']
+        for pattern in laughter_patterns:
+            if re.search(pattern, user_lower):
+                humor_indicators['is_humor'] = True
+                humor_indicators['reason'] = f"Laughter pattern: {pattern}"
+                humor_indicators['confidence'] = 0.8
+                return humor_indicators
+        
+        return humor_indicators
+    
+    async def _analyze_emotional_context(self, user_input: str, user_lower: str) -> Dict:
+        """
+        Analyze emotional context to distinguish between real distress and expressions
+        """
+        emotional_context = {
+            'is_expression': False,
+            'reason': '',
+            'confidence': 0.0
+        }
+        
+        # Expression patterns (not literal emergencies)
+        expression_patterns = [
+            r'\b(thought|thinking|was thinking|was worried|was scared)\b',
+            r'\b(you|that|this)\s+(almost|nearly|gave|made|caused)\s+(me|us)\s+(to|a)\b',
+            r'\b(heart|attack|stroke|emergency)\b.*\b(almost|nearly|close|scared|worried|nervous)\b',
+            r'\b(almost|nearly|close|scared|worried|nervous)\b.*\b(heart|attack|stroke|emergency)\b',
+            r'\b(you|that|this)\s+(are|were|will be)\s+(gonna|going to)\b',
+            r'\b(gonna|going to)\s+(give|cause|make)\s+(me|us)\b',
+            r'\b(thought|thinking|about)\b.*\b(heart|attack|stroke|emergency)\b',
+            r'\b(heart|attack|stroke|emergency)\b.*\b(symptoms|about|information|what is|tell me|explain)\b'
+        ]
+        
+        for pattern in expression_patterns:
+            if re.search(pattern, user_lower):
+                emotional_context['is_expression'] = True
+                emotional_context['reason'] = f"Expression pattern: {pattern}"
+                emotional_context['confidence'] = 0.8
+                return emotional_context
+        
+        # Check for metaphorical language
+        metaphorical_indicators = [
+            'thought', 'thinking', 'gonna', 'going to', 'almost', 'nearly',
+            'you made me', 'you gave me', 'you almost', 'you nearly'
+        ]
+        
+        metaphorical_count = sum(1 for indicator in metaphorical_indicators if indicator in user_lower)
+        if metaphorical_count >= 2:
+            emotional_context['is_expression'] = True
+            emotional_context['reason'] = f"Multiple metaphorical indicators: {metaphorical_count}"
+            emotional_context['confidence'] = 0.7
+            return emotional_context
+        
+        # Check for informational context patterns
+        info_patterns = [
+            r'\b(about|symptoms|information|what is|tell me|explain)\b.*\b(heart|attack|stroke|emergency)\b',
+            r'\b(heart|attack|stroke|emergency)\b.*\b(about|symptoms|information|what is|tell me|explain)\b',
+            r'\b(thought|thinking)\s+(about|of)\b',
+            r'\b(what|how|when|where|why)\b.*\b(heart|attack|stroke|emergency)\b'
+        ]
+        
+        for pattern in info_patterns:
+            if re.search(pattern, user_lower):
+                emotional_context['is_expression'] = True
+                emotional_context['reason'] = f"Informational pattern: {pattern}"
+                emotional_context['confidence'] = 0.8
+                return emotional_context
+        
+        return emotional_context
+    
+    def _check_standalone_medical_terms(self, user_lower: str) -> Dict:
+        """
+        Check if medical terms appear without urgent context (likely not emergencies)
+        """
+        standalone_result = {
+            'is_standalone': False,
+            'reason': '',
+            'confidence': 0.0
+        }
+        
+        # Medical terms that need urgent context to be emergencies
+        medical_terms = ['heart attack', 'stroke', 'cardiac arrest', 'chest pain']
+        
+        for term in medical_terms:
+            if term in user_lower:
+                # Check for urgent context indicators
+                urgent_indicators = ['help', 'emergency', 'ambulance', '911', 'call', 'now', 'immediately', 'urgent', 'dying', 'can\'t breathe']
+                has_urgent_context = any(indicator in user_lower for indicator in urgent_indicators)
+                
+                if not has_urgent_context:
+                    standalone_result['is_standalone'] = True
+                    standalone_result['reason'] = f"Medical term '{term}' without urgent context"
+                    standalone_result['confidence'] = 0.8
+                    return standalone_result
+        
+        return standalone_result
+    
+    async def _detect_serious_emergency_indicators(self, user_input: str, user_lower: str) -> Dict:
+        """
+        Detect serious emergency indicators with high confidence
+        """
+        emergency_indicators = {
+            'is_emergency': False,
+            'reason': '',
+            'confidence': 0.0
+        }
+        
+        # High-confidence emergency patterns
+        serious_emergency_patterns = [
+            r'\b(help|emergency|ambulance|911|call|now|immediately|urgent)\b',
+            r'\b(can\'t breathe|can\'t breath|shortness of breath|unconscious|bleeding)\b',
+            r'\b(chest pain|severe pain|severe injury|accident|hurt badly)\b',
+            r'\b(medical emergency|need help|urgent|critical|life threatening)\b',
+            r'\b(dying|cardiac arrest|stroke|heart attack)\b.*\b(now|immediately|help|emergency)\b',
+            r'\b(now|immediately|help|emergency)\b.*\b(dying|cardiac arrest|stroke|heart attack)\b'
+        ]
+        
+        for pattern in serious_emergency_patterns:
+            if re.search(pattern, user_lower):
+                emergency_indicators['is_emergency'] = True
+                emergency_indicators['reason'] = f"Serious emergency pattern: {pattern}"
+                emergency_indicators['confidence'] = 0.95
+                return emergency_indicators
+        
+        # Check for urgent action words combined with medical terms
+        urgent_words = ['help', 'emergency', 'ambulance', '911', 'call', 'now', 'immediately', 'urgent']
+        medical_words = ['heart attack', 'stroke', 'dying', 'bleeding', 'unconscious', 'can\'t breathe']
+        
+        urgent_count = sum(1 for word in urgent_words if word in user_lower)
+        medical_count = sum(1 for word in medical_words if word in user_lower)
+        
+        if urgent_count >= 1 and medical_count >= 1:
+            emergency_indicators['is_emergency'] = True
+            emergency_indicators['reason'] = f"Urgent + medical terms: {urgent_count} urgent, {medical_count} medical"
+            emergency_indicators['confidence'] = 0.9
+            return emergency_indicators
+        
+        return emergency_indicators
+    
+    def _fallback_emergency_detection(self, user_lower: str) -> Optional[NLUResult]:
+        """
+        Fallback emergency detection using original keyword matching (lower confidence)
+        Only triggers for high-confidence emergency scenarios
+        """
+        # Only check for high-confidence emergency keywords (not just medical terms)
+        high_confidence_emergency_keywords = [
+            'help me', 'emergency', 'ambulance', '911', 'call 911',
+            'can\'t breathe', 'unconscious', 'bleeding', 'severe pain',
+            'medical emergency', 'need help', 'urgent', 'critical', 'life threatening'
+        ]
+        
+        # Check for high-confidence emergency patterns
+        for keyword in high_confidence_emergency_keywords:
+            if keyword in user_lower:
+                logger.warning(f"🚨 FALLBACK EMERGENCY DETECTED: '{keyword}'")
+                return NLUResult(Intent.EMERGENCY, 0.7, [])  # Lower confidence for fallback
+        
+        # For medical terms without urgent context, don't flag as emergency
+        # This prevents false positives for informational queries
+        medical_terms = ['heart attack', 'stroke', 'cardiac arrest', 'chest pain']
+        for term in medical_terms:
+            if term in user_lower:
+                # Check if it's in an informational context
+                info_contexts = ['symptoms', 'about', 'what is', 'information', 'tell me about', 'explain']
+                if any(context in user_lower for context in info_contexts):
+                    logger.info(f"ℹ️ Medical term '{term}' in informational context - NOT emergency")
+                    return None
+                # If no urgent context, don't flag as emergency
+                logger.info(f"ℹ️ Medical term '{term}' without urgent context - NOT emergency")
+                return None
+        
+        return None
         
     async def analyze_intent(self, user_input: str, context: Dict = None) -> NLUResult:
         """
         Analyze user input to determine intent and extract entities using advanced NLP
         """
         
-        # FIRST PRIORITY: Check for medical emergencies (CRITICAL SAFETY)
+        # FIRST PRIORITY: Check for medical emergencies with context awareness (CRITICAL SAFETY)
         user_lower = user_input.lower()
         
-        # Medical emergency keywords (highest priority - overrides everything)
-        emergency_keywords = [
-            'heart attack', 'heartattack', 'heart-attack', 'cardiac arrest', 'stroke',
-            'emergency', 'ambulance', '911', 'help me', 'dying', 'can\'t breathe',
-            'chest pain', 'chestpain', 'shortness of breath', 'unconscious',
-            'bleeding', 'severe pain', 'severe injury', 'accident', 'hurt badly',
-            'medical emergency', 'need help', 'urgent', 'critical', 'life threatening'
-        ]
-        
-        # Check for emergency patterns
-        for keyword in emergency_keywords:
-            if keyword in user_lower:
-                logger.warning(f"🚨 MEDICAL EMERGENCY DETECTED: '{keyword}' in '{user_input}'")
-                return NLUResult(Intent.EMERGENCY, 1.0, [])
-        
-        # Check for emergency patterns in different languages
-        emergency_patterns = [
-            r'\b(heart|cardiac|stroke|emergency|ambulance|911|help|dying|bleeding|hurt|pain|accident)\b',
-            r'\b(emergency|urgent|critical|life|threatening|medical)\b',
-            r'\b(can\'t breathe|can\'t breath|shortness|chest|unconscious)\b'
-        ]
-        
-        for pattern in emergency_patterns:
-            if re.search(pattern, user_lower):
-                logger.warning(f"🚨 EMERGENCY PATTERN DETECTED: '{pattern}' in '{user_input}'")
-                return NLUResult(Intent.EMERGENCY, 1.0, [])
+        # Enhanced emergency detection with NLP context analysis
+        emergency_result = await self._detect_emergency_with_context(user_input, user_lower)
+        if emergency_result:
+            return emergency_result
         
         # Normalize common typos and variations
         normalized_input = user_lower
@@ -457,30 +691,7 @@ class NLUEngine:
         if staff_score > 0.6:
             return NLUResult(Intent.STAFF_INQUIRY, staff_score, [])
         
-        # 🚨 CRITICAL: Medical emergency detection (highest priority)
-        medical_emergency_patterns = [
-            # English medical emergencies
-            "heart attack", "stroke", "seizure", "choking", "bleeding", "unconscious",
-            "can't breathe", "chest pain", "severe pain", "medical emergency",
-            "need ambulance", "call 911", "emergency room", "hospital now",
-            "life threatening", "dying", "critical condition", "medical crisis",
-            "cardiac arrest", "respiratory distress", "severe injury", "trauma",
-            "allergic reaction", "anaphylaxis", "overdose", "poisoning",
-            
-            # Tagalog medical emergencies
-            "atake sa puso", "stroke", "nawalan ng malay", "hindi makahinga",
-            "sakit sa dibdib", "emergency medical", "kailangan ng ambulansya",
-            "tawagan ang 911", "emergency room", "ospital ngayon",
-            "nakamamatay", "nag-aagaw buhay", "kritikal na kondisyon",
-            "malubhang sakit", "malubhang sugat", "alergic reaction",
-            "sobrang sakit", "hindi na makahinga", "nagkakaroon ng seizure",
-            "nagkakaroon ng stroke", "atake sa puso", "cardiac arrest"
-        ]
-        
-        for pattern in medical_emergency_patterns:
-            if pattern in user_lower:
-                logger.info(f"🚨 MEDICAL EMERGENCY DETECTED: '{pattern}'")
-                return NLUResult(Intent.MEDICAL_EMERGENCY, 0.95, [])
+        # 🚨 REMOVED: Old emergency detection code replaced by context-aware detection above
         
         # Enhanced emotional expression detection for Tagalog/Aklanon
         emotional_patterns = [
