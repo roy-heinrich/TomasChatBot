@@ -32,33 +32,32 @@ from core.security import sql_protector
 
 load_dotenv()
 
-# Environment-based logging configuration
+# Railway-optimized logging configuration
 def setup_logging():
-    # Get log level from environment (default to INFO for production)
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    # Railway: Minimal logging to avoid rate limits
+    log_level = os.getenv("LOG_LEVEL", "WARNING").upper()
     
-    # Production-optimized logging
-    if os.getenv("ENVIRONMENT") == "production":
-        # Production: Less verbose, focus on errors and important events
-        logging.basicConfig(
-            level=getattr(logging, log_level),
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.StreamHandler(),  # Console output
-            ]
-        )
-        
-        # Reduce verbosity of specific loggers
-        logging.getLogger("httpx").setLevel(logging.WARNING)
-        logging.getLogger("urllib3").setLevel(logging.WARNING)
-        logging.getLogger("supabase").setLevel(logging.WARNING)
-        
-    else:
-        # Development: More verbose
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
+    # Railway-optimized logging (minimal to avoid rate limits)
+    logging.basicConfig(
+        level=getattr(logging, log_level),
+        format='%(levelname)s: %(message)s',  # Shorter format
+        handlers=[
+            logging.StreamHandler(),
+        ]
+    )
+    
+    # Reduce verbosity of all loggers to avoid rate limits
+    logging.getLogger("httpx").setLevel(logging.ERROR)
+    logging.getLogger("urllib3").setLevel(logging.ERROR)
+    logging.getLogger("supabase").setLevel(logging.ERROR)
+    logging.getLogger("groq").setLevel(logging.ERROR)
+    logging.getLogger("cohere").setLevel(logging.ERROR)
+    logging.getLogger("nltk").setLevel(logging.ERROR)
+    logging.getLogger("langid").setLevel(logging.ERROR)
+    logging.getLogger("textblob").setLevel(logging.ERROR)
+    logging.getLogger("sklearn").setLevel(logging.ERROR)
+    logging.getLogger("gensim").setLevel(logging.ERROR)
+    logging.getLogger("langdetect").setLevel(logging.ERROR)
 
 setup_logging()
 logger = logging.getLogger("chatbot")

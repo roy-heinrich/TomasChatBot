@@ -68,7 +68,7 @@ class ChatBot:
         from core.context_translator import ContextTranslator
         self.context_translator = ContextTranslator()
         
-        logger.info("✅ ChatBot initialized with clean, modular architecture")
+        # logger.info("✅ ChatBot initialized with clean, modular architecture")  # Reduced for Railway
     
     def _extract_user_name(self, conversation_history: List[Dict]) -> str:
         """Extract user name from conversation history using NLP entity extraction"""
@@ -78,28 +78,28 @@ class ChatBot:
                 continue
             if msg.get("role") == "user":
                 content = msg.get("content", "")
-                logger.info(f"🔍 Extracting name from: '{content}'")
+                # logger.info(f"🔍 Extracting name from: '{content}'")  # Reduced for Railway
                 
                 # Use the entity extractor to find PERSON entities
                 entities = self.entity_extractor.extract_entities(content)
-                logger.info(f"🔍 Found {len(entities)} entities")
+                # logger.info(f"🔍 Found {len(entities)} entities")  # Reduced for Railway
                 
                 # Look for PERSON entities that could be names
                 for entity in entities:
-                    logger.info(f"🔍 Entity: type='{entity.entity_type}', value='{entity.value}', confidence={entity.confidence}")
+                    # logger.info(f"🔍 Entity: type='{entity.entity_type}', value='{entity.value}', confidence={entity.confidence}")  # Reduced for Railway
                     if entity.entity_type in ["PERSON", "person_name"] and entity.confidence > 0.7:
                         # Clean up the name (remove punctuation, capitalize properly)
                         name = ''.join(c for c in entity.value if c.isalnum() or c.isspace()).strip()
                         if name and len(name) > 1 and len(name) < 50:  # Reasonable name length
-                            logger.info(f"🔍 Extracted name: '{name.title()}'")
+                            # logger.info(f"🔍 Extracted name: '{name.title()}'")  # Reduced for Railway
                             return name.title()
                 
                 # Use the NLU engine's NLP-based name extraction for better accuracy
                 extracted_name = self.nlu_engine._extract_name_using_nlp(content, "name_introduction")
                 if extracted_name:
-                    logger.info(f"🔍 NLU extracted name: '{extracted_name}'")
+                    # logger.info(f"🔍 NLU extracted name: '{extracted_name}'")  # Reduced for Railway
                     return extracted_name
-        logger.info("🔍 No name found in conversation history")
+        # logger.info("🔍 No name found in conversation history")  # Reduced for Railway
         return ""
     
     def _extract_child_name(self, conversation_history: List[Dict]) -> str:
@@ -202,18 +202,18 @@ class ChatBot:
                     lang_result = await multilingual_nlp.detect_language_semantic(query)
                     detected_lang = lang_result.language
                     confidence = lang_result.confidence
-                    logger.info(f"🌍 Multilingual NLP detected: {detected_lang} (confidence: {confidence:.2f})")
+                    # logger.info(f"🌍 Multilingual NLP detected: {detected_lang} (confidence: {confidence:.2f})")  # Reduced for Railway
                 else:
                     raise ImportError("Multilingual NLP not available")
             except Exception as e:
                 logger.warning(f"⚠️ Multilingual NLP language detection failed: {e}")
                 # Enhanced fallback language detection
                 detected_lang, confidence = self.language_detector.detect_language(query)
-                logger.info(f"🌍 Enhanced language detection: {detected_lang} (confidence: {confidence:.2f})")
+                # logger.info(f"🌍 Enhanced language detection: {detected_lang} (confidence: {confidence:.2f})")  # Reduced for Railway
             
             # Map detected language to response language
             response_lang = self._map_to_response_language(detected_lang)
-            logger.info(f"🌍 Language mapping: {detected_lang} → {response_lang}")
+            # logger.info(f"🌍 Language mapping: {detected_lang} → {response_lang}")  # Reduced for Railway
             
             # Check for mixed-language input
             if confidence < 0.7:
