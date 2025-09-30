@@ -240,7 +240,7 @@ class NLUEngine:
         except Exception as e:
             logger.warning(f"Semantic similarity calculation failed: {e}")
             return 0.0
-    
+        
     async def _detect_emergency_with_context(self, user_input: str, user_lower: str) -> Optional[NLUResult]:
         """
         Enhanced emergency detection with NLP context analysis to avoid false positives

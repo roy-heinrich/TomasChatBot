@@ -14,6 +14,7 @@ load_dotenv()
 
 # Import our clean modules
 from core.database_search import DatabaseSearchEngine
+from core.pgvector_semantic_search import PgVectorSemanticSearch
 from core.language_detector import LanguageDetector
 from core.response_generator import ResponseGenerator
 from core.keyword_matcher import KeywordMatcher
@@ -53,6 +54,9 @@ class ChatBot:
             raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set")
         
         self.database_search = DatabaseSearchEngine(supabase_url, supabase_key)
+        
+        # Initialize pgvector semantic search
+        self.semantic_search = PgVectorSemanticSearch(supabase_url, supabase_key)
         
         # Initialize NLP components
         self.nlu_engine = NLUEngine()
@@ -330,11 +334,17 @@ class ChatBot:
                         best_result = None
                         context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
                 else:
-                    # 3. Perform database search to get context for Groq
-                    # Pass NLU intent to guide search strategy
-                    intent_name = nlu_result.intent.name.lower() if nlu_result and nlu_result.intent else None
-                    search_results = self.database_search.search_prompts(query, limit=10, intent=intent_name)
-                    logger.info(f"🔍 Found {len(search_results)} search results")
+                    # 3. Perform semantic search to get context for Groq
+                    # Use pgvector semantic search for better accuracy
+                    try:
+                        search_results = await self.semantic_search.hybrid_search(query, limit=10)
+                        logger.info(f"🔍 Semantic search found {len(search_results)} results")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Semantic search failed, falling back to traditional: {e}")
+                        # Fallback to traditional search
+                        intent_name = nlu_result.intent.name.lower() if nlu_result and nlu_result.intent else None
+                        search_results = self.database_search.search_prompts(query, limit=10, intent=intent_name)
+                        logger.info(f"🔍 Traditional search found {len(search_results)} results")
                     
                     # 4. Use database search results directly (already properly ranked)
                     best_result = None
