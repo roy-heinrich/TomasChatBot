@@ -266,8 +266,8 @@ class ChatBot:
                 if conversation_history:
                     # Extract names from conversation history regardless of intent
                     # This ensures we capture names even in casual conversations
-                    extracted_user_name = self._extract_user_name(conversation_history)
-                    extracted_child_name = self._extract_child_name(conversation_history)
+                    extracted_user_name = self.conversation_memory.extract_user_name(conversation_history)
+                    extracted_child_name = self.conversation_memory.extract_child_name(conversation_history) if hasattr(self.conversation_memory, 'extract_child_name') else None
                     
                     if extracted_user_name:
                         user_name = extracted_user_name
@@ -281,8 +281,8 @@ class ChatBot:
                     # logger.info("🔍 No conversation history - trying to extract from current query")  # Commented out debug logs
                     # Create a temporary conversation history with current query
                     temp_history = [{"role": "user", "content": query}]
-                    extracted_user_name = self._extract_user_name(temp_history)
-                    extracted_child_name = self._extract_child_name(temp_history)
+                    extracted_user_name = self.conversation_memory.extract_user_name(temp_history)
+                    extracted_child_name = self.conversation_memory.extract_child_name(temp_history) if hasattr(self.conversation_memory, 'extract_child_name') else None
                     
                     if extracted_user_name:
                         user_name = extracted_user_name
@@ -365,20 +365,23 @@ class ChatBot:
             
             # 5. Generate response using Groq with context-aware analysis
             if best_result and context_analysis.should_use_context:
-                # logger.info("📚 Using database context for Groq response")  # Commented out debug logs
+                logger.info("📚 Using database context for Groq response")
                 # Provide complete database information as context
                 if isinstance(best_result, dict):
                     keywords = best_result.get('keywords', '')
                     response = best_result.get('response', '')
                     context = f"Database Information: {keywords} - {response}"
-                    # logger.info(f"📚 Context built: {context[:100]}...")  # Commented out debug logs
+                    logger.info(f"📚 Context built: {context[:100]}...")
                 else:
                     logger.warning(f"⚠️ Best result is not a dict: {type(best_result)} - {best_result}")
                     context = f"Database Information: {best_result}"
             else:
                 # Context-aware NLU determined not to use database context
-                # logger.info("🎯 Context-aware NLU: Not using database context")  # Commented out debug logs
+                logger.info("🎯 Context-aware NLU: Not using database context")
                 context = "No specific information available in database for this query"
+            
+            # Debug: Log the final context before sending to AI
+            logger.info(f"🔍 FINAL CONTEXT: {context[:200]}...")
             
             # Add personalized memory context
             if session_id:
@@ -401,39 +404,37 @@ class ChatBot:
                 'entities': [(e.entity_type, e.value) for e in entities]
             }
             
-            # 🚨 CRITICAL FIX: Only catch obvious gibberish - let NLP/NLU handle everything else
-            is_gibberish = self._detect_gibberish_input(query, nlu_result, entities, detected_lang, confidence)
-            
-            if is_gibberish:
-                # logger.info("🚫 Obvious gibberish detected - using fallback response")  # Commented out debug logs
-                return await self._create_fallback_response(query, detected_lang, confidence, session_id)
+            # 🚨 CRITICAL FIX: Removed ML-based gibberish detection since we stripped ML dependencies
+            # Let the Context-Aware NLU and database search handle everything
             
             # 🚨 FIX: Handle name introductions and greeting with name even without database context
-            if nlu_result and nlu_result.intent.value in ['name_introduction', 'greeting_with_name']:
-                # logger.info(f"👋 {nlu_result.intent.value} detected - handling with Groq even without database context")  # Commented out debug logs
-                # For name introductions, we don't need database context
-                context = "User is introducing themselves with their name"
-            elif nlu_result and nlu_result.intent.value == 'emotional_expression':
-                # logger.info(f"😊 {nlu_result.intent.value} detected - handling emotional expression")  # Commented out debug logs
-                # For emotional expressions, provide empathetic response
-                context = "User is expressing their emotional state"
-            elif nlu_result and nlu_result.intent.value == 'appreciation':
-                # logger.info(f"🙏 {nlu_result.intent.value} detected - handling appreciation/thanks")  # Commented out debug logs
-                # For appreciation/thanks, provide friendly acknowledgment
-                context = "User is expressing appreciation or thanks"
-            elif nlu_result and nlu_result.intent.value == 'greeting_simple':
-                # logger.info(f"👋 {nlu_result.intent.value} detected - handling simple greeting")  # Commented out debug logs
-                # For simple greetings, provide friendly response
-                context = "User is giving a simple greeting"
-            elif nlu_result and nlu_result.intent.value == 'medical_emergency':
-                # logger.info(f"🚨 {nlu_result.intent.value} detected - handling medical emergency")  # Commented out debug logs
-                # For medical emergencies, provide immediate emergency response
-                context = "MEDICAL EMERGENCY DETECTED - User is experiencing a medical emergency requiring immediate attention"
-            elif nlu_result and nlu_result.intent.value == 'contact_escalation':
-                # logger.info(f"👥 {nlu_result.intent.value} detected - using helpful approach first")  # Commented out debug logs
-                # For contact escalation, use helpful approach: ask about other school topics first
-                context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
-            # Remove the old fallback logic - let Groq handle all cases intelligently
+            # BUT ONLY if we don't have database context already
+            if not (best_result and context_analysis.should_use_context):
+                if nlu_result and nlu_result.intent.value in ['name_introduction', 'greeting_with_name']:
+                    # logger.info(f"👋 {nlu_result.intent.value} detected - handling with Groq even without database context")  # Commented out debug logs
+                    # For name introductions, we don't need database context
+                    context = "User is introducing themselves with their name"
+                elif nlu_result and nlu_result.intent.value == 'emotional_expression':
+                    # logger.info(f"😊 {nlu_result.intent.value} detected - handling emotional expression")  # Commented out debug logs
+                    # For emotional expressions, provide empathetic response
+                    context = "User is expressing their emotional state"
+                elif nlu_result and nlu_result.intent.value == 'appreciation':
+                    # logger.info(f"🙏 {nlu_result.intent.value} detected - handling appreciation/thanks")  # Commented out debug logs
+                    # For appreciation/thanks, provide friendly acknowledgment
+                    context = "User is expressing appreciation or thanks"
+                elif nlu_result and nlu_result.intent.value == 'greeting_simple':
+                    # logger.info(f"👋 {nlu_result.intent.value} detected - handling simple greeting")  # Commented out debug logs
+                    # For simple greetings, provide friendly response
+                    context = "User is giving a simple greeting"
+                elif nlu_result and nlu_result.intent.value == 'medical_emergency':
+                    # logger.info(f"🚨 {nlu_result.intent.value} detected - handling medical emergency")  # Commented out debug logs
+                    # For medical emergencies, provide immediate emergency response
+                    context = "MEDICAL EMERGENCY DETECTED - User is experiencing a medical emergency requiring immediate attention"
+                elif nlu_result and nlu_result.intent.value == 'contact_escalation':
+                    # logger.info(f"👥 {nlu_result.intent.value} detected - using helpful approach first")  # Commented out debug logs
+                    # For contact escalation, use helpful approach: ask about other school topics first
+                    context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
+                # Remove the old fallback logic - let Groq handle all cases intelligently
             
             # Generate response with Groq (professional, factual, humane, jolly, no roleplay)
             # Pass enhanced NLP/NLU information for better response generation

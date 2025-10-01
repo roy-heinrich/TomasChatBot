@@ -43,14 +43,16 @@ class ConversationMemory:
                 return None
             
             # Look for name patterns in recent messages
+            # 🎯 FIX: Made name patterns much more specific to avoid false positives
             name_patterns = [
                 r"my name is (\w+)",
                 r"i'm (\w+)",
                 r"i am (\w+)",
                 r"call me (\w+)",
-                r"i'm (\w+)",
                 r"this is (\w+)",
-                r"(\w+) here"
+                # Only match if it's clearly a name introduction with proper context
+                r"hello,?\s+(\w+)\s+here",
+                r"hi,?\s+(\w+)\s+here"
             ]
             
             import re
@@ -62,7 +64,24 @@ class ConversationMemory:
                             match = re.search(pattern, content, re.IGNORECASE)
                             if match:
                                 name = match.group(1).strip()
-                                if len(name) > 1 and name.isalpha():  # Valid name
+                                # 🎯 FIX: Much more restrictive validation to avoid extracting common words as names
+                                common_words = [
+                                    'tell', 'explain', 'help', 'can', 'you', 'me', 'us', 'the', 'a', 'an', 'and', 'or', 'but', 
+                                    'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 
+                                    'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 
+                                    'may', 'might', 'must', 'shall', 'cannot', 'couldnt', 'wouldnt', 'shouldnt', 'wont', 
+                                    'dont', 'doesnt', 'didnt', 'havent', 'hasnt', 'hadnt', 'what', 'where', 'when', 'why', 
+                                    'how', 'who', 'which', 'show', 'find', 'get', 'need', 'want', 'know', 'see', 'look',
+                                    'school', 'teacher', 'student', 'principal', 'office', 'class', 'grade', 'enroll',
+                                    'information', 'about', 'activities', 'schedule', 'rules', 'policies', 'programs'
+                                ]
+                                
+                                if (len(name) > 2 and name.isalpha() and 
+                                    name.lower() not in common_words and
+                                    not name.lower().endswith('ing') and
+                                    not name.lower().endswith('ed') and
+                                    not name.lower().endswith('er') and
+                                    not name.lower().endswith('ly')):
                                     logger.info(f"🎯 Extracted user name: {name}")
                                     return name
             

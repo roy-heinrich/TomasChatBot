@@ -432,13 +432,21 @@ class NLUEngine:
         }
         
         # High-confidence emergency patterns
+        # 🎯 FIX: Made patterns much more specific to avoid false positives with common words like "help"
         serious_emergency_patterns = [
-            r'\b(help|emergency|ambulance|911|call|now|immediately|urgent)\b',
+            # Specific emergency requests (not just "help me with homework")
+            r'\b(emergency|ambulance|911|call 911|call emergency)\b',
             r'\b(can\'t breathe|can\'t breath|shortness of breath|unconscious|bleeding)\b',
             r'\b(chest pain|severe pain|severe injury|accident|hurt badly)\b',
-            r'\b(medical emergency|need help|urgent|critical|life threatening)\b',
+            r'\b(medical emergency|need help now|need urgent help|urgent|critical|life threatening)\b',
             r'\b(dying|cardiac arrest|stroke|heart attack)\b.*\b(now|immediately|help|emergency)\b',
-            r'\b(now|immediately|help|emergency)\b.*\b(dying|cardiac arrest|stroke|heart attack)\b'
+            r'\b(now|immediately|help|emergency)\b.*\b(dying|cardiac arrest|stroke|heart attack)\b',
+            # Real emergency help requests (multiple urgent indicators)
+            r'\b(someone|somebody|my (friend|family|child|parent))\b.*\b(help|emergency|dying|hurt|injured)\b',
+            r'\b(help|emergency)\b.*\b(someone|somebody|my (friend|family|child|parent))\b.*\b(dying|hurt|injured)\b',
+            # Very specific emergency help patterns (not general "help me")
+            r'\b(help me now|help us now|help me please|help us please)\b.*\b(emergency|dying|hurt|injured|unconscious|bleeding)\b',
+            r'\b(emergency|dying|hurt|injured|unconscious|bleeding)\b.*\b(help me now|help us now|help me please|help us please)\b'
         ]
         
         for pattern in serious_emergency_patterns:
@@ -449,7 +457,8 @@ class NLUEngine:
                 return emergency_indicators
         
         # Check for urgent action words combined with medical terms
-        urgent_words = ['help', 'emergency', 'ambulance', '911', 'call', 'now', 'immediately', 'urgent']
+        # 🎯 FIX: Removed standalone "help" to avoid false positives with "help me with homework"
+        urgent_words = ['emergency', 'ambulance', '911', 'call 911', 'help me', 'help us', 'call', 'now', 'immediately', 'urgent']
         medical_words = ['heart attack', 'stroke', 'dying', 'bleeding', 'unconscious', 'can\'t breathe']
         
         urgent_count = sum(1 for word in urgent_words if word in user_lower)
@@ -469,10 +478,11 @@ class NLUEngine:
         Only triggers for high-confidence emergency scenarios
         """
         # Only check for high-confidence emergency keywords (not just medical terms)
+        # 🎯 FIX: Removed "need help" and "urgent" to avoid false positives
         high_confidence_emergency_keywords = [
-            'help me', 'emergency', 'ambulance', '911', 'call 911',
+            'help me now', 'emergency', 'ambulance', '911', 'call 911',
             'can\'t breathe', 'unconscious', 'bleeding', 'severe pain',
-            'medical emergency', 'need help', 'urgent', 'critical', 'life threatening'
+            'medical emergency', 'need urgent help', 'critical', 'life threatening'
         ]
         
         # Check for high-confidence emergency patterns

@@ -187,7 +187,7 @@ KAPANSIN-PANSIN: Ang context na ibinigay ay naglalaman ng EKSAKTONG SAGOT mula s
 
 IMPORTANT: RESPOND ONLY IN ENGLISH.
 
-TONE: Be warm, professional, and helpful like a knowledgeable school staff member. Use natural, conversational language that feels caring and supportive. Be friendly but maintain professionalism - sound like a helpful school staff member who genuinely cares about helping students and parents. Provide accurate information while being engaging and showing genuine interest in helping. Use appropriate expressions that are professional yet warm and engaging.
+TONE: Be professional, knowledgeable, and helpful like a school administrator. Use clear, direct language that is warm but authoritative. Maintain a professional demeanor while being genuinely helpful. Avoid casual language, slang, or overly familiar expressions. Show expertise and competence in school matters while being approachable and supportive.
 
 STRICT RULES:
 1. 🚨 DATABASE CONTEXT IS HIGHEST PRIORITY - use information from database context when available
@@ -364,7 +364,14 @@ INSTRUCTIONS: {context} Use the NLP analysis to understand the user's intent and
                 if lang in ["tl", "akl"]:
                     return f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
-INSTRUCTIONS: Walang specific na impormasyon sa database para sa tanong na ito. HUWAG MAG-INVENT ng mga sagot o impormasyon. Sabihin na hindi mo alam ang sagot at magtanong kung may iba pa silang gustong malaman tungkol sa school. Gamitin ang NLP analysis para mag-suggest ng relevant topics. Kung wala na talaga silang ibang tanong, magtanong kung gusto nilang makausap ang admin ng school.
+INSTRUCTIONS: 🚨 CRITICAL: Walang specific na impormasyon sa database para sa tanong na ito. HUWAG MAG-INVENT ng mga sagot, impormasyon, o mga detalye. HUWAG MAG-MAKE UP ng mga policies, procedures, o anumang impormasyon. Sabihin lang na "Hindi ko alam ang sagot sa tanong na ito" at magtanong kung may iba pa silang gustong malaman tungkol sa school. Gamitin ang NLP analysis para mag-suggest ng relevant topics. Kung wala na talaga silang ibang tanong, magtanong kung gusto nilang makausap ang admin ng school.
+
+🚨 ANTI-HALLUCINATION RULES:
+- HUWAG MAG-INVENT ng mga sagot
+- HUWAG MAG-MAKE UP ng mga policies
+- HUWAG MAG-CREATE ng mga procedures
+- HUWAG MAG-GENERATE ng mga impormasyon na wala sa database
+- SABIHIN LANG na hindi mo alam
 
 NLP-BASED SUGGESTIONS: Gamitin ang intent at entities para mag-suggest ng relevant topics. Halimbawa:
 - Kung enrollment-related ang intent, mag-suggest ng enrollment process, requirements, deadlines
@@ -375,7 +382,14 @@ NLP-BASED SUGGESTIONS: Gamitin ang intent at entities para mag-suggest ng releva
                 else:
                     return f"""USER MESSAGE: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
-INSTRUCTIONS: No specific information is available in the database for this query. DO NOT INVENT answers or information. Say that you don't know the answer and ask if there's anything else they'd like to know about the school. Use the NLP analysis to suggest relevant topics. If they have no other questions, ask if they want to talk to a school admin.
+INSTRUCTIONS: 🚨 CRITICAL: No specific information is available in the database for this query. DO NOT INVENT answers, information, or details. DO NOT MAKE UP policies, procedures, or any information. Simply say "I don't know the answer to this question" and ask if there's anything else they'd like to know about the school. Use the NLP analysis to suggest relevant topics. If they have no other questions, ask if they want to talk to a school admin.
+
+🚨 ANTI-HALLUCINATION RULES:
+- DO NOT INVENT answers
+- DO NOT MAKE UP policies
+- DO NOT CREATE procedures
+- DO NOT GENERATE information not in database
+- SIMPLY SAY you don't know
 
 NLP-BASED SUGGESTIONS: Use the intent and entities to suggest relevant topics. For example:
 - If enrollment-related intent, suggest enrollment process, requirements, deadlines
@@ -386,12 +400,29 @@ NLP-BASED SUGGESTIONS: Use the intent and entities to suggest relevant topics. F
             else:
                 # DATABASE CONTEXT TAKES HIGHEST PRIORITY
                 lang_instruction = "SUMAGOT SA TAGALOG/FILIPINO." if lang in ["tl", "akl"] else "RESPOND IN ENGLISH."
-                return f"""DATABASE INFORMATION AVAILABLE:
+                user_message = f"""🚨 CRITICAL: USE THE DATABASE INFORMATION BELOW TO ANSWER THE USER'S QUESTION. DO NOT IGNORE THIS INFORMATION.
+
+DATABASE INFORMATION:
 {context}
 
 USER QUESTION: {query}{nlu_analysis}{entity_analysis}{lang_analysis}
 
-INSTRUCTIONS: Use the database information above to answer the user's question naturally and professionally. Be helpful and engaging while providing the specific information requested. Maintain a friendly, professional tone that feels human and approachable. {lang_instruction}"""
+INSTRUCTIONS: 
+1. READ THE DATABASE INFORMATION ABOVE CAREFULLY
+2. USE THE EXACT INFORMATION FROM THE DATABASE TO ANSWER THE USER'S QUESTION
+3. DO NOT INVENT OR MAKE UP INFORMATION
+4. PRESENT THE DATABASE INFORMATION NATURALLY AND PROFESSIONALLY
+5. BE HELPFUL AND ENGAGING WHILE PROVIDING THE SPECIFIC INFORMATION REQUESTED
+6. MAINTAIN A FRIENDLY, PROFESSIONAL TONE
+7. {lang_instruction}
+
+REMEMBER: The database information contains the EXACT ANSWER to the user's question. Use it!"""
+                
+                # Debug logging to see what's being sent
+                logger.info(f"🔍 DEBUG: User message being sent to AI:")
+                logger.info(f"🔍 DEBUG: {user_message[:200]}...")
+                
+                return user_message
         
         # Fallback for when no specific context is provided
         lang_instruction = "SUMAGOT SA TAGALOG/FILIPINO." if lang in ["tl", "akl"] else "RESPOND IN ENGLISH."
