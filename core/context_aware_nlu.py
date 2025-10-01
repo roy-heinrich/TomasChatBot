@@ -27,21 +27,32 @@ class ContextAnalysis:
 
 class ContextAwareNLU:
     def __init__(self):
+        # Much simpler and more general patterns
         self.specificity_patterns = {
             "high": [
-                r"who is\s+", r"who is the", r"what is\s+", r"what is the",
-                r"grade\s+\d+\s+teacher", r"grade\s+\d+\s+adviser", 
-                r"principal", r"head teacher", r"guidance counselor",
-                r"where is\s+", r"where is the", r"saan ang",
-                r"sino ang", r"sino ang\s+", r"ano ang", r"ano ang\s+",
-                r"grade\s+\d+\s+guro", r"grade\s+\d+\s+adviser"
+                # Question words that indicate specific queries
+                r"who is\s+", r"who is the", r"what is\s+", r"what is the", r"what are\s+", r"what are the",
+                r"where is\s+", r"where is the", r"where are\s+", r"where are the",
+                r"when is\s+", r"when is the", r"when are\s+", r"when are the",
+                r"how many\s+", r"how much\s+", r"how does\s+", r"how do\s+",
+                r"sino ang", r"ano ang", r"saan ang", r"kailan ang",
+                # Grade-specific queries
+                r"grade\s+\d+", r"grade\s+\w+",
+                # Specific roles/positions
+                r"teacher", r"adviser", r"principal", r"head teacher", r"guidance counselor",
+                r"guro", r"faculty", r"staff",
+                # Activities and events
+                r"activities", r"events", r"programs", r"drill", r"celebration",
+                r"aktibidad", r"programa", r"pagdiriwang"
             ],
             "medium": [
-                r"teacher", r"staff", r"where", r"when", r"how many",
-                r"guro", r"faculty", r"adviser", r"sino", r"ano"
+                # General school terms
+                r"school", r"student", r"class", r"schedule", r"uniform",
+                r"paaralan", r"estudyante", r"klase", r"iskuwela"
             ],
             "low": [
-                r"help", r"information", r"what", r"tell me", r"explain",
+                # Vague terms
+                r"help", r"information", r"tell me", r"explain",
                 r"tulong", r"impormasyon", r"ano", r"paano"
             ]
         }
@@ -60,27 +71,29 @@ class ContextAwareNLU:
         specificity_score = self._calculate_specificity_score(query)
         match_quality = self._analyze_match_quality(query, database_results)
         
-        if specificity_score > 0.4 and match_quality["score"] > 0.5:
-            return ContextAnalysis(
-                should_use_context=True,
-                confidence_level=ContextConfidence.HIGH,
-                reasoning=f"High specificity ({specificity_score:.2f}) and good match ({match_quality['score']:.2f})",
-                suggested_response_style="confident_with_details",
-                fallback_suggestions=[]
-            )
-        elif specificity_score > 0.2 and match_quality["score"] > 0.3:
-            return ContextAnalysis(
-                should_use_context=True,
-                confidence_level=ContextConfidence.MEDIUM,
-                reasoning=f"Medium specificity ({specificity_score:.2f}) and moderate match ({match_quality['score']:.2f})",
-                suggested_response_style="cautious_with_qualifiers",
-                fallback_suggestions=["Ask for more specific information"]
-            )
+        # Much more liberal logic - if we have ANY decent database results, use them!
+        if match_quality["score"] > 0.2:  # Much lower threshold
+            if specificity_score > 0.3:
+                return ContextAnalysis(
+                    should_use_context=True,
+                    confidence_level=ContextConfidence.HIGH,
+                    reasoning=f"Good specificity ({specificity_score:.2f}) and decent match ({match_quality['score']:.2f})",
+                    suggested_response_style="confident_with_details",
+                    fallback_suggestions=[]
+                )
+            else:
+                return ContextAnalysis(
+                    should_use_context=True,
+                    confidence_level=ContextConfidence.MEDIUM,
+                    reasoning=f"Decent database match ({match_quality['score']:.2f}) found",
+                    suggested_response_style="cautious_with_qualifiers",
+                    fallback_suggestions=["Ask for more specific information"]
+                )
         else:
             return ContextAnalysis(
                 should_use_context=False,
                 confidence_level=ContextConfidence.LOW,
-                reasoning=f"Low specificity or poor match",
+                reasoning=f"Poor database match ({match_quality['score']:.2f})",
                 suggested_response_style="apologetic_with_alternatives",
                 fallback_suggestions=["Ask about specific topics"]
             )

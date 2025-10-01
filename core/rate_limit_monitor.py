@@ -36,12 +36,12 @@ class RateLimitMonitor:
     
     def _initialize_default_limits(self):
         """Initialize default rate limits for known providers"""
-        # Groq limits (conservative to avoid rate limiting)
+        # Groq limits (more realistic based on actual API limits)
         self.providers["GroqProvider"] = RateLimitInfo(
             provider_name="GroqProvider",
-            requests_per_minute=20,  # Reduced from 30 to be more conservative
-            requests_per_hour=800,  # Reduced from 1000
-            requests_per_day=8000   # Reduced from 10000
+            requests_per_minute=30,  # Groq free tier allows 30 RPM
+            requests_per_hour=1000,  # More realistic hourly limit
+            requests_per_day=10000   # More realistic daily limit
         )
         
         # Hugging Face limits

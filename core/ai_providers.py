@@ -94,10 +94,10 @@ class GroqProvider(AIProvider):
                         temperature=temperature
                     )
                 
-                # Use asyncio.wait_for with short timeout to detect rate limits quickly
+                # Use asyncio.wait_for with reasonable timeout
                 response = await asyncio.wait_for(
                     asyncio.get_event_loop().run_in_executor(None, make_request),
-                    timeout=3.0  # 3 second timeout to detect rate limits quickly
+                    timeout=10.0  # 10 second timeout - more reasonable for API calls
                 )
                 
                 return AIResponse(
@@ -109,10 +109,10 @@ class GroqProvider(AIProvider):
                 )
                 
             except asyncio.TimeoutError:
-                # Timeout likely means rate limit - switch to next provider
-                logger.warning("🚫 Groq timeout (likely rate limited) - switching to next provider")
+                # Timeout - could be network issue or rate limit, but don't assume rate limit
+                logger.warning("⏰ Groq timeout - switching to next provider")
                 return AIResponse("", "groq", self.model or "llama-3.1-8b", 
-                               success=False, error="Timeout (likely rate limited)")
+                               success=False, error="Request timeout")
             
             except GroqError as e:
                 # Handle specific Groq errors
@@ -478,6 +478,11 @@ class MultiProviderAI:
                         self.rate_monitor.set_rate_limit(provider_name, 60)  # Block for 1 minute
                         provider_errors[provider_name] = provider_errors.get(provider_name, 0) + 1
                         continue
+                    elif "timeout" in error_msg:
+                        # Timeout is not a rate limit - just try next provider
+                        logger.warning(f"⏰ {provider_name} timeout - switching to next provider")
+                        provider_errors[provider_name] = provider_errors.get(provider_name, 0) + 1
+                        continue
                     elif any(auth_error in error_msg for auth_error in [
                         "unauthorized", "invalid api key", "authentication failed"
                     ]):
@@ -499,6 +504,11 @@ class MultiProviderAI:
                     "429", "rate_limit_exceeded", "requests per minute"
                 ]):
                     logger.warning(f"🚫 {provider_name} rate limited (exception) - switching to next provider")
+                    provider_errors[provider_name] = provider_errors.get(provider_name, 0) + 1
+                    continue
+                elif "timeout" in error_msg:
+                    # Timeout is not a rate limit - just try next provider
+                    logger.warning(f"⏰ {provider_name} timeout (exception) - switching to next provider")
                     provider_errors[provider_name] = provider_errors.get(provider_name, 0) + 1
                     continue
                 elif any(auth_error in error_msg for auth_error in [
