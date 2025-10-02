@@ -1,0 +1,36 @@
+# Optimized requirements for deployment
+# Core dependencies
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+python-dotenv>=1.0.0
+supabase>=2.0.0
+groq>=0.4.1
+cohere>=4.0.0
+httpx>=0.25.0
+pydantic>=2.0.0
+
+# Lightweight dependencies
+aiohttp>=3.8.0
+psutil>=5.9.0
+gunicorn>=21.2.0
+
+# NLP dependencies (lightweight)
+nltk>=3.8.1
+langid>=1.1.6
+textblob>=0.17.1
+
+# Optional ML dependencies (for multilingual_nlp.py)
+scikit-learn>=1.3.0
+gensim>=4.3.0
+langdetect>=1.0.9
+
+# Embedding and semantic search dependencies
+sentence-transformers>=2.2.0
+numpy>=1.24.0
+huggingface_hub>=0.16.0
+
+# PyTorch CPU-only version to reduce size and avoid CUDA dependencies
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=1.11.0+cpu
+torchvision>=0.12.0+cpu
+torchaudio>=0.11.0+cpu

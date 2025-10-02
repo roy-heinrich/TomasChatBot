@@ -14,11 +14,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (for better caching)
-COPY requirements.txt .
+COPY requirements_minimal.txt .
 
-# Install Python dependencies with optimizations
+# Install Python dependencies with optimizations and retry logic
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir --timeout=1000 --retries=5 -r requirements_minimal.txt
 
 # Copy application code
 COPY . .

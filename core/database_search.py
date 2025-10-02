@@ -118,7 +118,7 @@ class DatabaseSearchEngine:
         if translated_query != query_lower:
             # Query translated successfully
         
-        return translated_query
+            return translated_query
     
     async def search_prompts(self, query: str, limit: int = 20, intent: str = None, use_semantic: bool = True) -> List[Dict[str, Any]]:
         """Search chatbot prompts with optional semantic re-ranking"""
@@ -145,6 +145,7 @@ class DatabaseSearchEngine:
                         logger.warning("⚠️ Semantic re-ranking failed, using traditional results")
                 else:
                     # Semantic re-ranker not available, using traditional results
+                    pass
             except Exception as e:
                 logger.warning(f"⚠️ Semantic re-ranking error: {e}, using traditional results")
         
@@ -248,7 +249,7 @@ class DatabaseSearchEngine:
                 
                 # If we found staff results, return them
                 if all_results:
-                    # Total unique results found
+                    logger.info(f"📊 Total unique results found: {len(all_results)}")
                     return all_results[:limit]
             
             # Special handling for grade searches - return only exact matches

@@ -1,0 +1,13 @@
+[build]
+builder = "dockerfile"
+
+[deploy]
+startCommand = "python start.py"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
+
+[env]
+PYTHONUNBUFFERED = "1"
+NLTK_DATA = "/app/nltk_data"
