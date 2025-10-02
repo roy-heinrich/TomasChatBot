@@ -1,31 +1,21 @@
-# Multi-stage Dockerfile for Railway - optimized for size
-FROM python:3.11-slim as builder
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements
-COPY requirements_nano.txt .
-
-# Install Python dependencies in virtual environment
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --timeout=3000 --retries=15 -r requirements_nano.txt
-
-# Stage 2: Runtime
+# Nano Dockerfile for Railway - absolute minimum
 FROM python:3.11-slim
-
-# Copy virtual environment from builder stage
-COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
 
 # Set working directory
 WORKDIR /app
+
+# Install only essential system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy nano requirements first
+COPY requirements_nano.txt .
+
+# Install Python dependencies with aggressive caching
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --timeout=3000 --retries=15 -r requirements_nano.txt
 
 # Copy only essential application files
 COPY app.py .

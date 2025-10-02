@@ -1,5 +1,6 @@
 [build]
 builder = "dockerfile"
+buildCommand = "docker build -f Dockerfile.nano -t tomas-chatbot ."
 
 [deploy]
 startCommand = "python start.py"
