@@ -1,5 +1,6 @@
 [build]
 builder = "dockerfile"
+buildCommand = "docker build -f Dockerfile.micro -t tomas-chatbot ."
 
 [deploy]
 startCommand = "python start.py"
@@ -11,3 +12,5 @@ restartPolicyMaxRetries = 10
 [env]
 PYTHONUNBUFFERED = "1"
 NLTK_DATA = "/app/nltk_data"
+PIP_TIMEOUT = "3000"
+PIP_RETRIES = "15"

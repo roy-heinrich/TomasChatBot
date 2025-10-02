@@ -56,3 +56,25 @@ tests/
 .env.local
 .env.development
 .env.test
+
+# Railway deployment files
+Dockerfile.optimized
+Dockerfile.minimal
+Dockerfile.multistage
+Dockerfile.railway
+Dockerfile.micro
+requirements_deploy.txt
+requirements_minimal.txt
+requirements_ultra_minimal.txt
+requirements_fallback.txt
+requirements_micro.txt
+deploy.sh
+deploy_railway.sh
+railway.toml
+
+# NLTK data
+nltk_data/
+models/
+
+# Scripts
+*.sh
