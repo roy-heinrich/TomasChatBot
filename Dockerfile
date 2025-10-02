@@ -14,11 +14,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (for better caching)
-COPY requirements_ultra_minimal.txt .
+COPY requirements_micro.txt .
 
 # Install Python dependencies with Railway optimizations
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --timeout=2000 --retries=10 -r requirements_ultra_minimal.txt
+    pip install --no-cache-dir --timeout=3000 --retries=15 -r requirements_micro.txt
 
 # Copy application code
 COPY . .

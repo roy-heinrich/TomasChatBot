@@ -1,6 +1,5 @@
 [build]
 builder = "dockerfile"
-buildCommand = "docker build -f Dockerfile.micro -t tomas-chatbot ."
 
 [deploy]
 startCommand = "python start.py"
