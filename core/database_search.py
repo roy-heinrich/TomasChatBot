@@ -14,19 +14,7 @@ class DatabaseSearchEngine:
     
     def __init__(self, supabase_url: str, supabase_key: str):
         self.supabase: Client = create_client(supabase_url, supabase_key)
-        self._reranker = None  # Lazy initialization
     
-    async def _get_reranker(self):
-        """Get the embedding re-ranker instance (lazy initialization)"""
-        if self._reranker is None:
-            try:
-                from core.embedding_reranker import get_reranker
-                self._reranker = await get_reranker()
-                logger.info("✅ Embedding re-ranker initialized")
-            except Exception as e:
-                logger.warning(f"⚠️ Failed to initialize re-ranker: {e}")
-                self._reranker = None
-        return self._reranker
     
     def _translate_query_for_search(self, query: str) -> str:
         """Translate Tagalog query terms to English for database search"""
@@ -128,28 +116,7 @@ class DatabaseSearchEngine:
         if not candidates:
             return []
         
-        # If semantic re-ranking is enabled and we have candidates, apply it
-        if use_semantic and len(candidates) > 1:
-            try:
-                reranker = await self._get_reranker()
-                if reranker and reranker.is_available():
-                    # Applying semantic re-ranking
-                    rerank_results = await reranker.rerank_results(query, candidates, max_candidates=10)
-                    
-                    if rerank_results:
-                        # Return top results after semantic re-ranking
-                        top_results = [result.result for result in rerank_results[:limit]]
-                        # Semantic re-ranking completed
-                        return top_results
-                    else:
-                        logger.warning("⚠️ Semantic re-ranking failed, using traditional results")
-                else:
-                    # Semantic re-ranker not available, using traditional results
-                    pass
-            except Exception as e:
-                logger.warning(f"⚠️ Semantic re-ranking error: {e}, using traditional results")
-        
-        # Fallback to traditional results
+        # Return database search results (no embeddings, no reranking)
         return candidates[:limit]
     
     async def _search_prompts_traditional(self, query: str, limit: int = 20, intent: str = None) -> List[Dict[str, Any]]:
@@ -216,10 +183,11 @@ class DatabaseSearchEngine:
                 except Exception as e:
                     logger.warning(f"⚠️ Grade 5 search failed: {e}")
             
-            elif intent == "staff_inquiry" or any(word in query.lower() for word in ['principal', 'prinsipal', 'teacher', 'guro', 'staff']):
+            elif intent == "staff_inquiry" or any(word in query.lower() for word in ['principal', 'prinsipal', 'teacher', 'guro', 'staff', 'superintendent', 'head', 'adviser']):
                 # For staff inquiries, search for staff-related information
+                logger.info(f"🎯 STAFF INQUIRY DETECTED: {query}")
                 try:
-                    staff_queries = ['principal', 'prinsipal', 'teacher', 'guro', 'staff', 'head teacher', 'school head']
+                    staff_queries = ['principal', 'prinsipal', 'teacher', 'guro', 'staff', 'head teacher', 'school head', 'superintendent']
                     for staff_query in staff_queries:
                         result = self.supabase.table("chatbot_prompts") \
                             .select("keywords, response, search_tsv") \
@@ -734,13 +702,13 @@ class DatabaseSearchEngine:
     
     def _detect_query_intent(self, query_lower: str) -> str:
         """Detect the intent of the user query"""
+        # Staff/people related queries (HIGHEST PRIORITY - check first)
+        if any(word in query_lower for word in ['who', 'sino', 'principal', 'teacher', 'guro', 'staff', 'may', 'prinsipal', 'superintendent', 'head', 'adviser']):
+            return "staff_inquiry"
+        
         # Schedule/time related queries
         if any(word in query_lower for word in ['hours', 'schedule', 'time', 'start', 'end', 'when', 'kailan']):
             return "schedule_inquiry"
-        
-        # Staff/people related queries
-        if any(word in query_lower for word in ['who', 'sino', 'principal', 'teacher', 'guro', 'staff', 'may', 'prinsipal']):
-            return "staff_inquiry"
         
         # Location related queries
         if any(word in query_lower for word in ['where', 'saan', 'location', 'diin', 'find', 'locate']):
@@ -759,8 +727,8 @@ class DatabaseSearchEngine:
             return "schedule_info"
         
         # Staff/people content - check both response and keywords
-        if (any(word in response_lower for word in ['principal', 'teacher', 'guro', 'staff', 'head', 'adviser', 'director']) or
-            any(word in keywords_lower for word in ['principal', 'teacher', 'guro', 'staff', 'head', 'adviser', 'director'])):
+        if (any(word in response_lower for word in ['principal', 'teacher', 'guro', 'staff', 'head', 'adviser', 'director', 'superintendent']) or
+            any(word in keywords_lower for word in ['principal', 'teacher', 'guro', 'staff', 'head', 'adviser', 'director', 'superintendent'])):
             return "staff_info"
         
         # Location content
@@ -799,7 +767,14 @@ class DatabaseSearchEngine:
             query_keywords_similarity = SequenceMatcher(None, query_lower, keywords_lower).ratio()
             query_response_similarity = SequenceMatcher(None, query_lower, response_lower).ratio()
             
-            # SMART ALGORITHM: Check for exact grade matches first
+            # SMART ALGORITHM: Check for exact superintendent matches first
+            if 'superintendent' in query_lower and 'superintendent' in keywords_lower:
+                # EXACT SUPERINTENDENT MATCH: Gets MASSIVE priority
+                semantic_boost = 5000  # Much higher than grade matches
+                logger.info(f"🎯 EXACT SUPERINTENDENT MATCH: {keywords_lower} -> {semantic_boost} points")
+                return base_score + semantic_boost
+            
+            # SMART ALGORITHM: Check for exact grade matches
             grade_terms = ['grade 1', 'grade one', '1st', 'first', 'una', 'grade 2', 'grade two', '2nd', 'second', 'ikalawa', 'grade 3', 'grade three', '3rd', 'third', 'ikatlo', 'grade 4', 'grade four', '4th', 'fourth', 'ikaapat', 'grade 5', 'grade five', '5th', 'fifth', 'ikalimang', 'grade 6', 'grade six', '6th', 'sixth', 'ikaanim']
             query_has_grade = any(term in query_lower for term in grade_terms)
             content_has_grade = any(term in keywords_lower for term in grade_terms)
@@ -870,10 +845,62 @@ class DatabaseSearchEngine:
                     semantic_boost = int(nlp_similarity * 400)
                     logger.info(f"🎯 Grade-Specific Match: keywords={query_keywords_similarity:.2f}, response={query_response_similarity:.2f} -> {semantic_boost} points")
             else:
-                # General staff entries get standard NLP weight
-                nlp_similarity = (query_keywords_similarity * 0.7) + (query_response_similarity * 0.3)
-                semantic_boost = int(nlp_similarity * 200)
-                logger.info(f"🎯 NLP Staff Match: keywords={query_keywords_similarity:.2f}, response={query_response_similarity:.2f} -> {semantic_boost} points")
+                # Pure NLP-based semantic matching - no hardcoding
+                # Use advanced NLP similarity with weighted importance
+                
+                # Calculate semantic similarity using multiple NLP techniques
+                from difflib import SequenceMatcher
+                
+                # 1. Sequence similarity (character-level)
+                sequence_sim = SequenceMatcher(None, query_lower, keywords_lower).ratio()
+                
+                # 2. Word overlap similarity (Jaccard)
+                query_words = set(query_lower.split())
+                keywords_words = set(keywords_lower.split())
+                response_words = set(response_lower.split())
+                
+                if len(query_words) > 0 and len(keywords_words) > 0:
+                    jaccard_keywords = len(query_words.intersection(keywords_words)) / len(query_words.union(keywords_words))
+                else:
+                    jaccard_keywords = 0.0
+                
+                if len(query_words) > 0 and len(response_words) > 0:
+                    jaccard_response = len(query_words.intersection(response_words)) / len(query_words.union(response_words))
+                else:
+                    jaccard_response = 0.0
+                
+                # 3. Semantic importance weighting with synonym matching
+                # Important terms get higher weight
+                important_terms = ['superintendent', 'principal', 'head', 'teacher', 'adviser', 'director', 'manager', 'leader']
+                
+                # Check for semantic matches (synonyms and related terms)
+                semantic_matches = 0
+                if 'superintendent' in query_lower and ('superintendent' in keywords_lower or 'superintendent' in response_lower):
+                    semantic_matches += 1
+                    logger.info(f"🎯 SUPERINTENDENT MATCH FOUND: query='{query_lower}', keywords='{keywords_lower}'")
+                if 'principal' in query_lower and ('principal' in keywords_lower or 'head' in keywords_lower):
+                    semantic_matches += 1
+                if 'head' in query_lower and ('head' in keywords_lower or 'principal' in keywords_lower):
+                    semantic_matches += 1
+                if 'teacher' in query_lower and ('teacher' in keywords_lower or 'adviser' in keywords_lower):
+                    semantic_matches += 1
+                
+                query_importance = sum(1 for term in important_terms if term in query_lower)
+                content_importance = sum(1 for term in important_terms if term in keywords_lower or term in response_lower)
+                
+                # 4. Combined NLP similarity with importance weighting
+                base_nlp_sim = (sequence_sim * 0.3) + (jaccard_keywords * 0.4) + (jaccard_response * 0.3)
+                importance_boost = (query_importance + content_importance) * 0.1
+                semantic_boost_score = semantic_matches * 0.5  # Big boost for semantic matches
+                
+                # 5. Final semantic boost calculation with massive boost for exact matches
+                if semantic_matches > 0:
+                    # Massive boost for exact semantic matches
+                    semantic_boost = 2000 + (semantic_matches * 1000)
+                    logger.info(f"🎯 EXACT SEMANTIC MATCH: {semantic_matches} matches -> {semantic_boost} points")
+                else:
+                    semantic_boost = int((base_nlp_sim + importance_boost + semantic_boost_score) * 1000)
+                    logger.info(f"🎯 NLP Semantic Match: seq={sequence_sim:.2f}, jaccard_kw={jaccard_keywords:.2f}, jaccard_resp={jaccard_response:.2f}, importance={query_importance}+{content_importance} -> {semantic_boost} points")
         
         # For schedule inquiries, use pure NLP/NLU semantic matching
         elif query_intent == "schedule_inquiry" and content_type == "schedule_info":

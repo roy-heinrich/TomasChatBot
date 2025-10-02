@@ -242,6 +242,7 @@ class ChatBot:
             
             # 2. Get NLU analysis for intent
             nlu_result = await self.nlu_engine.analyze_intent(query)
+            logger.info(f"🎯 NLU Intent: {nlu_result.intent.value} for query: {query}")
             
             # CRITICAL SAFETY: Check for medical emergencies (HIGHEST PRIORITY)
             if nlu_result.intent.value == "emergency":

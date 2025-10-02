@@ -569,8 +569,8 @@ NLP-BASED SUGGESTIONS: Use the intent and entities to suggest relevant topics. F
         # Split by complete sentences only - never split mid-sentence
         import re
         
-        # Find all complete sentences (ending with ., !, or ?)
-        sentences = re.split(r'(?<=[.!?])\s+', response)
+        # Smart sentence splitting that avoids breaking names
+        sentences = self._smart_sentence_split(response)
         
         messages = []
         current_message = ""
@@ -632,3 +632,41 @@ NLP-BASED SUGGESTIONS: Use the intent and entities to suggest relevant topics. F
             messages.append(current_message)
         
         return messages
+
+    def _smart_sentence_split(self, text: str) -> list:
+        """Smart sentence splitting that avoids breaking names and titles"""
+        import re
+        
+        # Common name prefixes and titles that shouldn't be split after
+        name_prefixes = ['Mrs', 'Ms', 'Mr', 'Dr', 'Prof', 'Rev', 'Sr', 'Jr', 'III', 'II', 'IV']
+        
+        # Split by sentence endings, but be smart about it
+        sentences = []
+        current_sentence = ""
+        
+        # Split by periods, exclamation marks, and question marks
+        parts = re.split(r'([.!?])', text)
+        
+        i = 0
+        while i < len(parts):
+            part = parts[i]
+            if part in ['.', '!', '?']:
+                # Check if this is a name prefix
+                if current_sentence.strip().endswith(tuple(name_prefixes)):
+                    # Don't split here, it's likely a name
+                    current_sentence += part
+                else:
+                    # This is a real sentence ending
+                    current_sentence += part
+                    if current_sentence.strip():
+                        sentences.append(current_sentence.strip())
+                    current_sentence = ""
+            else:
+                current_sentence += part
+            i += 1
+        
+        # Add any remaining text
+        if current_sentence.strip():
+            sentences.append(current_sentence.strip())
+        
+        return sentences

@@ -40,6 +40,7 @@ class ContextAwareNLU:
                 r"grade\s+\d+", r"grade\s+\w+",
                 # Specific roles/positions
                 r"teacher", r"adviser", r"principal", r"head teacher", r"school head", r"guidance counselor",
+                r"superintendent", r"director", r"manager", r"leader",
                 r"guro", r"faculty", r"staff",
                 # Activities and events
                 r"activities", r"events", r"programs", r"drill", r"celebration",

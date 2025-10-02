@@ -14,11 +14,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (for better caching)
-COPY requirements_nano.txt .
+COPY requirements.txt .
 
 # Install Python dependencies with Railway optimizations
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --timeout=3000 --retries=15 -r requirements_nano.txt
+    pip install --no-cache-dir --timeout=3000 --retries=15 -r requirements.txt
 
 # Copy application code
 COPY . .

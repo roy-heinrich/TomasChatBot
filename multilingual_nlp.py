@@ -239,7 +239,8 @@ class MultilingualNLPEngine:
             ],
             "staff_inquiry": [
                 "who is the principal", "who is the teacher", "school staff",
-                "head teacher", "school head", "administrator",
+                "head teacher", "school head", "administrator", "superintendent",
+                "who is the superintendent", "school superintendent", "division superintendent",
                 "sino ang principal", "sino ang guro", "school head",
                 "sin-o ang principal", "sin-o nga guro"
             ],
