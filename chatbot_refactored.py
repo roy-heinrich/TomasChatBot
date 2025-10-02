@@ -200,20 +200,29 @@ class ChatBot:
         """Main chat method - Groq-first approach for natural responses"""
         try:
             # 1. Enhanced language detection with mixed-language support
+            # Use sophisticated language detector (highest priority)
             try:
-                from multilingual_nlp import multilingual_nlp
-                if multilingual_nlp:
-                    lang_result = await multilingual_nlp.detect_language_semantic(query)
-                    detected_lang = lang_result.language
-                    confidence = lang_result.confidence
-                    # logger.info(f"🌍 Multilingual NLP detected: {detected_lang} (confidence: {confidence:.2f})")  # Reduced for Railway
-                else:
-                    raise ImportError("Multilingual NLP not available")
+                from core.language_detector import LanguageDetector
+                advanced_detector = LanguageDetector()
+                detected_lang, confidence = advanced_detector.detect_language(query)
+                logger.info(f"🌍 Advanced detector: {detected_lang} (confidence: {confidence:.2f})")
             except Exception as e:
-                logger.warning(f"⚠️ Multilingual NLP language detection failed: {e}")
-                # Enhanced fallback language detection
-                detected_lang, confidence = self.language_detector.detect_language(query)
-                # logger.info(f"🌍 Enhanced language detection: {detected_lang} (confidence: {confidence:.2f})")  # Reduced for Railway
+                logger.warning(f"⚠️ Advanced detector failed: {e}")
+                # Fallback to multilingual NLP
+                try:
+                    from multilingual_nlp import multilingual_nlp
+                    if multilingual_nlp:
+                        lang_result = await multilingual_nlp.detect_language_semantic(query)
+                        detected_lang = lang_result.language
+                        confidence = lang_result.confidence
+                        logger.info(f"🌍 Multilingual NLP fallback: {detected_lang} (confidence: {confidence:.2f})")
+                    else:
+                        raise ImportError("Multilingual NLP not available")
+                except Exception as e2:
+                    logger.warning(f"⚠️ Multilingual NLP fallback failed: {e2}")
+                    # Ultimate fallback
+                    detected_lang, confidence = self.language_detector.detect_language(query)
+                    logger.info(f"🌍 Ultimate fallback: {detected_lang} (confidence: {confidence:.2f})")
             
             # Map detected language to response language
             response_lang = self._map_to_response_language(detected_lang)
@@ -342,7 +351,7 @@ class ChatBot:
                 else:
                     # 3. Perform traditional database search to get context for Groq
                     intent_name = nlu_result.intent.name.lower() if nlu_result and nlu_result.intent else None
-                    search_results = self.database_search.search_prompts(query, limit=10, intent=intent_name)
+                    search_results = await self.database_search.search_prompts(query, limit=10, intent=intent_name)
                     # logger.info(f"🔍 Traditional search found {len(search_results)  # Commented out debug logs} results")
                     
                     # 4. Use context-aware NLU to determine if we should use database results
@@ -375,6 +384,16 @@ class ChatBot:
                 else:
                     logger.warning(f"⚠️ Best result is not a dict: {type(best_result)} - {best_result}")
                     context = f"Database Information: {best_result}"
+                
+                # 🎯 FIX: Add explicit clarification for grade level questions
+                if 'grade' in query.lower() and 'grade level' in context.lower():
+                    context += "\n\nIMPORTANT: If the database says 'kindergarten through grade 6', this means Grade 7 and above are NOT offered."
+                
+                # 🎯 FIX: Enhance context for Tagalog queries
+                if detected_lang in ['tl', 'akl']:
+                    # Add more comprehensive context for Tagalog queries
+                    if len(context) < 200:  # If context is too short, add more information
+                        context += "\n\nADDITIONAL CONTEXT: Please provide a comprehensive, detailed response in Tagalog. Include background information and be helpful and informative."
             else:
                 # Context-aware NLU determined not to use database context
                 logger.info("🎯 Context-aware NLU: Not using database context")

@@ -322,6 +322,25 @@ class MultilingualNLPEngine:
         # 🎯 FIX: Rule-based override for clear patterns (highest priority)
         text_lower = text.lower()
         
+        # Try advanced language detector first
+        try:
+            from core.language_detector import LanguageDetector
+            advanced_detector = LanguageDetector()
+            advanced_lang, advanced_conf = advanced_detector.detect_language(text)
+            logger.info(f"🌍 Advanced detector result: {advanced_lang} (confidence: {advanced_conf:.2f})")
+            if advanced_conf > 0.7:  # High confidence from advanced detector
+                final_lang = advanced_lang
+                confidence = advanced_conf
+                logger.info(f"🌍 Advanced detector override: {final_lang} (confidence: {confidence:.2f})")
+            else:
+                # Continue with existing logic
+                logger.info(f"🌍 Advanced detector confidence too low, continuing with existing logic")
+                pass
+        except Exception as e:
+            logger.warning(f"Advanced detector not available: {e}")
+            # Continue with existing logic
+            logger.info(f"🌍 Advanced detector not available, continuing with existing logic")
+        
         # Strong English patterns (override everything)
         if re.search(r'\b(how do|how can|how to|what is|what are|where is|when is|who is)\b', text_lower):
             final_lang = "en"  # Force English for clear English question patterns
@@ -339,7 +358,7 @@ class MultilingualNLPEngine:
             final_lang = "en"  # Force English for emotional expressions
             confidence = 0.98  # Very high confidence for emotional expressions
         # Strong Tagalog patterns (override everything)
-        elif re.search(r'\b(ako si|pangalan ko|naaalala mo|ano ang|sino ang|kumusta|kamusta|anong|baitang|paaralan|bukas|para sa|malungkot ako|masaya ako|nag-aalala ako|natutuwa ako|pagod ako|galit ako|nervous ako|takot ako|nalilito ako|naiinis ako|nag-aalala ako|nalulungkot ako|nalulungkot|nag-aalala|natutuwa|pagod|galit|nervous|takot|nalilito|naiinis|magandang umaga|magandang hapon|magandang gabi|salamat|maraming salamat|paumanhin|patawad|oo|hindi|sige|tama|mali)\b', text_lower):
+        elif re.search(r'\b(ako si|pangalan ko|naaalala mo|ano ang|sino ang|kumusta|kamusta|anong|baitang|paaralan|bukas|para sa|malungkot ako|masaya ako|nag-aalala ako|natutuwa ako|pagod ako|galit ako|nervous ako|takot ako|nalilito ako|naiinis ako|nag-aalala ako|nalulungkot ako|nalulungkot|nag-aalala|natutuwa|pagod|galit|nervous|takot|nalilito|naiinis|magandang umaga|magandang hapon|magandang gabi|salamat|maraming salamat|paumanhin|patawad|oo|hindi|sige|tama|mali|may|ba|ang|sa|ng|si|ni|kay|guro|titser|magulang|estudyante|bata|anak|paaralan|eskwela|klase|grado|baitang|sino|ano|saan|kailan|bakit|paano|alin|kanino|ito|iyan|iyon|dito|doon|kumusta|kamusta|magandang|maayong|mabuti|salamat|po|opo|naman|din|rin|ako|ikaw|siya|kami|tayo|kayo|sila|ng|sa|ang|si|ni|kay|na|ay|ko|mo|niya|namin|ninyo|nila|ito|iyan|iyon|dito|doon|kailan|bakit|paano|saan|alin|kanino|sino|ano|mga|para|sa|ng|ang|si|ni|kay|na|ay|ko|mo|niya|namin|ninyo|nila)\b', text_lower):
             final_lang = "tl"  # Force Tagalog for clear Tagalog patterns
             confidence = 0.95  # High confidence for rule-based detection
         # 🎯 FIX: Specific Tagalog greeting patterns
@@ -509,6 +528,15 @@ class MultilingualNLPEngine:
         # Additional Tagalog patterns
         if re.search(r'\b(kumusta|kamusta|magandang|mabuti|salamat|po|opo)\b', text_lower):
             tagalog_features += 0.4  # Strong Tagalog indicator
+        # 🎯 FIX: Add more Tagalog patterns for better detection
+        if re.search(r'\b(may|ba|ang|sa|ng|si|ni|kay|guro|titser|magulang|estudyante|bata|anak|paaralan|eskwela|klase|grado|baitang)\b', text_lower):
+            tagalog_features += 0.5  # Strong Tagalog indicator for school terms
+        if re.search(r'\b(sino|ano|saan|kailan|bakit|paano|alin|kanino)\b', text_lower):
+            tagalog_features += 0.4  # Strong Tagalog indicator for question words
+        if re.search(r'\b(ito|iyan|iyon|dito|doon)\b', text_lower):
+            tagalog_features += 0.3  # Tagalog demonstratives
+        if re.search(r'\b(mga|para|sa|ng|ang|si|ni|kay|na|ay|ko|mo|niya|namin|ninyo|nila)\b', text_lower):
+            tagalog_features += 0.3  # Tagalog particles and pronouns
         
         # Aklanon linguistic features
         aklanon_features = 0.0

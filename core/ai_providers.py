@@ -63,7 +63,7 @@ class GroqProvider(AIProvider):
             from groq import Groq
             # Initialize with custom timeout settings
             self.client = Groq(api_key=self.api_key)
-            logger.info("✅ Groq client initialized")
+            # Groq client initialized
         except ImportError:
             logger.error("❌ Groq library not installed")
         except Exception as e:
@@ -171,7 +171,7 @@ class HuggingFaceProvider(AIProvider):
                 self.client = InferenceClient()  # Free tier
             else:
                 self.client = InferenceClient(token=self.api_key)
-            logger.info(f"✅ Hugging Face client initialized with model: {self.model}")
+            # Hugging Face client initialized
         except ImportError:
             logger.error("huggingface_hub not installed. Install with: pip install huggingface_hub")
             self.client = None
@@ -215,7 +215,7 @@ class HuggingFaceProvider(AIProvider):
                         # Calculate tokens (estimate based on content length)
                         estimated_tokens = len(content.split()) * 1.3  # Rough estimation
                         
-                        logger.info(f"✅ Hugging Face model {model} succeeded")
+                        # Hugging Face model succeeded
                         return AIResponse(
                             content=content,
                             provider="huggingface",
@@ -377,17 +377,17 @@ class MultiProviderAI:
         """Initialize all available providers"""
         import os
         
-        # Initialize providers in order of preference: Groq → Cohere → HuggingFace → Local AI
+        # Initialize providers in order of preference: Cohere → Groq → HuggingFace → Local AI
         providers_config = [
-            {
-                "class": GroqProvider,
-                "api_key": os.environ.get("GROQ_API_KEY"),
-                "model": "llama-3.1-8b-instant"
-            },
             {
                 "class": CohereProvider,
                 "api_key": os.environ.get("COHERE_API_KEY"),
                 "model": "command-a-03-2025"
+            },
+            {
+                "class": GroqProvider,
+                "api_key": os.environ.get("GROQ_API_KEY"),
+                "model": "llama-3.1-8b-instant"
             },
             {
                 "class": HuggingFaceProvider,

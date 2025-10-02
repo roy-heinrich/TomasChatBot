@@ -23,3 +23,8 @@ textblob>=0.17.1
 scikit-learn>=1.3.0
 gensim>=4.3.0
 langdetect>=1.0.9
+
+# Embedding and semantic search dependencies
+sentence-transformers>=2.2.0
+numpy>=1.24.0
+huggingface_hub>=0.16.0

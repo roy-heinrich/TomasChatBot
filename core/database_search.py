@@ -1,6 +1,7 @@
 """
 Database Search Module - Fixed and Optimized
 Handles all database search operations with proper result selection
+Enhanced with semantic re-ranking using local embeddings
 """
 import logging
 from typing import List, Dict, Optional, Any
@@ -9,10 +10,23 @@ from supabase import create_client, Client
 logger = logging.getLogger(__name__)
 
 class DatabaseSearchEngine:
-    """Optimized database search engine with proper result ranking"""
+    """Optimized database search engine with semantic re-ranking"""
     
     def __init__(self, supabase_url: str, supabase_key: str):
         self.supabase: Client = create_client(supabase_url, supabase_key)
+        self._reranker = None  # Lazy initialization
+    
+    async def _get_reranker(self):
+        """Get the embedding re-ranker instance (lazy initialization)"""
+        if self._reranker is None:
+            try:
+                from core.embedding_reranker import get_reranker
+                self._reranker = await get_reranker()
+                logger.info("✅ Embedding re-ranker initialized")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to initialize re-ranker: {e}")
+                self._reranker = None
+        return self._reranker
     
     def _translate_query_for_search(self, query: str) -> str:
         """Translate Tagalog query terms to English for database search"""
@@ -102,12 +116,43 @@ class DatabaseSearchEngine:
         
         # Log the translation for debugging
         if translated_query != query_lower:
-            logger.info(f"🌐 Translated query: '{query}' -> '{translated_query}'")
+            # Query translated successfully
         
         return translated_query
     
-    def search_prompts(self, query: str, limit: int = 20, intent: str = None) -> List[Dict[str, Any]]:
-        """Search chatbot prompts using search_tsv column with improved strategy"""
+    async def search_prompts(self, query: str, limit: int = 20, intent: str = None, use_semantic: bool = True) -> List[Dict[str, Any]]:
+        """Search chatbot prompts with optional semantic re-ranking"""
+        # First, get candidates using traditional keyword search
+        candidates = await self._search_prompts_traditional(query, limit * 2, intent)  # Get more candidates for re-ranking
+        
+        if not candidates:
+            return []
+        
+        # If semantic re-ranking is enabled and we have candidates, apply it
+        if use_semantic and len(candidates) > 1:
+            try:
+                reranker = await self._get_reranker()
+                if reranker and reranker.is_available():
+                    # Applying semantic re-ranking
+                    rerank_results = await reranker.rerank_results(query, candidates, max_candidates=10)
+                    
+                    if rerank_results:
+                        # Return top results after semantic re-ranking
+                        top_results = [result.result for result in rerank_results[:limit]]
+                        # Semantic re-ranking completed
+                        return top_results
+                    else:
+                        logger.warning("⚠️ Semantic re-ranking failed, using traditional results")
+                else:
+                    # Semantic re-ranker not available, using traditional results
+            except Exception as e:
+                logger.warning(f"⚠️ Semantic re-ranking error: {e}, using traditional results")
+        
+        # Fallback to traditional results
+        return candidates[:limit]
+    
+    async def _search_prompts_traditional(self, query: str, limit: int = 20, intent: str = None) -> List[Dict[str, Any]]:
+        """Traditional keyword-based search (original search_prompts logic)"""
         try:
             all_results = []
             
@@ -124,7 +169,7 @@ class DatabaseSearchEngine:
                 for typo in typos:
                     normalized_query = normalized_query.replace(typo, correct)
             
-            logger.info(f"🔍 Normalized query: '{query}' -> '{normalized_query}'")
+            # Query normalized successfully
             
             # Use NLU intent to guide search strategy
             if intent == "schedule_inquiry" or any(word in query.lower() for word in ['hours', 'schedule', 'time', 'start', 'end']):
@@ -141,8 +186,8 @@ class DatabaseSearchEngine:
                             for item in result.data:
                                 if not any(existing['keywords'] == item['keywords'] for existing in all_results):
                                     all_results.append(item)
-                                    logger.info(f"🎯 Added time entry: {item['keywords']} -> {item['response'][:50]}...")
-                            logger.info(f"🎯 Found {len(result.data)} time matches for '{time_query}'")
+                                    # Time entry added
+                            # Time matches found
                             
                 except Exception as e:
                     logger.warning(f"⚠️ Time search failed: {e}")
@@ -164,8 +209,8 @@ class DatabaseSearchEngine:
                                 for item in result.data:
                                     if not any(existing['keywords'] == item['keywords'] for existing in all_results):
                                         all_results.append(item)
-                                        logger.info(f"🎯 Added grade 5 entry: {item['keywords']} -> {item['response'][:50]}...")
-                                logger.info(f"🎯 Found {len(result.data)} grade 5 matches for '{grade_query}'")
+                                        # Grade 5 entry added
+                                # Grade 5 matches found
                                 
                 except Exception as e:
                     logger.warning(f"⚠️ Grade 5 search failed: {e}")
@@ -184,7 +229,7 @@ class DatabaseSearchEngine:
                             for item in result.data:
                                 if not any(existing['keywords'] == item['keywords'] for existing in all_results):
                                     all_results.append(item)
-                            logger.info(f"🎯 Found {len(result.data)} staff matches for '{staff_query}'")
+                            # Staff matches found
                             
                         # Also search in response field for staff names
                         result = self.supabase.table("chatbot_prompts") \
@@ -196,14 +241,14 @@ class DatabaseSearchEngine:
                             for item in result.data:
                                 if not any(existing['keywords'] == item['keywords'] for existing in all_results):
                                     all_results.append(item)
-                            logger.info(f"🎯 Found {len(result.data)} staff response matches for '{staff_query}'")
+                            # Staff response matches found
                             
                 except Exception as e:
                     logger.warning(f"Staff search failed: {e}")
                 
                 # If we found staff results, return them
                 if all_results:
-                    logger.info(f"📊 Total unique results found: {len(all_results)}")
+                    # Total unique results found
                     return all_results[:limit]
             
             # Special handling for grade searches - return only exact matches

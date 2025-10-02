@@ -31,7 +31,7 @@ class ContextAwareNLU:
         self.specificity_patterns = {
             "high": [
                 # Question words that indicate specific queries
-                r"who is\s+", r"who is the", r"what is\s+", r"what is the", r"what are\s+", r"what are the",
+                r"who is\s+", r"who is the", r"who is the school head", r"what is\s+", r"what is the", r"what are\s+", r"what are the",
                 r"where is\s+", r"where is the", r"where are\s+", r"where are the",
                 r"when is\s+", r"when is the", r"when are\s+", r"when are the",
                 r"how many\s+", r"how much\s+", r"how does\s+", r"how do\s+",
@@ -39,7 +39,7 @@ class ContextAwareNLU:
                 # Grade-specific queries
                 r"grade\s+\d+", r"grade\s+\w+",
                 # Specific roles/positions
-                r"teacher", r"adviser", r"principal", r"head teacher", r"guidance counselor",
+                r"teacher", r"adviser", r"principal", r"head teacher", r"school head", r"guidance counselor",
                 r"guro", r"faculty", r"staff",
                 # Activities and events
                 r"activities", r"events", r"programs", r"drill", r"celebration",
@@ -72,31 +72,33 @@ class ContextAwareNLU:
         match_quality = self._analyze_match_quality(query, database_results)
         
         # Much more liberal logic - if we have ANY decent database results, use them!
-        if match_quality["score"] > 0.2:  # Much lower threshold
-            if specificity_score > 0.3:
-                return ContextAnalysis(
-                    should_use_context=True,
-                    confidence_level=ContextConfidence.HIGH,
-                    reasoning=f"Good specificity ({specificity_score:.2f}) and decent match ({match_quality['score']:.2f})",
-                    suggested_response_style="confident_with_details",
-                    fallback_suggestions=[]
-                )
-            else:
-                return ContextAnalysis(
-                    should_use_context=True,
-                    confidence_level=ContextConfidence.MEDIUM,
-                    reasoning=f"Decent database match ({match_quality['score']:.2f}) found",
-                    suggested_response_style="cautious_with_qualifiers",
-                    fallback_suggestions=["Ask for more specific information"]
-                )
-        else:
+        # 🎯 FIX: Special handling for grade-related questions
+        query_lower = query.lower()
+        is_grade_question = 'grade' in query_lower
+        has_grade_info = any('grade' in str(result.get('keywords', '')).lower() or 'grade' in str(result.get('response', '')).lower() for result in database_results)
+        
+        if is_grade_question and has_grade_info:
+            # For grade questions, always use database context if we have grade information
             return ContextAnalysis(
-                should_use_context=False,
-                confidence_level=ContextConfidence.LOW,
-                reasoning=f"Poor database match ({match_quality['score']:.2f})",
-                suggested_response_style="apologetic_with_alternatives",
-                fallback_suggestions=["Ask about specific topics"]
+                should_use_context=True,
+                confidence_level=ContextConfidence.HIGH,
+                reasoning="Grade question with grade information in database",
+                suggested_response_style="confident_with_details",
+                fallback_suggestions=[]
             )
+        
+        # Context analysis completed
+        
+        # 🎯 ULTRA-PERMISSIVE APPROACH: If we have ANY database results, use them
+        # Let the AI determine what's relevant and what's not
+        # Using database context for response generation
+        return ContextAnalysis(
+            should_use_context=True,
+            confidence_level=ContextConfidence.HIGH,
+            reasoning=f"Found {len(database_results)} database results - let AI determine relevance",
+            suggested_response_style="confident_with_details",
+            fallback_suggestions=[]
+        )
     
     def _calculate_specificity_score(self, query: str) -> float:
         query_lower = query.lower()
@@ -125,45 +127,39 @@ class ContextAwareNLU:
         response = best_result.get('response', '').lower()
         query_lower = query.lower()
         
-        # Enhanced match quality calculation
+        # 🎯 SIMPLIFIED AND INTELLIGENT MATCH QUALITY
         score = 0.0
         
-        # 1. Direct keyword matching (high weight)
-        if any(word in keywords for word in query_lower.split() if len(word) > 2):
+        # 1. Basic keyword matching
+        query_words = [word for word in query_lower.split() if len(word) > 2]
+        if any(word in keywords for word in query_words):
+            score += 0.3
+            # Keyword match found
+        
+        # 2. Response content relevance - if response has useful content, it's relevant
+        if response and len(response) > 10:  # Non-empty, substantial response
             score += 0.4
+            # Substantial response found
         
-        # 2. Semantic matching for common terms
-        semantic_matches = {
-            'teacher': ['adviser', 'guro', 'faculty', 'staff'],
-            'grade': ['grade'],
-            'who': ['name', 'person'],
-            'where': ['location', 'place'],
-            'what': ['information', 'details']
-        }
-        
-        for query_word in query_lower.split():
-            if query_word in semantic_matches:
-                for semantic_term in semantic_matches[query_word]:
-                    if semantic_term in keywords or semantic_term in response:
-                        score += 0.2
-                        break
-        
-        # 3. Grade number matching (very specific)
-        import re
-        grade_match = re.search(r'grade\s+(\d+)', query_lower)
-        if grade_match:
-            grade_num = grade_match.group(1)
-            if grade_num in keywords or f'grade {grade_num}' in keywords:
+        # 3. Semantic understanding - broader matching
+        # If query is about school topics and we have school-related results, use them
+        school_terms = ['school', 'teacher', 'student', 'grade', 'class', 'head', 'principal', 'adviser', 'faculty', 'staff']
+        if any(term in query_lower for term in school_terms):
+            if any(term in keywords or term in response for term in school_terms):
                 score += 0.3
+                # School-related semantic match found
         
-        # 4. Response relevance (if response contains useful info)
-        if response and len(response) > 5:  # Non-empty response
-            score += 0.1
+        # 4. Question word matching - if it's a question and we have answers, use them
+        question_words = ['who', 'what', 'where', 'when', 'how', 'why', 'sino', 'ano', 'saan', 'kailan', 'paano', 'bakit']
+        if any(word in query_lower for word in question_words):
+            if response and len(response) > 5:  # We have an answer
+                score += 0.2
+                logger.info(f"🔍 Question-answer match found")
         
         return {
             "score": min(score, 1.0),
             "best_match": best_result,
-            "relevance": "high" if score > 0.6 else "medium" if score > 0.3 else "low"
+            "relevance": "high" if score > 0.5 else "medium" if score > 0.2 else "low"
         }
     
     def _calculate_text_overlap(self, text1: str, text2: str) -> float:

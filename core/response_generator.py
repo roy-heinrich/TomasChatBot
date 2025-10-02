@@ -266,7 +266,12 @@ CRITICAL: The context provided contains the EXACT ANSWER from our school databas
             
             if ai_response.success:
                 logger.info(f"✅ Response generated using {ai_response.provider} ({ai_response.model})")
-                return ai_response.content.strip()
+                response = ai_response.content.strip()
+                
+                # Remove bold formatting
+                response = response.replace('**', '')
+                
+                return response
             else:
                 logger.warning(f"⚠️ Multi-provider AI failed: {ai_response.error}")
                 return self._get_fallback_response(lang)
@@ -419,8 +424,7 @@ INSTRUCTIONS:
 REMEMBER: The database information contains the EXACT ANSWER to the user's question. Use it!"""
                 
                 # Debug logging to see what's being sent
-                logger.info(f"🔍 DEBUG: User message being sent to AI:")
-                logger.info(f"🔍 DEBUG: {user_message[:200]}...")
+                # Debug logging removed for cleaner output
                 
                 return user_message
         
@@ -475,7 +479,7 @@ NLP-BASED SUGGESTIONS: Use the intent and entities to suggest relevant topics. F
                 result = supabase_client.table("chatbot_prompts").select("response").ilike("keywords", "%Office Hours%").execute()
                 if result.data and len(result.data) > 0:
                     office_hours = result.data[0].get("response", office_hours)
-                    logger.info(f"📅 Retrieved office hours from database: {office_hours}")
+                    # Office hours retrieved successfully
                 
                 # Try to get guidance hours from database
                 result = supabase_client.table("chatbot_prompts").select("response").ilike("keywords", "%guidance hours%").execute()
