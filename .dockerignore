@@ -67,7 +67,6 @@ requirements_deploy.txt
 requirements_minimal.txt
 requirements_ultra_minimal.txt
 requirements_fallback.txt
-requirements_micro.txt
 deploy.sh
 deploy_railway.sh
 railway.toml
