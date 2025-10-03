@@ -27,7 +27,7 @@ class ImprovedScorer:
         
         # Intent keywords for classification
         self.intent_patterns = {
-            'staff': ['who', 'sino', 'teacher', 'adviser', 'principal', 'staff', 'guro', 'head', 'director', 'administrator'],
+            'staff': ['who', 'sino', 'teacher', 'adviser', 'principal', 'staff', 'guro'],
             'schedule': ['hours', 'schedule', 'time', 'when', 'start', 'end'],
             'location': ['where', 'saan', 'location', 'find'],
             'grade': ['grade', 'baitang']
@@ -87,47 +87,8 @@ class ImprovedScorer:
         elif 'kindergarten' in query_lower and 'kinder' in keywords_lower:
             score += 20  # Boost for kindergarten -> kinder match
         
-        # 7.6. School leadership fuzzy matching
-        # Special handling for "school head" -> "Head Teacher" (only for school context)
-        # Exclude department heads, foreign affairs, academic departments, etc.
-        department_keywords = ['department', 'foreign', 'math', 'science', 'english', 'history', 'geography', 'economics', 'politics', 'affairs', 'ministry', 'bureau', 'office']
-        
-        is_department_head = any(keyword in query_lower for keyword in department_keywords)
-        
-        if ('school head' in query_lower or 
-            ('head' in query_lower and not is_department_head)):
-            if 'head teacher' in keywords_lower or 'head teacher' in response_lower:
-                score += 50  # Higher boost for school head -> head teacher match
-                logger.info(f"🎯 SCHOOL HEAD MATCH: school head -> head teacher (score: {score})")
-            elif 'principal' in keywords_lower or 'principal' in response_lower:
-                score += 20  # Lower boost for principal
-                logger.info(f"🎯 SCHOOL HEAD PARTIAL: school head -> principal (score: {score})")
-        
-        # General leadership fuzzy matching
-        leadership_terms = {
-            'principal': ['principal', 'head teacher', 'director', 'administrator'],
-            'director': ['head teacher', 'principal', 'director', 'administrator'],
-            'administrator': ['head teacher', 'principal', 'director', 'administrator']
-        }
-        
-        for query_term, db_terms in leadership_terms.items():
-            if query_term in query_lower and 'school head' not in query_lower:  # Don't apply to school head queries
-                for db_term in db_terms:
-                    if db_term in keywords_lower or db_term in response_lower:
-                        score += 30  # Boost for leadership term matches
-                        logger.info(f"🎯 LEADERSHIP FUZZY MATCH: {query_term} -> {db_term} (score: {score})")
-                        break
-        
         # 8. Penalties
         score -= self._calculate_penalties(result)
-        
-        # 8.5. Department head penalty - reduce score if department query matches Head Teacher
-        department_keywords = ['department', 'foreign', 'math', 'science', 'english', 'history', 'geography', 'economics', 'politics', 'affairs', 'ministry', 'bureau', 'office']
-        is_department_query = any(keyword in query_lower for keyword in department_keywords)
-        
-        if is_department_query and ('head teacher' in keywords_lower or 'head teacher' in response_lower):
-            score -= 50  # Heavy penalty for department queries matching Head Teacher
-            logger.info(f"🎯 DEPARTMENT HEAD PENALTY: department query matched Head Teacher (score: {score})")
         
         return max(0, score)  # Never negative
     

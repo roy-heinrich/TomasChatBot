@@ -399,6 +399,35 @@ class ChatBot:
                         best_result = None
                         context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
                 else:
+                    # 🎯 CRITICAL: Check for invalid grades BEFORE database search
+                    if 'grade' in query.lower():
+                        # Quick grade validation to avoid irrelevant database searches
+                        import re
+                        grade_match = re.search(r'grade\s*(-?\d+)', query.lower())
+                        if grade_match:
+                            grade_num = int(grade_match.group(1))
+                            # Handle negative grades, zero, and obviously invalid grades
+                            if grade_num <= 0:
+                                return ChatResponse(
+                                    response=[f"Grade {grade_num} is not a valid grade level. Grade levels must be positive numbers (1-6)."],
+                                    entities=entities,
+                                    detected_language=response_lang,
+                                    language_confidence=confidence,
+                                    is_split=False,
+                                    message_count=1,
+                                    intent=nlu_result.intent.value if nlu_result and nlu_result.intent else 'unknown'
+                                )
+                            elif grade_num > 12:
+                                return ChatResponse(
+                                    response=[f"Grade {grade_num} is not a valid grade level. Elementary schools typically offer grades 1-6."],
+                                    entities=entities,
+                                    detected_language=response_lang,
+                                    language_confidence=confidence,
+                                    is_split=False,
+                                    message_count=1,
+                                    intent=nlu_result.intent.value if nlu_result and nlu_result.intent else 'unknown'
+                                )
+                    
                     # 3. Perform traditional database search to get context for Groq
                     intent_name = nlu_result.intent.name.lower() if nlu_result and nlu_result.intent else None
                     search_results = await self.database_search.search_prompts(query, limit=10, intent=intent_name)
@@ -438,6 +467,21 @@ class ChatBot:
                 # 🎯 FIX: Add explicit clarification for grade level questions
                 if 'grade' in query.lower() and 'grade level' in context.lower():
                     context += "\n\nIMPORTANT: If the database says 'kindergarten through grade 6', this means Grade 7 and above are NOT offered."
+                
+                # 🎯 NEW: Handle grade validation responses
+                if isinstance(best_result, dict) and best_result.get('is_grade_validation'):
+                    # This is a grade validation response - use it directly
+                    response_text = best_result.get('response', '')
+                    logger.info(f"🎯 Grade validation response: {response_text}")
+                    return ChatResponse(
+                        response=[response_text],
+                        entities=entities,
+                        detected_language=response_lang,
+                        language_confidence=confidence,
+                        is_split=False,
+                        message_count=1,
+                        intent=nlu_result.intent.value if nlu_result and nlu_result.intent else 'unknown'
+                    )
                 
                 # 🎯 FIX: Enhance context for Tagalog queries
                 if detected_lang in ['tl', 'akl']:

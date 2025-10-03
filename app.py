@@ -305,10 +305,28 @@ async def chat_endpoint(data: ChatRequest):
         logger.info(f"🔍 Full response length: {len(' '.join(chat_response.response))}")
         logger.info(f"🔍 Full response content: '{' '.join(chat_response.response)}'")
         
+        # Convert entities to serializable format
+        serializable_entities = []
+        if chat_response.entities:
+            for entity in chat_response.entities:
+                if hasattr(entity, '__dict__'):
+                    # Convert ExtractedEntity to dict
+                    serializable_entities.append({
+                        "entity_type": getattr(entity, 'entity_type', 'unknown'),
+                        "value": getattr(entity, 'value', ''),
+                        "confidence": getattr(entity, 'confidence', 0.0),
+                        "start_pos": getattr(entity, 'start_pos', 0),
+                        "end_pos": getattr(entity, 'end_pos', 0),
+                        "context": getattr(entity, 'context', '')
+                    })
+                else:
+                    # Already a dict
+                    serializable_entities.append(entity)
+        
         # Return the clean ChatResponse format
         return {
             "response": chat_response.response,
-            "entities": chat_response.entities,
+            "entities": serializable_entities,
             "detected_language": chat_response.detected_language,
             "language_confidence": chat_response.language_confidence,
             "is_split": chat_response.is_split,
