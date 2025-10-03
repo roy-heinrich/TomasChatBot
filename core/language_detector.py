@@ -46,7 +46,7 @@ class LanguageDetector:
             # Cache the result
             self.language_cache[text_lower] = ((final_lang, final_confidence), time.time())
             
-            logger.info(f"🌍 Language detected: {final_lang} (confidence: {final_confidence:.2f})")
+            # logger.info(f"🌍 Language detected: {final_lang} (confidence: {final_confidence:.2f})")
             return final_lang, final_confidence
             
         except Exception as e:

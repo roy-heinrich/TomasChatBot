@@ -38,7 +38,7 @@ def _initialize_nltk():
         
         NLTK_AVAILABLE = True
         NLTK_INITIALIZED = True
-        logger.info("✅ NLTK initialized successfully for NLU engine")
+        # logger.info("✅ NLTK initialized successfully for NLU engine")
         return True
         
     except ImportError:
@@ -149,7 +149,7 @@ class NLUEngine:
                 from nltk.corpus import stopwords
                 self.stemmer = PorterStemmer()
                 self.stop_words = set(stopwords.words('english'))
-                logger.info(f"✅ NLU Engine initialized with {len(self.stop_words)} stopwords")
+                # logger.info(f"✅ NLU Engine initialized with {len(self.stop_words)} stopwords")
             except Exception as e:
                 logger.warning(f"⚠️ Could not initialize NLTK components: {e}")
                 self.stop_words = set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'])
@@ -249,13 +249,13 @@ class NLUEngine:
             # Step 1: Check for humor/sarcasm indicators first (highest priority)
             humor_indicators = await self._detect_humor_context(user_input, user_lower)
             if humor_indicators['is_humor']:
-                logger.info(f"😄 Humor detected: {humor_indicators['reason']} - NOT an emergency")
+                # logger.info(f"😄 Humor detected: {humor_indicators['reason']} - NOT an emergency")
                 return None
             
             # Step 2: Check for emotional context (jokes, expressions, metaphors)
             emotional_context = await self._analyze_emotional_context(user_input, user_lower)
             if emotional_context['is_expression']:
-                logger.info(f"💭 Emotional expression detected: {emotional_context['reason']} - NOT an emergency")
+                # logger.info(f"💭 Emotional expression detected: {emotional_context['reason']} - NOT an emergency")
                 return None
             
             # Step 3: Check for serious emergency indicators with context
@@ -267,7 +267,7 @@ class NLUEngine:
             # Step 4: Check for standalone medical terms (likely not emergencies)
             standalone_medical = self._check_standalone_medical_terms(user_lower)
             if standalone_medical['is_standalone']:
-                logger.info(f"ℹ️ Standalone medical term: {standalone_medical['reason']} - NOT emergency")
+                # logger.info(f"ℹ️ Standalone medical term: {standalone_medical['reason']} - NOT emergency")
                 return None
             
             # Step 5: Fallback to original keyword detection (but with lower confidence)
@@ -499,10 +499,10 @@ class NLUEngine:
                 # Check if it's in an informational context
                 info_contexts = ['symptoms', 'about', 'what is', 'information', 'tell me about', 'explain']
                 if any(context in user_lower for context in info_contexts):
-                    logger.info(f"ℹ️ Medical term '{term}' in informational context - NOT emergency")
+                    # logger.info(f"ℹ️ Medical term '{term}' in informational context - NOT emergency")
                     return None
                 # If no urgent context, don't flag as emergency
-                logger.info(f"ℹ️ Medical term '{term}' without urgent context - NOT emergency")
+                # logger.info(f"ℹ️ Medical term '{term}' without urgent context - NOT emergency")
                 return None
         
         return None
@@ -536,7 +536,7 @@ class NLUEngine:
         
         # Check for staff inquiry patterns with typo tolerance
         if "may prinsipal" in normalized_input or "may principal" in normalized_input:
-            logger.info(f"🎯 Rule-based staff inquiry detected: 'may prinsipal' pattern (normalized from '{user_input}')")
+            # logger.info(f"🎯 Rule-based staff inquiry detected: 'may prinsipal' pattern (normalized from '{user_input}')")
             return NLUResult(Intent.STAFF_INQUIRY, 0.9, [])
         
         # Then try semantic classification with the new multilingual NLP engine
@@ -544,7 +544,7 @@ class NLUEngine:
             try:
                 # Detect language semantically
                 lang_result = await multilingual_nlp.detect_language_semantic(user_input)
-                logger.info(f"🔍 Semantic language detection: {lang_result.language} (confidence: {lang_result.confidence:.2f})")
+                # logger.info(f"🔍 Semantic language detection: {lang_result.language} (confidence: {lang_result.confidence:.2f})")
                 
                 # Classify intent semantically
                 semantic_intent = await multilingual_nlp.classify_intent_semantic(user_input, lang_result.language)
@@ -571,8 +571,8 @@ class NLUEngine:
                     except ValueError:
                         intent_enum = Intent.UNKNOWN
                     
-                    logger.info(f"🎯 Semantic classification: {intent_enum.value} (confidence: {semantic_intent.confidence:.2f}, similarity: {semantic_intent.similarity_score:.2f})")
-                    logger.info(f"📝 Matched example: '{semantic_intent.matched_example}'")
+                    # logger.info(f"🎯 Semantic classification: {intent_enum.value} (confidence: {semantic_intent.confidence:.2f}, similarity: {semantic_intent.similarity_score:.2f})")
+                    # logger.info(f"📝 Matched example: '{semantic_intent.matched_example}'")
                     
                     return NLUResult(intent_enum, semantic_intent.confidence, nlu_entities)
                     
@@ -590,12 +590,12 @@ class NLUEngine:
                 if semantic_intent.intent == rule_result.intent.value and semantic_intent.confidence > 0.3:
                     # Boost confidence when both methods agree
                     boosted_confidence = min(rule_result.confidence + 0.2, 0.9)
-                    logger.info(f"🔗 Semantic confirmation boosted confidence: {rule_result.confidence:.2f} → {boosted_confidence:.2f}")
+                    # logger.info(f"🔗 Semantic confirmation boosted confidence: {rule_result.confidence:.2f} → {boosted_confidence:.2f}")
                     return NLUResult(rule_result.intent, boosted_confidence, rule_result.entities)
             except Exception:
                 pass
         
-        logger.info(f"🔍 Using rule-based result: {rule_result.intent.value} (confidence: {rule_result.confidence:.2f})")
+        # logger.info(f"🔍 Using rule-based result: {rule_result.intent.value} (confidence: {rule_result.confidence:.2f})")
         return rule_result
     
     def _rule_based_classification(self, user_input: str) -> NLUResult:
@@ -673,7 +673,7 @@ class NLUEngine:
         
         for phrase, (intent, confidence) in exact_phrases.items():
             if phrase in user_lower:
-                logger.info(f"🎯 Exact phrase match: '{phrase}' → {intent.value}")
+                # logger.info(f"🎯 Exact phrase match: '{phrase}' → {intent.value}")
                 return NLUResult(intent, confidence, [])
         
         # PHASE 2: Enhanced pattern-based matching with weighted confidence scoring
@@ -712,7 +712,7 @@ class NLUEngine:
         
         for pattern in emotional_patterns:
             if pattern in user_lower:
-                logger.info(f"🎯 Tagalog/Aklanon emotional expression detected: '{pattern}'")
+                # logger.info(f"🎯 Tagalog/Aklanon emotional expression detected: '{pattern}'")
                 return NLUResult(Intent.EMOTIONAL_EXPRESSION, 0.9, [])
         
         # Continue with priority-based classification for other intents
@@ -746,6 +746,11 @@ class NLUEngine:
             "makipag-usap sa isang guidance", "makausap ang isang counselor", "makipag-usap sa isang counselor",
             "gusto ko makausap", "kailangan ko makausap", "gusto ko makipag-usap", "kailangan ko makipag-usap",
             "gusto ko mag-usap", "kailangan ko mag-usap", "gusto ko makipag-usap sa tao",
+            # 🚨 CRITICAL: Add missing patterns that users are actually using
+            "gusto ko kausapin", "kausapin ang admin", "admin lang", "wala, admin lang",
+            "gusto ko lang kausapin", "wala, gusto ko lang kausapin ang admin",
+            "gusto ko nga kausapin", "gusto ko nga kausapin ang admin",  # Add "nga" variations
+            "wala,admin", "admin lang", "wala,admin lang",  # Handle spacing variations
             # Aklanon patterns
             "makausap ang isa ka tawo", "makipag-usap sa isa ka tawo", "magistryo sa tawo",
             "makausap ang isa ka staff", "makipag-usap sa isa ka staff", "makausap ang isa ka teacher", "makipag-usap sa isa ka teacher",
@@ -754,7 +759,19 @@ class NLUEngine:
         ]
         
         # Check for contact escalation patterns first (highest priority)
-        if any(pattern in user_lower for pattern in contact_escalation_patterns):
+        matching_patterns = [pattern for pattern in contact_escalation_patterns if pattern in user_lower]
+        
+        # Also check for admin-related patterns with flexible spacing
+        admin_patterns = ["admin", "kausapin", "gusto ko", "nga"]
+        if any(pattern in user_lower for pattern in admin_patterns) and ("admin" in user_lower or "kausapin" in user_lower):
+            matching_patterns.append("admin_contact_flexible")
+        
+        # 🚨 CRITICAL: Catch any admin contact request regardless of exact wording
+        if "admin" in user_lower and any(word in user_lower for word in ["kausapin", "gusto", "nga", "lang"]):
+            matching_patterns.append("admin_contact_any")
+        
+        if matching_patterns:
+            # logger.info(f"🎯 CONTACT ESCALATION DETECTED: patterns={matching_patterns}")
             return NLUResult(Intent.CONTACT_ESCALATION, 0.85, [])
         
         # Priority 3: Name introductions - HIGH PRIORITY for greetings + names
@@ -785,22 +802,22 @@ class NLUEngine:
                     has_contact_escalation = any(keyword in text_after_lower for keyword in contact_escalation_keywords)
                     
                     if has_contact_escalation:
-                        logger.info(f"🎯 Contact escalation detected in name introduction: pattern='{pattern}', text_after='{text_after}'")
+                        # logger.info(f"🎯 Contact escalation detected in name introduction: pattern='{pattern}', text_after='{text_after}'")
                         return NLUResult(Intent.CONTACT_ESCALATION, 0.9, [])
                     
                     # 🚨 NEW: Use NLP-based analysis instead of hardcoded emotional states
                     extracted_name = self._extract_name_using_nlp(text_after, pattern)
                     
                     if extracted_name:
-                        logger.info(f"🎯 Name introduction detected: pattern='{pattern}', text_after='{text_after}', extracted_name='{extracted_name}'")
+                        # logger.info(f"🎯 Name introduction detected: pattern='{pattern}', text_after='{text_after}', extracted_name='{extracted_name}'")
                         return NLUResult(Intent.NAME_INTRODUCTION, 0.95, [])
                     else:
                         # Check if it's an emotional expression using NLP
                         if self._is_emotional_expression_nlp(text_after):
-                            logger.info(f"🎯 Emotional expression detected: pattern='{pattern}', text_after='{text_after}'")
+                            # logger.info(f"🎯 Emotional expression detected: pattern='{pattern}', text_after='{text_after}'")
                             return NLUResult(Intent.EMOTIONAL_EXPRESSION, 0.9, [])
                         else:
-                            logger.info(f"🎯 Name introduction detected (fallback): pattern='{pattern}', text_after='{text_after}'")
+                            # logger.info(f"🎯 Name introduction detected (fallback): pattern='{pattern}', text_after='{text_after}'")
                             return NLUResult(Intent.NAME_INTRODUCTION, 0.95, [])
 
         # Priority 2: Staff inquiries (moved up to catch principal queries before greetings)

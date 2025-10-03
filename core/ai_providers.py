@@ -422,7 +422,7 @@ class MultiProviderAI:
         except Exception as e:
             logger.warning(f"⚠️ Local AI provider not available: {e}")
         
-        logger.info(f"🚀 Initialized {len(self.providers)} AI providers")
+        # logger.info(f"🚀 Initialized {len(self.providers)} AI providers")
     
     async def generate_response(self, prompt: str, system_prompt: str = None, 
                               max_tokens: int = 1000, temperature: float = 0.7) -> AIResponse:
@@ -445,7 +445,7 @@ class MultiProviderAI:
                     logger.warning(f"🚫 Skipping {provider_name} - rate limited")
                     continue
                 
-                logger.info(f"🤖 Trying {provider_name} (attempt {i+1}/{len(self.providers)})")
+                # logger.info(f"🤖 Trying {provider_name} (attempt {i+1}/{len(self.providers)})")
                 
                 # Check if this provider has been failing recently (enhanced health monitoring)
                 if provider_name in provider_errors and provider_errors[provider_name] > 2:
@@ -457,7 +457,7 @@ class MultiProviderAI:
                 )
                 
                 if response.success:
-                    logger.info(f"✅ Success with {provider_name}")
+                    # logger.info(f"✅ Success with {provider_name}")
                     # Record successful request
                     self.rate_monitor.record_request(provider_name, success=True)
                     # Reset error count on success
@@ -593,4 +593,4 @@ class MultiProviderAI:
         if current_time - self._last_health_reset > 600:  # 10 minutes
             self._last_health_reset = current_time
             self._provider_health = {}
-            logger.info("🔄 Provider health reset - all providers can be retried")
+            # logger.info("🔄 Provider health reset - all providers can be retried")

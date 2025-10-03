@@ -179,7 +179,8 @@ class ChatBot:
         escalation_patterns = [
             "talk to", "speak to", "contact", "live person", "human", "admin", "staff", 
             "principal", "teacher", "guidance", "counselor", "someone", "anyone",
-            "makausap", "makipag-usap", "magistryo", "tao", "staff", "principal"
+            "makausap", "makipag-usap", "magistryo", "tao", "staff", "principal",
+            "kausapin", "gusto ko kausapin", "admin lang", "wala, admin lang"
         ]
         
         # Only count user messages, not assistant responses
@@ -192,8 +193,11 @@ class ChatBot:
             if any(pattern in content for pattern in escalation_patterns):
                 escalation_count += 1
         
-        # If user has mentioned escalation 2+ times in recent messages, consider it persistent
-        return escalation_count >= 2
+        # 🚨 ADJUSTED: Lower threshold for persistence - if user mentions admin/contact 1+ times, consider it persistent
+        # This ensures users get the messenger link when they specifically ask for admin contact
+        is_persistent = escalation_count >= 1
+        # logger.info(f"🔍 PERSISTENCE CHECK: Found {escalation_count} escalation patterns, persistent: {is_persistent}")
+        return is_persistent
     
     def _map_to_response_language(self, detected_lang: str) -> str:
         """Map detected language to response language"""
@@ -381,23 +385,23 @@ class ChatBot:
                 # 🚨 CRITICAL: Check for special intents FIRST before database search
                 # These intents should skip database search entirely
                 if nlu_result and nlu_result.intent.value == 'contact_escalation':
-                    # logger.info("👥 Contact escalation requested - checking conversation history for persistence")  # Commented out debug logs
+                    # logger.info("👥 Contact escalation requested - checking conversation history for persistence")
                     
                     # Check if user has been persistent about wanting to talk to someone
                     persistent_escalation = self._check_persistent_escalation(conversation_history)
                     
                     if persistent_escalation:
-                        # logger.info("👥 Persistent escalation detected - providing direct contact option")  # Commented out debug logs
+                        # logger.info("👥 Persistent escalation detected - providing direct contact option")
                         # Provide direct escalation response
                         search_results = []
                         best_result = None
                         context = "User has been persistent about wanting to talk to a live person/admin. Provide the Facebook Messenger contact link immediately."
                     else:
-                        # logger.info("👥 First escalation request - using helpful approach first")  # Commented out debug logs
+                        # logger.info("👥 First escalation request - using helpful approach first")
                         # Use helpful approach for first request
                         search_results = []
                         best_result = None
-                        context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
+                        context = "User wants to talk to someone from the school - be helpful first by offering assistance with school topics, enrollment, schedules, or other school information. Only mention contact options if they specifically ask again after being helpful."
                 else:
                     # 🎯 CRITICAL: Check for invalid grades BEFORE database search
                     if 'grade' in query.lower():
@@ -439,14 +443,21 @@ class ChatBot:
                         intent_name, entities
                     )
                     
+                    # 🚨 CRITICAL FIX: For contact escalation queries, don't use irrelevant database results
+                    if nlu_result and nlu_result.intent.value == 'contact_escalation':
+                        # Override context analysis for contact escalation - don't use irrelevant database results
+                        context_analysis.should_use_context = False
+                        context_analysis.reasoning = "Contact escalation detected - not using irrelevant database results"
+                        # logger.info("🚨 Contact escalation detected - overriding context analysis to prevent irrelevant responses")
+                    
                     # DEBUG: Log search results and context analysis
-                    logger.info(f"🔍 DEBUG: Query: '{query}'")
-                    logger.info(f"🔍 DEBUG: Found {len(search_results)} search results")
-                    if search_results:
-                        logger.info(f"🔍 DEBUG: Top result keywords: '{search_results[0].get('keywords', 'N/A')}'")
-                        logger.info(f"🔍 DEBUG: Top result response: '{search_results[0].get('response', 'N/A')[:100]}...'")
-                    logger.info(f"🔍 DEBUG: Context analysis - should_use_context: {context_analysis.should_use_context}")
-                    logger.info(f"🔍 DEBUG: Context analysis - reasoning: {context_analysis.reasoning}")
+                    # logger.info(f"🔍 DEBUG: Query: '{query}'")
+                    # logger.info(f"🔍 DEBUG: Found {len(search_results)} search results")
+                    # if search_results:
+                    #     logger.info(f"🔍 DEBUG: Top result keywords: '{search_results[0].get('keywords', 'N/A')}'")
+                    #     logger.info(f"🔍 DEBUG: Top result response: '{search_results[0].get('response', 'N/A')[:100]}...'")
+                    # logger.info(f"🔍 DEBUG: Context analysis - should_use_context: {context_analysis.should_use_context}")
+                    # logger.info(f"🔍 DEBUG: Context analysis - reasoning: {context_analysis.reasoning}")
                     
                     best_result = None
                     if context_analysis.should_use_context and search_results:
@@ -462,13 +473,13 @@ class ChatBot:
             
             # 5. Generate response using Groq with context-aware analysis
             if best_result and context_analysis.should_use_context:
-                logger.info("📚 Using database context for response generation")
+                # logger.info("📚 Using database context for response generation")
                 # Provide complete database information as context
                 if isinstance(best_result, dict):
                     keywords = best_result.get('keywords', '')
                     response = best_result.get('response', '')
                     context = f"Database Information: {keywords} - {response}"
-                    logger.info(f"📚 DEBUG: Context built: {context[:200]}...")
+                    # logger.info(f"📚 DEBUG: Context built: {context[:200]}...")
                 else:
                     logger.warning(f"⚠️ Best result is not a dict: {type(best_result)} - {best_result}")
                     context = f"Database Information: {best_result}"
@@ -481,7 +492,7 @@ class ChatBot:
                 if isinstance(best_result, dict) and best_result.get('is_grade_validation'):
                     # This is a grade validation response - use it directly
                     response_text = best_result.get('response', '')
-                    logger.info(f"🎯 Grade validation response: {response_text}")
+                    # logger.info(f"🎯 Grade validation response: {response_text}")
                     return ChatResponse(
                         response=[response_text],
                         entities=entities,
@@ -500,7 +511,10 @@ class ChatBot:
             else:
                 # Context-aware NLU determined not to use database context
                 # logger.info("🎯 Context-aware NLU: Not using database context")  # Reduced for Railway
-                context = "No specific information available in database for this query"
+                if nlu_result and nlu_result.intent.value == 'contact_escalation':
+                    context = "User wants to talk to someone from the school - be helpful first by offering assistance with school topics, enrollment, schedules, or other school information. Only mention contact options if they specifically ask again after being helpful."
+                else:
+                    context = "No specific information available in database for this query"
             
             # Debug: Log the final context before sending to AI
             # logger.info(f"🔍 FINAL CONTEXT: {context[:200]}...")  # Reduced for Railway
@@ -622,7 +636,8 @@ class ChatBot:
                         )
                     else:
                         # Skip personalization for already split responses
-                        logger.info("ℹ️ Skipping personalization - response already split")
+                        # logger.info("ℹ️ Skipping personalization - response already split")
+                        pass
                     
                     # logger.info(f"🎨 Response personalized: tone={personalized_response.tone}, formality={personalized_response.formality_level}")  # Reduced for Railway
                     
@@ -636,11 +651,26 @@ class ChatBot:
             # Apply context-aware translation if needed
             if detected_lang != "en" and confidence < 0.8:
                 # logger.info("🌐 Applying context-aware translation")  # Commented out debug logs
-                translated_response, translation_confidence = self.context_translator.translate_with_context(
-                    response_text, detected_lang, conversation_history, session_id
-                )
-                if translation_confidence > 0.7:
-                    response_text = translated_response
+                # Handle both string and list responses
+                if isinstance(response_text, list):
+                    # Translate each message in the list
+                    translated_messages = []
+                    for message in response_text:
+                        translated_message, translation_confidence = self.context_translator.translate_with_context(
+                            message, detected_lang, conversation_history, session_id
+                        )
+                        if translation_confidence > 0.7:
+                            translated_messages.append(translated_message)
+                        else:
+                            translated_messages.append(message)
+                    response_text = translated_messages
+                else:
+                    # Single string response
+                    translated_response, translation_confidence = self.context_translator.translate_with_context(
+                        response_text, detected_lang, conversation_history, session_id
+                    )
+                    if translation_confidence > 0.7:
+                        response_text = translated_response
                     # logger.info(f"🌐 Context-aware translation applied (confidence: {translation_confidence:.2f})  # Commented out debug logs")
             
             # 6. Response is already split by generate_response

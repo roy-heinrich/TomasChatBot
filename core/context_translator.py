@@ -23,6 +23,10 @@ class ContextTranslator:
         """Translate text while maintaining conversation context"""
         
         try:
+            # Handle list input - convert to string
+            if isinstance(text, list):
+                text = ' '.join(str(item) for item in text)
+            
             # Clean cache periodically
             if time.time() - self.last_cleanup > 3600:  # 1 hour
                 self._clean_cache()
@@ -50,7 +54,7 @@ class ContextTranslator:
             if session_id:
                 self._update_conversation_context(session_id, text, translated_text, target_lang)
             
-            logger.info(f"🌐 Translated: '{text[:30]}...' -> '{translated_text[:30]}...' (confidence: {confidence:.2f})")
+            # logger.info(f"🌐 Translated: '{text[:30]}...' -> '{translated_text[:30]}...' (confidence: {confidence:.2f})")
             return translated_text, confidence
             
         except Exception as e:
@@ -193,7 +197,7 @@ class ContextTranslator:
                         
                     # Accept if confidence is very good
                     if enhanced_confidence > 0.8:
-                        logger.info(f"🌐 High confidence translation: {enhanced_confidence:.2f}")
+                        # logger.info(f"🌐 High confidence translation: {enhanced_confidence:.2f}")
                         return translated_text, enhanced_confidence
                         
                 except Exception as e:

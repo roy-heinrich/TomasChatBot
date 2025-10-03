@@ -155,7 +155,7 @@ class ContextAwareNLU:
         if any(word in query_lower for word in question_words):
             if response and len(response) > 5:  # We have an answer
                 score += 0.2
-                logger.info(f"🔍 Question-answer match found")
+                # logger.info(f"🔍 Question-answer match found")
         
         return {
             "score": min(score, 1.0),

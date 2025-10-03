@@ -60,12 +60,15 @@ class ResponseGenerator:
 
 RULES:
 1. Use ONLY database context - never invent data
-2. If no answer: offer admin contact
-3. Stay school-focused
-4. Medical emergency → 911
-5. For lists: Use numbered format (1. Item 2. Item 3. Item)
-6. CRITICAL: Complete numbered lists - never cut off mid-sentence.
-7. FORMAT: End intro with period. Start each numbered item on new line."""
+2. NEVER make up names, contact details, or school information
+3. If no database info: say "I don't have that information" and offer to help with other school topics
+4. Stay school-focused and be helpful first
+5. Medical emergency → 911
+6. For lists: Use numbered format (1. Item 2. Item 3. Item)
+7. CRITICAL: Complete numbered lists - never cut off mid-sentence.
+8. FORMAT: End intro with period. Start each numbered item on new line.
+9. NO HALLUCINATIONS: Only use information provided in database context.
+10. BE HELPFUL FIRST: Offer assistance with school topics before suggesting contact options."""
         
         # Language-specific additions (keep minimal)
         lang_rules = self._get_lang_rules(lang)
@@ -131,7 +134,7 @@ LANG: {lang_code}
 Use database info to answer directly. Be warm and conversational like a friendly school staff member. Add context about the person's role and offer additional help."""
         
         # No context available
-        return f"QUERY: {query}\nNo database info. Ask what else they'd like to know, use NLU to suggest topics."
+        return f"QUERY: {query}\nNo database info available. Say 'I don't have that information' and offer to help with other school topics or contact the school office."
     
     async def generate_response(self, query: str, context: str, lang: str, 
                               conversation_history: List[Dict] = None, 
@@ -168,6 +171,9 @@ Use database info to answer directly. Be warm and conversational like a friendly
                 response = response.replace('(context: staff)', '')
                 response = response.replace('(context: general)', '')
                 
+                # 🚨 CRITICAL FIX: Add messenger link for contact escalation
+                response = self.add_messenger_link_if_needed(response, query, context, lang)
+                
                 # Split long responses into multiple bubbles
                 split_responses = self.split_long_response(response)
                 return split_responses
@@ -185,6 +191,34 @@ Use database info to answer directly. Be warm and conversational like a friendly
             return "Paumanhin, hindi ko alam ang sagot sa tanong na ito. Makipag-ugnayan sa opisina ng paaralan para sa karagdagang impormasyon."
         else:
             return "I don't have that information. Please contact the school office for details."
+    
+    def add_messenger_link_if_needed(self, response: str, query: str, context: str, lang: str) -> str:
+        """Add messenger link ONLY for persistent escalation requests"""
+        context_lower = context.lower() if context else ""
+        
+        # 🚨 DEBUG: Log the context to see what's being passed
+        # logger.info(f"🔍 MESSENGER LINK DEBUG: context='{context_lower[:100]}...'")
+        
+        # ONLY add messenger link if context specifically indicates persistent escalation
+        # This ensures we're helpful first, then provide contact as last resort
+        persistent_escalation_context = any(phrase in context_lower for phrase in [
+            'contact link immediately', 'persistent about wanting to talk to a live person/admin',
+            'user has been persistent about wanting to talk to a live person/admin',  # Add the actual context phrase
+            'user wants to talk to someone from the school'  # Add this pattern too
+        ])
+        
+        # logger.info(f"🔍 MESSENGER LINK DEBUG: persistent_escalation_context={persistent_escalation_context}")
+        
+        # Only add messenger link for persistent escalation, not for first-time requests
+        if persistent_escalation_context:
+            # logger.info("🔍 MESSENGER LINK DEBUG: Adding messenger link!")
+            if lang in ["tl", "akl"]:
+                return f"{response}\n\n{self._messenger_button}"
+            else:
+                return f"{response}\n\n{self._messenger_button}"
+        
+        # logger.info("🔍 MESSENGER LINK DEBUG: Not adding messenger link")
+        return response
     
     def split_long_response(self, response: str, max_length: int = 400) -> List[str]:
         """Enhanced response splitting that preserves numbering and formatting"""

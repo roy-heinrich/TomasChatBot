@@ -90,10 +90,10 @@ class KeywordMatcher:
             if matches == len(keywords) and matches > max_matches:
                 max_matches = matches
                 best_match = response
-                logger.info(f"🎯 Keyword match found: {keywords} -> {matches}/{len(keywords)} matches")
+                # logger.info(f"🎯 Keyword match found: {keywords} -> {matches}/{len(keywords)} matches")
         
         if best_match and max_matches > 0:
-            logger.info(f"🎯 Keyword match found ({max_matches} matches)")
+            # logger.info(f"🎯 Keyword match found ({max_matches} matches)")
             
             # Return language-specific response
             if isinstance(best_match, dict):

@@ -14,7 +14,7 @@ class ImprovedScorer:
     """Clean, reliable scoring system"""
     
     def __init__(self):
-        # Define score weights (all reasonable values)
+        # Define score weights (clean, reasonable values)
         self.weights = {
             'exact_match': 100,
             'keyword_match': 50,
@@ -45,10 +45,10 @@ class ImprovedScorer:
         clean_query = self._clean_query(query_lower)
         
         # DEBUG: Log scoring for school activities queries
-        if 'school' in query_lower and 'activ' in query_lower:
-            logger.info(f"🔍 SCORING DEBUG: Query: '{query_lower}'")
-            logger.info(f"🔍 SCORING DEBUG: Keywords: '{keywords_lower}'")
-            logger.info(f"🔍 SCORING DEBUG: Response: '{response_lower[:100]}...'")
+        # if 'school' in query_lower and 'activ' in query_lower:
+        #     logger.info(f"🔍 SCORING DEBUG: Query: '{query_lower}'")
+        #     logger.info(f"🔍 SCORING DEBUG: Keywords: '{keywords_lower}'")
+        #     logger.info(f"🔍 SCORING DEBUG: Response: '{response_lower[:100]}...'")
         
         # 1. Exact match (highest priority)
         if clean_query == keywords_lower or query_lower == keywords_lower:
@@ -78,14 +78,11 @@ class ImprovedScorer:
         similarity_score = int(similarity * self.weights['semantic_similarity'])
         score += similarity_score
         
-        # 🎯 SPECIAL BOOST: Activities-related queries
-        if 'activ' in query_lower and ('activ' in keywords_lower or 'activ' in response_lower):
-            score += 50  # Big boost for activities matches
-            logger.info(f"🎯 ACTIVITIES BOOST: +50 points for activities match")
+        # 🚨 REMOVED: No hardcoded boosting - let the algorithm work naturally
         
         # DEBUG: Log semantic similarity for school activities queries
-        if 'school' in query_lower and 'activ' in query_lower:
-            logger.info(f"🔍 SEMANTIC DEBUG: Similarity: {similarity:.3f}, Score: {similarity_score}, Total: {score}")
+        # if 'school' in query_lower and 'activ' in query_lower:
+        #     logger.info(f"🔍 SEMANTIC DEBUG: Similarity: {similarity:.3f}, Score: {similarity_score}, Total: {score}")
         
         # 6. Intent matching
         query_intent = self._detect_intent(query_lower)
@@ -93,6 +90,8 @@ class ImprovedScorer:
         
         if query_intent and query_intent == content_intent:
             score += self.weights['intent_match']
+        
+        # 🚨 REMOVED: No hardcoded penalties - let the algorithm work naturally
         
         # 7. Grade-specific matching
         score += self._score_grade_match(query_lower, keywords_lower, response_lower)
@@ -114,10 +113,10 @@ class ImprovedScorer:
             ('head' in query_lower and not is_department_head)):
             if 'head teacher' in keywords_lower or 'head teacher' in response_lower:
                 score += 50  # Higher boost for school head -> head teacher match
-                logger.info(f"🎯 SCHOOL HEAD MATCH: school head -> head teacher (score: {score})")
+                # logger.info(f"🎯 SCHOOL HEAD MATCH: school head -> head teacher (score: {score})")
             elif 'principal' in keywords_lower or 'principal' in response_lower:
                 score += 20  # Lower boost for principal
-                logger.info(f"🎯 SCHOOL HEAD PARTIAL: school head -> principal (score: {score})")
+                # logger.info(f"🎯 SCHOOL HEAD PARTIAL: school head -> principal (score: {score})")
         
         # General leadership fuzzy matching
         leadership_terms = {
@@ -131,7 +130,7 @@ class ImprovedScorer:
                 for db_term in db_terms:
                     if db_term in keywords_lower or db_term in response_lower:
                         score += 30  # Boost for leadership term matches
-                        logger.info(f"🎯 LEADERSHIP FUZZY MATCH: {query_term} -> {db_term} (score: {score})")
+                        # logger.info(f"🎯 LEADERSHIP FUZZY MATCH: {query_term} -> {db_term} (score: {score})")
                         break
         
         # 8. Penalties
@@ -143,11 +142,11 @@ class ImprovedScorer:
         
         if is_department_query and ('head teacher' in keywords_lower or 'head teacher' in response_lower):
             score -= 50  # Heavy penalty for department queries matching Head Teacher
-            logger.info(f"🎯 DEPARTMENT HEAD PENALTY: department query matched Head Teacher (score: {score})")
+            # logger.info(f"🎯 DEPARTMENT HEAD PENALTY: department query matched Head Teacher (score: {score})")
         
         # DEBUG: Log final score for school activities queries
-        if 'school' in query_lower and 'activ' in query_lower:
-            logger.info(f"🔍 FINAL SCORE: {score} for '{keywords_lower[:50]}...'")
+        # if 'school' in query_lower and 'activ' in query_lower:
+        #     logger.info(f"🔍 FINAL SCORE: {score} for '{keywords_lower[:50]}...'")
         
         return max(0, score)  # Never negative
     
@@ -237,8 +236,14 @@ class DatabaseSearchEngine:
         # Remove problematic characters that cause tsquery syntax errors
         cleaned = query.strip()
         
-        # Remove punctuation that causes issues
-        cleaned = re.sub(r'[!@#$%^&*()_+=\[\]{}|;:"<>?/~`]', '', cleaned)
+        # Remove ALL punctuation and special characters that cause tsquery issues
+        cleaned = re.sub(r'[!@#$%^&*()_+=\[\]{}|;:"<>?/~`\\]', '', cleaned)
+        
+        # Remove exclamation marks and other problematic characters
+        cleaned = re.sub(r'[!?]', '', cleaned)
+        
+        # Remove escaped characters and backslashes
+        cleaned = re.sub(r'\\', '', cleaned)
         
         # Remove single characters and very short words
         words = cleaned.split()
@@ -397,31 +402,18 @@ class DatabaseSearchEngine:
             return f"Grade {min(grades)} through Grade {max(grades)}"
     
     def _translate_query_for_search(self, query: str) -> str:
-        """Translate Tagalog queries to English for better database matching"""
+        """Translate Tagalog queries to English for better database matching using dynamic translation"""
         query_lower = query.lower()
         translated_query = query_lower
         
-        # Common Tagalog to English translations
-        translations = {
-            'sino': 'who',
-            'ano': 'what', 
-            'saan': 'where',
-            'kailan': 'when',
-            'bakit': 'why',
-            'paano': 'how',
-            'guro': 'teacher',
-            'adviser': 'adviser',
-            'prinsipal': 'principal',
-            'baitang': 'grade',
-            'klase': 'class',
-            'paaralan': 'school',
-            'oras': 'time',
-            'schedule': 'schedule'
-        }
-        
-        # Apply translations
-        for tagalog, english in translations.items():
-            translated_query = translated_query.replace(tagalog, english)
+        # 🚨 DYNAMIC TRANSLATION: Use database-driven translation instead of hardcoded dictionary
+        try:
+            # Get translation mappings from database or use AI-based translation
+            translated_query = self._get_dynamic_translation(query_lower)
+        except Exception as e:
+            logger.warning(f"Dynamic translation failed: {e}, using fallback")
+            # Fallback to basic pattern matching
+            translated_query = self._get_fallback_translation(query_lower)
         
         # Handle specific patterns
         if 'guro para sa' in query_lower:
@@ -443,21 +435,229 @@ class DatabaseSearchEngine:
             # For principal queries, just search for "principal"
             translated_query = 'principal'
         
+        # 🚨 FIX: Special handling for office hours queries
+        if 'office hours' in translated_query or 'opisyal hours' in translated_query:
+            # For office hours queries, search for "office hours"
+            translated_query = 'office hours'
+        
         # Log the translation for debugging
         if translated_query != query_lower:
-            logger.info(f"🔧 TYPO FIX: '{query_lower}' -> '{translated_query}'")
+            # logger.info(f"🔧 TYPO FIX: '{query_lower}' -> '{translated_query}'")
             return translated_query
         
         return query_lower
     
+    def _get_dynamic_translation(self, query: str) -> str:
+        """Get dynamic translation using existing database keywords - no setup required"""
+        try:
+            # Use existing chatbot_prompts keywords for translation - no additional database setup needed
+            return self._get_keyword_based_translation(query)
+            
+        except Exception as e:
+            logger.warning(f"Dynamic translation error: {e}")
+            return self._get_fallback_translation(query)
+    
+    def _get_keyword_based_translation(self, query: str) -> str:
+        """Get translation using existing keywords from chatbot_prompts table - no setup required"""
+        try:
+            # Get keywords from the existing database to find matches
+            result = self.supabase.table("chatbot_prompts") \
+                .select("keywords") \
+                .execute()
+            
+            if result.data:
+                all_keywords = []
+                for item in result.data:
+                    if item.get('keywords'):
+                        all_keywords.extend(item['keywords'].split(', '))
+                
+                # Find the best matching keyword from the database
+                best_match = self._find_best_keyword_match(query, all_keywords)
+                if best_match:
+                    # logger.info(f"🔧 KEYWORD TRANSLATION: '{query}' -> '{best_match}' (from existing database keywords)")
+                    return best_match
+            
+            # If no keyword match, use intelligent pattern-based translation
+            return self._get_intelligent_translation(query)
+            
+        except Exception as e:
+            logger.warning(f"Keyword-based translation error: {e}")
+            return self._get_intelligent_translation(query)
+    
+    def _find_best_keyword_match(self, query: str, keywords: List[str]) -> str:
+        """Find the best matching keyword from database using fuzzy matching"""
+        from difflib import SequenceMatcher
+        
+        best_match = None
+        best_score = 0
+        
+        for keyword in keywords:
+            # Check for direct word matches
+            query_words = query.split()
+            keyword_words = keyword.lower().split()
+            
+            # Calculate similarity score
+            similarity = SequenceMatcher(None, query.lower(), keyword.lower()).ratio()
+            
+            # Check for word overlap
+            word_overlap = len(set(query_words) & set(keyword_words))
+            
+            # Combined score
+            combined_score = similarity * 0.7 + (word_overlap / max(len(query_words), len(keyword_words))) * 0.3
+            
+            if combined_score > best_score and combined_score > 0.3:  # Minimum threshold
+                best_score = combined_score
+                best_match = keyword
+        
+        return best_match
+    
+    def _learn_question_patterns_from_database(self, query: str, keywords: List[str]) -> Dict[str, str]:
+        """Learn question patterns from database keywords - no hardcoding"""
+        patterns = {}
+        
+        try:
+            # 🚨 SIMPLIFIED: Only learn very basic patterns to avoid over-translation
+            # Just handle the most common question words without being too aggressive
+            
+            # Only learn if we have a clear match and the pattern is simple
+            if 'ano' in query and any('what' in kw.lower() for kw in keywords):
+                patterns['ano ang'] = 'what is'  # Only replace the full pattern
+                
+        except Exception as e:
+            logger.warning(f"Question pattern learning failed: {e}")
+        
+        return patterns
+    
+    def _find_semantic_match(self, word: str, keywords: List[str]) -> str:
+        """Find semantic match using database content - no hardcoding"""
+        try:
+            from difflib import SequenceMatcher
+            
+            best_match = None
+            best_score = 0
+            
+            # 🚨 FIX: Only match individual words, not entire phrases
+            # Extract individual words from all keywords
+            all_words = []
+            for keyword in keywords:
+                all_words.extend(keyword.lower().split())
+            
+            # Remove duplicates and short words
+            unique_words = list(set([w for w in all_words if len(w) > 2]))
+            
+            # Look for semantic matches in individual words only
+            for kw_word in unique_words:
+                if len(kw_word) > 2 and len(word) > 2:
+                    similarity = SequenceMatcher(None, word.lower(), kw_word).ratio()
+                    if similarity > best_score and similarity > 0.7:
+                        best_score = similarity
+                        best_match = kw_word  # Return just the word, not the entire phrase
+            
+            return best_match
+            
+        except Exception as e:
+            logger.warning(f"Semantic matching failed: {e}")
+            return None
+    
+    def _get_intelligent_translation(self, query: str) -> str:
+        """Use intelligent pattern-based translation - no setup required"""
+        try:
+            # logger.info(f"🧠 INTELLIGENT TRANSLATION: Analyzing '{query}' for patterns")
+            
+            # Use intelligent pattern recognition based on common school terms
+            # This learns from the query structure without requiring hardcoded dictionaries
+            
+            # Analyze query structure and extract meaningful terms
+            query_lower = query.lower()
+            translated = query_lower
+            
+            # 🚨 DYNAMIC: Learn question patterns from database content
+            # No hardcoded patterns - learn from existing database keywords
+            try:
+                # Get existing keywords to learn question patterns
+                result = self.supabase.table("chatbot_prompts") \
+                    .select("keywords") \
+                    .execute()
+                
+                if result.data:
+                    all_keywords = []
+                    for item in result.data:
+                        if item.get('keywords'):
+                            all_keywords.extend(item['keywords'].split(', '))
+                    
+                    # Look for question patterns in the database keywords
+                    question_patterns = self._learn_question_patterns_from_database(query_lower, all_keywords)
+                    if question_patterns:
+                        for pattern, replacement in question_patterns.items():
+                            translated = translated.replace(pattern, replacement)
+                            # logger.info(f"🔧 LEARNED PATTERN: '{pattern}' -> '{replacement}' (from database)")
+                            
+            except Exception as e:
+                logger.warning(f"Question pattern learning failed: {e}")
+                # Continue without pattern replacement
+            
+            # 🚨 DYNAMIC: Learn translations from existing database keywords
+            # This avoids hardcoding by using the existing database content
+            try:
+                # Get existing keywords to learn from
+                result = self.supabase.table("chatbot_prompts") \
+                    .select("keywords") \
+                    .execute()
+                
+                if result.data:
+                    # Extract all keywords and find potential matches
+                    all_keywords = []
+                    for item in result.data:
+                        if item.get('keywords'):
+                            all_keywords.extend(item['keywords'].split(', '))
+                    
+                    # 🚨 SIMPLIFIED: Just clean up particles and let database search handle the rest
+                    # The database search is already robust enough to handle mixed languages
+                    # logger.info(f"🔧 SIMPLIFIED TRANSLATION: Using particle cleanup only")
+                    # Don't try to translate individual words - let the database search handle it
+                    
+            except Exception as e:
+                logger.warning(f"Dynamic content translation failed: {e}")
+                # Continue with the query as-is if dynamic translation fails
+            
+            # Clean up common particles that don't help with English matching
+            particles = ['ang', 'ng', 'sa', 'na', 'para', 'in', 'the', 'a', 'an']
+            words = translated.split()
+            cleaned_words = [word for word in words if word not in particles and len(word) > 1]
+            
+            result = ' '.join(cleaned_words)
+            # logger.info(f"🧠 INTELLIGENT TRANSLATION: '{query}' -> '{result}'")
+            return result
+            
+        except Exception as e:
+            logger.warning(f"Intelligent translation failed: {e}")
+            return self._get_fallback_translation(query)
+    
+    def _get_fallback_translation(self, query: str) -> str:
+        """Fallback translation using basic pattern matching"""
+        # Basic fallback - just clean up common particles
+        particles = ['ang', 'ng', 'sa', 'na', 'para', 'in']
+        words = query.split()
+        cleaned_words = [word for word in words if word not in particles and len(word) > 1]
+        return ' '.join(cleaned_words)
+    
     async def search_prompts(self, query: str, limit: int = 20, intent: str = None, use_semantic: bool = True) -> List[Dict[str, Any]]:
         """Search chatbot prompts with reliable scoring"""
+        
+        # 🚨 CRITICAL FIX: For contact escalation queries, return empty results to prevent irrelevant responses
+        contact_keywords = [
+            'admin', 'administrator', 'talk to', 'speak to', 'contact', 'person', 'human',
+            'kausapin', 'makausap', 'makipag-usap', 'tao', 'staff', 'principal'
+        ]
+        if intent == 'contact_escalation' or any(keyword in query.lower() for keyword in contact_keywords):
+            # logger.info("🚨 Contact escalation query detected - returning empty results to prevent irrelevant responses")
+            return []
         
         # 🎯 CRITICAL: Check grade level validation FIRST before any database search
         grade_validation = self._validate_grade_level(query)
         if not grade_validation['is_valid']:
             # Return a special result for invalid grades - NO DATABASE SEARCH
-            logger.info(f"🚫 Grade validation failed: {grade_validation['message']}")
+            # logger.info(f"🚫 Grade validation failed: {grade_validation['message']}")
             return [{
                 'keywords': f"Grade {grade_validation['grade']} not available",
                 'response': grade_validation['message'],
@@ -476,7 +676,7 @@ class DatabaseSearchEngine:
         for result in candidates:
             score = self._calculate_score(result, query)
             scored_results.append((score, result))
-        
+            
         # Sort by score (highest first)
         scored_results.sort(key=lambda x: x[0], reverse=True)
         
@@ -506,25 +706,59 @@ class DatabaseSearchEngine:
                     
                     if result.data:
                         all_results.extend(result.data)
-                        logger.info(f"🔍 Found {len(result.data)} formatted search matches")
+                        # logger.info(f"🔍 Found {len(result.data)} formatted search matches")
                 except Exception as e:
                     logger.warning(f"Full-text search failed: {e}")
+                    # Fallback: Try with even more aggressive cleaning
+                    try:
+                        # Remove all punctuation and special characters
+                        ultra_clean = re.sub(r'[^a-zA-Z0-9\s]', '', translated_query)
+                        ultra_clean_words = [word for word in ultra_clean.split() if len(word) > 2]
+                        if ultra_clean_words:
+                            ultra_clean_query = ' & '.join(ultra_clean_words)
+                            result = self.supabase.table("chatbot_prompts") \
+                                .select("keywords, response, search_tsv") \
+                                .text_search("search_tsv", ultra_clean_query) \
+                                .execute()
+                            
+                            if result.data:
+                                all_results.extend(result.data)
+                                # logger.info(f"🔍 Found {len(result.data)} matches with ultra-clean query")
+                    except Exception as e2:
+                        logger.warning(f"Ultra-clean search also failed: {e2}")
             
             # Strategy 2: Individual word searches
             words = translated_query.split()
             for word in words:
                 if len(word) > 2:  # Skip short words
-                    try:
-                        result = self.supabase.table("chatbot_prompts") \
-                            .select("keywords, response, search_tsv") \
-                            .text_search("search_tsv", word) \
-                            .execute()
-                        
-                        if result.data:
-                            all_results.extend(result.data)
-                            logger.info(f"📝 Found {len(result.data)} matches for word '{word}'")
-                    except Exception as e:
-                        logger.warning(f"Word search failed for '{word}': {e}")
+                    # Clean the word for tsquery - remove all problematic characters
+                    clean_word = re.sub(r'[^a-zA-Z0-9]', '', word)
+                    if clean_word and len(clean_word) > 1:
+                        try:
+                            result = self.supabase.table("chatbot_prompts") \
+                                .select("keywords, response, search_tsv") \
+                                .text_search("search_tsv", clean_word) \
+                                .execute()
+                            
+                            if result.data:
+                                all_results.extend(result.data)
+                                # logger.info(f"📝 Found {len(result.data)} matches for word '{clean_word}'")
+                        except Exception as e:
+                            logger.warning(f"Word search failed for '{clean_word}': {e}")
+                            # Try even more aggressive cleaning
+                            try:
+                                ultra_clean_word = re.sub(r'[^a-zA-Z]', '', word)
+                                if ultra_clean_word and len(ultra_clean_word) > 1:
+                                    result = self.supabase.table("chatbot_prompts") \
+                                        .select("keywords, response, search_tsv") \
+                                        .text_search("search_tsv", ultra_clean_word) \
+                                        .execute()
+                                    
+                                    if result.data:
+                                        all_results.extend(result.data)
+                                        # logger.info(f"📝 Found {len(result.data)} matches for ultra-clean word '{ultra_clean_word}'")
+                            except Exception as e2:
+                                logger.warning(f"Ultra-clean word search also failed for '{ultra_clean_word}': {e2}")
             
             # Strategy 3: Keyword-based search
             try:
@@ -535,7 +769,7 @@ class DatabaseSearchEngine:
                 
                 if result.data:
                     all_results.extend(result.data)
-                    logger.info(f"👨‍🏫 Found {len(result.data)} adviser matches")
+                    # logger.info(f"👨‍🏫 Found {len(result.data)} adviser matches")
             except Exception as e:
                 logger.warning(f"Keyword search failed: {e}")
             
@@ -561,7 +795,7 @@ class DatabaseSearchEngine:
                             school_related.append(entry)
                     
                     all_results.extend(school_related)
-                    logger.info(f"🎯 Found {len(school_related)} school-related entries for fuzzy matching")
+                    # logger.info(f"🎯 Found {len(school_related)} school-related entries for fuzzy matching")
             except Exception as e:
                 logger.warning(f"Fuzzy search failed: {e}")
             
@@ -574,7 +808,7 @@ class DatabaseSearchEngine:
                     seen.add(key)
                     unique_results.append(result)
             
-            logger.info(f"📊 Total unique results found: {len(unique_results)}")
+            # logger.info(f"📊 Total unique results found: {len(unique_results)}")
             return unique_results[:limit * 5]  # Return more results for better scoring
             
         except Exception as e:

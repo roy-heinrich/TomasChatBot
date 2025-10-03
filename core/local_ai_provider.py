@@ -38,7 +38,7 @@ class LocalAIProvider:
             "deepseek-ai/DeepSeek-V3-0324"  # Same model that works in main provider
         ]
         self.current_model = "deepseek-ai/DeepSeek-V3-0324"
-        logger.info("✅ Local AI provider initialized (completely free)")
+        # logger.info("✅ Local AI provider initialized (completely free)")
     
     async def generate_response(self, prompt: str, system_prompt: str = None, 
                               max_tokens: int = 1000, temperature: float = 0.7) -> AIResponse:
