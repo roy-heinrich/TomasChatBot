@@ -228,7 +228,7 @@ class ChatBot:
                 from core.language_detector import LanguageDetector
                 advanced_detector = LanguageDetector()
                 detected_lang, confidence = advanced_detector.detect_language(query)
-                logger.info(f"🌍 Advanced detector: {detected_lang} (confidence: {confidence:.2f})")
+                # logger.info(f"🌍 Advanced detector: {detected_lang} (confidence: {confidence:.2f})")  # Reduced for Railway
             except Exception as e:
                 logger.warning(f"⚠️ Advanced detector failed: {e}")
                 # Fallback to multilingual NLP
@@ -238,14 +238,14 @@ class ChatBot:
                         lang_result = await multilingual_nlp.detect_language_semantic(query)
                         detected_lang = lang_result.language
                         confidence = lang_result.confidence
-                        logger.info(f"🌍 Multilingual NLP fallback: {detected_lang} (confidence: {confidence:.2f})")
+                        # logger.info(f"🌍 Multilingual NLP fallback: {detected_lang} (confidence: {confidence:.2f})")  # Reduced for Railway
                     else:
                         raise ImportError("Multilingual NLP not available")
                 except Exception as e2:
                     logger.warning(f"⚠️ Multilingual NLP fallback failed: {e2}")
                     # Ultimate fallback
                     detected_lang, confidence = self.language_detector.detect_language(query)
-                    logger.info(f"🌍 Ultimate fallback: {detected_lang} (confidence: {confidence:.2f})")
+                    # logger.info(f"🌍 Ultimate fallback: {detected_lang} (confidence: {confidence:.2f})")  # Reduced for Railway
             
             # Map detected language to response language
             response_lang = self._map_to_response_language(detected_lang)
@@ -265,7 +265,7 @@ class ChatBot:
             
             # 2. Get NLU analysis for intent
             nlu_result = await self.nlu_engine.analyze_intent(query)
-            logger.info(f"🎯 NLU Intent: {nlu_result.intent.value} for query: {query}")
+            # logger.info(f"🎯 NLU Intent: {nlu_result.intent.value} for query: {query}")  # Reduced for Railway
             
             # CRITICAL SAFETY: Check for medical emergencies (HIGHEST PRIORITY)
             if nlu_result.intent.value == "emergency":
@@ -284,7 +284,7 @@ class ChatBot:
                     nlu_result=nlu_result,
                     entities=[]  # Will be populated later
                 )
-                logger.info(f"🧠 Conversation analysis: {conversation_context.topic_flow}, urgency: {conversation_context.urgency_level}")
+                # logger.info(f"🧠 Conversation analysis: {conversation_context.topic_flow}, urgency: {conversation_context.urgency_level}")  # Reduced for Railway
                 
                 # Analyze emotions
                 emotional_analysis = await self.emotional_intelligence.analyze_emotions(
@@ -292,7 +292,7 @@ class ChatBot:
                     conversation_history=conversation_history or [],
                     language=detected_lang
                 )
-                logger.info(f"💭 Emotional analysis: {emotional_analysis.primary_emotion} (intensity: {emotional_analysis.emotion_intensity:.2f})")
+                # logger.info(f"💭 Emotional analysis: {emotional_analysis.primary_emotion} (intensity: {emotional_analysis.emotion_intensity:.2f})")  # Reduced for Railway
                 
             except Exception as e:
                 logger.warning(f"⚠️ Advanced AI analysis failed: {e}")
@@ -424,13 +424,13 @@ class ChatBot:
             
             # 5. Generate response using Groq with context-aware analysis
             if best_result and context_analysis.should_use_context:
-                logger.info("📚 Using database context for Groq response")
+                # logger.info("📚 Using database context for Groq response")  # Reduced for Railway
                 # Provide complete database information as context
                 if isinstance(best_result, dict):
                     keywords = best_result.get('keywords', '')
                     response = best_result.get('response', '')
                     context = f"Database Information: {keywords} - {response}"
-                    logger.info(f"📚 Context built: {context[:100]}...")
+                    # logger.info(f"📚 Context built: {context[:100]}...")  # Reduced for Railway
                 else:
                     logger.warning(f"⚠️ Best result is not a dict: {type(best_result)} - {best_result}")
                     context = f"Database Information: {best_result}"
@@ -446,11 +446,11 @@ class ChatBot:
                         context += "\n\nADDITIONAL CONTEXT: Please provide a comprehensive, detailed response in Tagalog. Include background information and be helpful and informative."
             else:
                 # Context-aware NLU determined not to use database context
-                logger.info("🎯 Context-aware NLU: Not using database context")
+                # logger.info("🎯 Context-aware NLU: Not using database context")  # Reduced for Railway
                 context = "No specific information available in database for this query"
             
             # Debug: Log the final context before sending to AI
-            logger.info(f"🔍 FINAL CONTEXT: {context[:200]}...")
+            # logger.info(f"🔍 FINAL CONTEXT: {context[:200]}...")  # Reduced for Railway
             
             # Add personalized memory context
             if session_id:
@@ -567,13 +567,14 @@ class ChatBot:
                         conversation_history=conversation_history
                     )
                     
-                    logger.info(f"🎨 Response personalized: tone={personalized_response.tone}, formality={personalized_response.formality_level}")
+                    # logger.info(f"🎨 Response personalized: tone={personalized_response.tone}, formality={personalized_response.formality_level}")  # Reduced for Railway
                     
                 except Exception as e:
                     logger.warning(f"⚠️ Response personalization failed: {e}")
                     # Continue with original response
             else:
-                logger.info("ℹ️ Skipping personalization - no database context available")
+                # logger.info("ℹ️ Skipping personalization - no database context available")  # Reduced for Railway
+                pass
             
             # Apply context-aware translation if needed
             if detected_lang != "en" and confidence < 0.8:

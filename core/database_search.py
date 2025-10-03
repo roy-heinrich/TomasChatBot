@@ -127,12 +127,12 @@ class DatabaseSearchEngine:
         
         # Return the top results
         top_results = [result for score, result in scored_results[:limit]]
-        logger.info(f"🏆 Final results sorted by relevance: {len(top_results)} results")
+        # logger.info(f"🏆 Final results sorted by relevance: {len(top_results)} results")  # Reduced for Railway
         
         # Debug: Log the top results with their scores
         for i, (score, result) in enumerate(scored_results[:3]):
             keywords = result.get('keywords', '')[:50]
-            logger.info(f"🏆 Top {i+1}: {keywords}... (score: {score})")
+            # logger.info(f"🏆 Top {i+1}: {keywords}... (score: {score})")  # Reduced for Railway
         
         return top_results
     
@@ -204,7 +204,7 @@ class DatabaseSearchEngine:
             
             elif intent == "staff_inquiry" or any(word in query.lower() for word in ['principal', 'prinsipal', 'teacher', 'guro', 'staff', 'superintendent', 'head', 'adviser']):
                 # For staff inquiries, search for staff-related information
-                logger.info(f"🎯 STAFF INQUIRY DETECTED: {query}")
+                # logger.info(f"🎯 STAFF INQUIRY DETECTED: {query}")  # Reduced for Railway
                 try:
                     staff_queries = ['principal', 'prinsipal', 'teacher', 'guro', 'staff', 'head teacher', 'school head', 'superintendent']
                     for staff_query in staff_queries:
@@ -236,7 +236,7 @@ class DatabaseSearchEngine:
                 
                 # If we found staff results, return them
                 if all_results:
-                    logger.info(f"📊 Total unique results found: {len(all_results)}")
+                    # logger.info(f"📊 Total unique results found: {len(all_results)}")  # Reduced for Railway
                     return all_results[:limit]
             
             # Special handling for grade searches - return only exact matches

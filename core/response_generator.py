@@ -31,7 +31,7 @@ class ResponseGenerator:
             try:
                 from groq import Groq
                 self.groq_client = Groq(api_key=groq_key)
-                logger.info("✅ Groq client initialized (legacy support)")
+                # logger.info("✅ Groq client initialized (legacy support)")  # Reduced for Railway
             except ImportError as e:
                 logger.error(f"❌ Groq library not installed: {e}")
             except Exception as e:
@@ -39,7 +39,7 @@ class ResponseGenerator:
         
         # Log available providers
         stats = self.multi_ai.get_provider_stats()
-        logger.info(f"🚀 Multi-provider AI initialized: {stats}")
+        # logger.info(f"🚀 Multi-provider AI initialized: {stats}")  # Reduced for Railway
         
         # Cache common responses
         self._fallback_cache = {
@@ -165,7 +165,7 @@ Use database info to answer directly. Be warm and conversational like a friendly
             )
             
             if ai_response.success:
-                logger.info(f"✅ Response generated using {ai_response.provider} ({ai_response.model})")
+                # logger.info(f"✅ Response generated using {ai_response.provider} ({ai_response.model})")  # Reduced for Railway
                 response = ai_response.content.strip()
                 
                 # Remove bold formatting and context annotations

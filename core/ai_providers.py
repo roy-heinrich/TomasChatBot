@@ -279,7 +279,7 @@ class CohereProvider(AIProvider):
         try:
             import cohere
             self.client = cohere.Client(self.api_key)
-            logger.info("✅ Cohere client initialized")
+            # logger.info("✅ Cohere client initialized")  # Reduced for Railway
         except ImportError:
             logger.error("❌ Cohere library not installed")
         except Exception as e:
@@ -404,7 +404,7 @@ class MultiProviderAI:
                 )
                 if provider.is_available():
                     self.providers.append(provider)
-                    logger.info(f"✅ {config['class'].__name__} added to providers")
+                    # logger.info(f"✅ {config['class'].__name__} added to providers")  # Reduced for Railway
                 else:
                     logger.warning(f"⚠️ {config['class'].__name__} not available")
             except Exception as e:

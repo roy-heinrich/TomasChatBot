@@ -38,6 +38,17 @@ from chatbot_refactored import ChatBot
 from pydantic import BaseModel
 from core.security import sql_protector
 
+# Configure logging to reduce verbosity
+logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
+
+# Silence verbose external libraries
+logging.getLogger('httpx').setLevel(logging.ERROR)
+logging.getLogger('httpcore').setLevel(logging.ERROR)
+logging.getLogger('urllib3').setLevel(logging.ERROR)
+logging.getLogger('requests').setLevel(logging.ERROR)
+logging.getLogger('multipart').setLevel(logging.ERROR)
+logging.getLogger('uvicorn.access').setLevel(logging.ERROR)
+
 load_dotenv()
 
 # Optimized logging configuration
