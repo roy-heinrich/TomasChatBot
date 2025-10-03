@@ -21,7 +21,7 @@ class ImprovedScorer:
             'word_overlap': 10,  # per word
             'response_match': 5,   # per word
             'length_bonus': 15,
-            'semantic_similarity': 30,
+            'semantic_similarity': 80,
             'intent_match': 40
         }
         

@@ -439,6 +439,15 @@ class ChatBot:
                         intent_name, entities
                     )
                     
+                    # DEBUG: Log search results and context analysis
+                    logger.info(f"🔍 DEBUG: Query: '{query}'")
+                    logger.info(f"🔍 DEBUG: Found {len(search_results)} search results")
+                    if search_results:
+                        logger.info(f"🔍 DEBUG: Top result keywords: '{search_results[0].get('keywords', 'N/A')}'")
+                        logger.info(f"🔍 DEBUG: Top result response: '{search_results[0].get('response', 'N/A')[:100]}...'")
+                    logger.info(f"🔍 DEBUG: Context analysis - should_use_context: {context_analysis.should_use_context}")
+                    logger.info(f"🔍 DEBUG: Context analysis - reasoning: {context_analysis.reasoning}")
+                    
                     best_result = None
                     if context_analysis.should_use_context and search_results:
                         # logger.info("🎯 Context-aware NLU: Using database results")  # Commented out debug logs
@@ -453,13 +462,13 @@ class ChatBot:
             
             # 5. Generate response using Groq with context-aware analysis
             if best_result and context_analysis.should_use_context:
-                # logger.info("📚 Using database context for Groq response")  # Reduced for Railway
+                logger.info("📚 Using database context for response generation")
                 # Provide complete database information as context
                 if isinstance(best_result, dict):
                     keywords = best_result.get('keywords', '')
                     response = best_result.get('response', '')
                     context = f"Database Information: {keywords} - {response}"
-                    # logger.info(f"📚 Context built: {context[:100]}...")  # Reduced for Railway
+                    logger.info(f"📚 DEBUG: Context built: {context[:200]}...")
                 else:
                     logger.warning(f"⚠️ Best result is not a dict: {type(best_result)} - {best_result}")
                     context = f"Database Information: {best_result}"
@@ -603,13 +612,17 @@ class ChatBot:
                         language=response_lang
                     )
                     
-                    # Apply personalization to the response
-                    response_text = await self.response_personalizer.apply_personalization(
-                        response=response_text,
-                        personalization=personalized_response,
-                        user_name=user_name,
-                        conversation_history=conversation_history
-                    )
+                    # Apply personalization to the response (only if it's a string)
+                    if isinstance(response_text, str):
+                        response_text = await self.response_personalizer.apply_personalization(
+                            response=response_text,
+                            personalization=personalized_response,
+                            user_name=user_name,
+                            conversation_history=conversation_history
+                        )
+                    else:
+                        # Skip personalization for already split responses
+                        logger.info("ℹ️ Skipping personalization - response already split")
                     
                     # logger.info(f"🎨 Response personalized: tone={personalized_response.tone}, formality={personalized_response.formality_level}")  # Reduced for Railway
                     
@@ -630,8 +643,8 @@ class ChatBot:
                     response_text = translated_response
                     # logger.info(f"🌐 Context-aware translation applied (confidence: {translation_confidence:.2f})  # Commented out debug logs")
             
-            # 6. Split long responses if needed
-            split_messages = self.response_generator.split_long_response(response_text)
+            # 6. Response is already split by generate_response
+            split_messages = response_text if isinstance(response_text, list) else [response_text]
             
             return ChatResponse(
                 response=split_messages,
@@ -659,7 +672,7 @@ class ChatBot:
     def _create_response(self, response_text: str, entities: List[ExtractedEntity], 
                         detected_lang: str, confidence: float) -> ChatResponse:
         """Create a ChatResponse object"""
-        split_messages = self.response_generator.split_long_response(response_text)
+        split_messages = response_text if isinstance(response_text, list) else [response_text]
         
         return ChatResponse(
             response=split_messages,
@@ -732,7 +745,7 @@ class ChatBot:
                 response_text = "I couldn't find any information about your question. It would be best if you can contact the school office to better cater your question."
         
         # Split long responses if needed
-        split_messages = self.response_generator.split_long_response(response_text)
+        split_messages = response_text if isinstance(response_text, list) else [response_text]
         
         return ChatResponse(
             response=split_messages,
@@ -768,7 +781,7 @@ class ChatBot:
             )
             
             # Split long responses if needed
-            split_messages = self.response_generator.split_long_response(response_text)
+            split_messages = response_text if isinstance(response_text, list) else [response_text]
             
             return ChatResponse(
                 response=split_messages,

@@ -21,7 +21,7 @@ class ImprovedScorer:
             'word_overlap': 10,  # per word
             'response_match': 5,   # per word
             'length_bonus': 15,
-            'semantic_similarity': 30,
+            'semantic_similarity': 80,
             'intent_match': 40
         }
         
@@ -43,6 +43,12 @@ class ImprovedScorer:
         
         # Clean query (remove question words)
         clean_query = self._clean_query(query_lower)
+        
+        # DEBUG: Log scoring for school activities queries
+        if 'school' in query_lower and 'activ' in query_lower:
+            logger.info(f"🔍 SCORING DEBUG: Query: '{query_lower}'")
+            logger.info(f"🔍 SCORING DEBUG: Keywords: '{keywords_lower}'")
+            logger.info(f"🔍 SCORING DEBUG: Response: '{response_lower[:100]}...'")
         
         # 1. Exact match (highest priority)
         if clean_query == keywords_lower or query_lower == keywords_lower:
@@ -69,7 +75,17 @@ class ImprovedScorer:
         
         # 5. Semantic similarity (simple fuzzy match)
         similarity = SequenceMatcher(None, clean_query, keywords_lower).ratio()
-        score += int(similarity * self.weights['semantic_similarity'])
+        similarity_score = int(similarity * self.weights['semantic_similarity'])
+        score += similarity_score
+        
+        # 🎯 SPECIAL BOOST: Activities-related queries
+        if 'activ' in query_lower and ('activ' in keywords_lower or 'activ' in response_lower):
+            score += 50  # Big boost for activities matches
+            logger.info(f"🎯 ACTIVITIES BOOST: +50 points for activities match")
+        
+        # DEBUG: Log semantic similarity for school activities queries
+        if 'school' in query_lower and 'activ' in query_lower:
+            logger.info(f"🔍 SEMANTIC DEBUG: Similarity: {similarity:.3f}, Score: {similarity_score}, Total: {score}")
         
         # 6. Intent matching
         query_intent = self._detect_intent(query_lower)
@@ -128,6 +144,10 @@ class ImprovedScorer:
         if is_department_query and ('head teacher' in keywords_lower or 'head teacher' in response_lower):
             score -= 50  # Heavy penalty for department queries matching Head Teacher
             logger.info(f"🎯 DEPARTMENT HEAD PENALTY: department query matched Head Teacher (score: {score})")
+        
+        # DEBUG: Log final score for school activities queries
+        if 'school' in query_lower and 'activ' in query_lower:
+            logger.info(f"🔍 FINAL SCORE: {score} for '{keywords_lower[:50]}...'")
         
         return max(0, score)  # Never negative
     
@@ -409,6 +429,9 @@ class DatabaseSearchEngine:
             translated_query = translated_query.replace('guro para sa', 'teacher for')
             translated_query = translated_query.replace('baitang', 'grade')
         
+        # 🎯 DYNAMIC TYPO FIX: Use fuzzy matching for typos
+        # This will be handled in the search logic, not here
+        
         # Clean up common words that don't help with matching
         words_to_remove = ['ang', 'ng', 'sa', 'para', 'in', 'who', 'what', 'where', 'when', 'why', 'how', 'kayo', 'kayO']
         translated_words = translated_query.split()
@@ -422,6 +445,7 @@ class DatabaseSearchEngine:
         
         # Log the translation for debugging
         if translated_query != query_lower:
+            logger.info(f"🔧 TYPO FIX: '{query_lower}' -> '{translated_query}'")
             return translated_query
         
         return query_lower
@@ -442,7 +466,7 @@ class DatabaseSearchEngine:
             }]
         
         # Get candidates using traditional keyword search
-        candidates = await self._search_prompts_traditional(query, limit * 2, intent)
+        candidates = await self._search_prompts_traditional(query, limit * 5, intent)  # Get more candidates
         
         if not candidates:
             return []
@@ -462,7 +486,7 @@ class DatabaseSearchEngine:
         return top_results
     
     async def _search_prompts_traditional(self, query: str, limit: int = 20, intent: str = None) -> List[Dict[str, Any]]:
-        """Traditional keyword-based search"""
+        """Traditional keyword-based search with fuzzy matching"""
         try:
             all_results = []
             
@@ -515,6 +539,32 @@ class DatabaseSearchEngine:
             except Exception as e:
                 logger.warning(f"Keyword search failed: {e}")
             
+            # 🎯 Strategy 4: FUZZY SEARCH - Get ALL entries and let scoring handle it
+            # This ensures we don't miss entries due to typos
+            try:
+                result = self.supabase.table("chatbot_prompts") \
+                    .select("keywords, response, search_tsv") \
+                    .execute()
+                
+                if result.data:
+                    # Filter to only school-related entries to avoid noise
+                    school_related = []
+                    for entry in result.data:
+                        keywords = (entry.get('keywords') or '').lower()
+                        response = (entry.get('response') or '').lower()
+                        
+                        # Check if entry is school-related
+                        school_terms = ['school', 'student', 'teacher', 'grade', 'class', 'activity', 'activities', 
+                                       'event', 'program', 'curriculum', 'education', 'learning']
+                        
+                        if any(term in keywords or term in response for term in school_terms):
+                            school_related.append(entry)
+                    
+                    all_results.extend(school_related)
+                    logger.info(f"🎯 Found {len(school_related)} school-related entries for fuzzy matching")
+            except Exception as e:
+                logger.warning(f"Fuzzy search failed: {e}")
+            
             # Remove duplicates and return
             unique_results = []
             seen = set()
@@ -525,7 +575,7 @@ class DatabaseSearchEngine:
                     unique_results.append(result)
             
             logger.info(f"📊 Total unique results found: {len(unique_results)}")
-            return unique_results[:limit]
+            return unique_results[:limit * 5]  # Return more results for better scoring
             
         except Exception as e:
             logger.warning(f"Database search failed: {e}")

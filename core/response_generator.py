@@ -60,11 +60,12 @@ class ResponseGenerator:
 
 RULES:
 1. Use ONLY database context - never invent data
-2. No roleplay - you're an assistant
-3. If no answer: offer admin contact
-4. Stay school-focused
-5. Medical emergency → 911
-6. For lists: Use numbered format (1. Item 2. Item 3. Item)"""
+2. If no answer: offer admin contact
+3. Stay school-focused
+4. Medical emergency → 911
+5. For lists: Use numbered format (1. Item 2. Item 3. Item)
+6. CRITICAL: Complete numbered lists - never cut off mid-sentence.
+7. FORMAT: End intro with period. Start each numbered item on new line."""
         
         # Language-specific additions (keep minimal)
         lang_rules = self._get_lang_rules(lang)
@@ -167,7 +168,9 @@ Use database info to answer directly. Be warm and conversational like a friendly
                 response = response.replace('(context: staff)', '')
                 response = response.replace('(context: general)', '')
                 
-                return response
+                # Split long responses into multiple bubbles
+                split_responses = self.split_long_response(response)
+                return split_responses
             else:
                 logger.warning(f"⚠️ Multi-provider AI failed: {ai_response.error}")
                 return self._get_fallback_response(lang)
@@ -191,6 +194,9 @@ Use database info to answer directly. Be warm and conversational like a friendly
             max_length = 500
         
         if len(response) <= max_length:
+            # Even for short responses, check if we have numbered items that should be split
+            if re.search(r'\d+\.\s+', response):
+                return self._split_numbered_list_smart(response, max_length)
             return [response]
         
         # Skip numbered list splitting for now - use regular text splitting
@@ -202,38 +208,77 @@ Use database info to answer directly. Be warm and conversational like a friendly
         # Enhanced splitting for long responses - bubble them properly
         if re.search(r'\d+\.\s+', response):
             # For numbered lists, ALWAYS split by complete numbered items
-            sentences = self._split_numbered_list_smart(response, max_length)
+            return self._split_numbered_list_smart(response, max_length)
         else:
             # Regular sentence splitting for non-numbered content
             sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', response)
-        
-        messages = []
-        current = ""
-        
-        for sentence in sentences:
-            if len(current) + len(sentence) + 1 <= max_length:
-                current = f"{current} {sentence}".strip()
-            else:
-                if current:
-                    messages.append(current)
-                current = sentence if len(sentence) <= max_length else self._force_split(sentence, max_length)
-        
-        if current:
-            messages.append(current)
-        
-        return messages
+            
+            messages = []
+            current = ""
+            
+            for sentence in sentences:
+                if len(current) + len(sentence) + 1 <= max_length:
+                    current = f"{current} {sentence}".strip()
+                else:
+                    if current:
+                        messages.append(current)
+                    current = sentence if len(sentence) <= max_length else self._force_split(sentence, max_length)
+            
+            if current:
+                messages.append(current)
+            
+            return messages
     
     def _split_numbered_list_smart(self, response: str, max_length: int) -> List[str]:
-        """Simple splitting for numbered lists - each number gets its own bubble"""
-        # Simple approach: split by numbered items
-        parts = re.split(r'(?=\d+\.\s+)', response)
+        """SIMPLE splitting - each number gets its own bubble"""
+        # Find all numbered items and split them aggressively
+        numbered_items = re.findall(r'\d+\.\s+[^0-9]*(?=\d+\.\s+|$)', response)
         
-        messages = []
-        for part in parts:
-            if part.strip():
-                messages.append(part.strip())
-        
-        return messages if messages else [response]
+        if numbered_items:
+            messages = []
+            
+            # Split by each numbered item
+            parts = re.split(r'(?=\d+\.\s+)', response)
+            
+            for part in parts:
+                if not part.strip():
+                    continue
+                    
+                part = part.strip()
+                
+                # Check if this part contains multiple numbers (like intro + 1. Item + 2. Item)
+                if re.search(r'\d+\.\s+.*\d+\.\s+', part):
+                    # This part has multiple numbers - split them aggressively
+                    sub_parts = re.split(r'(?=\d+\.\s+)', part)
+                    for sub_part in sub_parts:
+                        if sub_part.strip():
+                            messages.append(sub_part.strip())
+                else:
+                    # Single number or intro text
+                    if re.search(r'\d+\.\s+', part):
+                        # Split by the first number found
+                        first_number_match = re.search(r'(\d+\.\s+)', part)
+                        if first_number_match:
+                            # Split at the first number
+                            intro_part = part[:first_number_match.start()].strip()
+                            numbered_part = part[first_number_match.start():].strip()
+                            
+                            # Add intro separately if substantial
+                            if intro_part and len(intro_part) > 20:
+                                messages.append(intro_part)
+                            
+                            # Add the numbered part
+                            if numbered_part:
+                                messages.append(numbered_part)
+                        else:
+                            messages.append(part)
+                    else:
+                        # No numbers in this part, just add it
+                        messages.append(part)
+            
+            return messages if messages else [response]
+        else:
+            return [response]
     
     def _split_numbered_list(self, response: str, max_length: int) -> List[str]:
         """Split numbered lists while preserving complete numbered items"""
