@@ -21,13 +21,32 @@ class SQLInjectionProtector:
             # Basic SQL keywords
             r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|UNION|SCRIPT)\b)",
             
-            # Boolean-based SQL injection
+            # Boolean-based SQL injection - Enhanced patterns
             r"(\b(OR|AND)\s+\d+\s*=\s*\d+)",
             r"(\b(OR|AND)\s+'.*'\s*=\s*'.*')",
             r"(\bOR\s+1\s*=\s*1\b)",
             r"(\bAND\s+1\s*=\s*1\b)",
             r"(\bOR\s+'.*'\s*=\s*'.*'\b)",
             r"(\bAND\s+'.*'\s*=\s*'.*'\b)",
+            
+            # Simple boolean patterns (the missing ones!)
+            r"(\d+'\s*=\s*'\d+)",  # '1'='1'
+            r"(\d+'\s*=\s*'\d+)",  # '1'='1' (alternative)
+            r"(\d+'\s*OR\s*'\d+)",  # '1' OR '1'
+            r"(\d+'\s*AND\s*'\d+)",  # '1' AND '1'
+            r"(\d+'\s*=\s*'\d+'\s*OR)",  # '1'='1' OR
+            r"(\d+'\s*=\s*'\d+'\s*AND)",  # '1'='1' AND
+            r"(\d+'\s*OR\s*'\d+'\s*=\s*'\d+)",  # '1' OR '1'='1'
+            r"(\d+'\s*AND\s*'\d+'\s*=\s*'\d+)",  # '1' AND '1'='1'
+            
+            # Single quote patterns
+            r"(\d+'\s*=\s*'\d+)",  # '1'='1'
+            r"(\d+'\s*OR\s*'\d+)",  # '1' OR '1'
+            r"(\d+'\s*AND\s*'\d+)",  # '1' AND '1'
+            
+            # Classic SQL injection patterns
+            r"(\d+'\s*=\s*'\d+'\s*OR\s*'\d+'\s*=\s*'\d+)",  # '1'='1' OR '1'='1'
+            r"(\d+'\s*=\s*'\d+'\s*AND\s*'\d+'\s*=\s*'\d+)",  # '1'='1' AND '1'='1'
             
             # Union-based SQL injection
             r"(\bUNION\s+SELECT\b)",

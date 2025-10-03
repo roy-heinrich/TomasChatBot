@@ -1,19 +1,27 @@
 import os
 import nltk
 
-# Point NLTK to the local nltk_data folder first, then Render path for deployment
+# Configure NLTK data paths for different deployment environments
 local_nltk_path = os.path.join(os.path.dirname(__file__), "nltk_data")
 render_nltk_path = "/opt/render/nltk_data"
+railway_nltk_path = "/app/nltk_data"
 
-# Add local path first (for development), then Render path (for deployment)
-nltk.data.path.insert(0, local_nltk_path)
-nltk.data.path.append(render_nltk_path)
+# Add paths in order of preference
+nltk.data.path.insert(0, local_nltk_path)  # Local development
+nltk.data.path.append(railway_nltk_path)  # Railway deployment
+nltk.data.path.append(render_nltk_path)   # Render deployment
 
-# Set environment variable to local path for development
-os.environ["NLTK_DATA"] = local_nltk_path
+# Set environment variable
+if os.path.exists(local_nltk_path):
+    os.environ["NLTK_DATA"] = local_nltk_path
+elif os.path.exists(railway_nltk_path):
+    os.environ["NLTK_DATA"] = railway_nltk_path
+elif os.path.exists(render_nltk_path):
+    os.environ["NLTK_DATA"] = render_nltk_path
 
 print(f"✅ NLTK data paths configured:")
 print(f"   Local: {local_nltk_path}")
+print(f"   Railway: {railway_nltk_path}")
 print(f"   Render: {render_nltk_path}")
 print(f"   Current NLTK paths: {nltk.data.path[:3]}...")
 

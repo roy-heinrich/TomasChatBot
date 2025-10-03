@@ -23,6 +23,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application code
 COPY . .
 
+# Copy NLTK data to the container
+COPY nltk_data/ /app/nltk_data/
+
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV NLTK_DATA=/app/nltk_data

@@ -61,8 +61,7 @@ tests/
 Dockerfile.railway
 railway.toml
 
-# NLTK data
-nltk_data/
+# Models (but keep nltk_data for Railway)
 models/
 
 # Scripts

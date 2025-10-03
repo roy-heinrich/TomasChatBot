@@ -116,8 +116,25 @@ class DatabaseSearchEngine:
         if not candidates:
             return []
         
-        # Return database search results (no embeddings, no reranking)
-        return candidates[:limit]
+        # Apply scoring and sorting to ensure best results are first
+        scored_results = []
+        for result in candidates:
+            score = self._calculate_score(result, query)
+            scored_results.append((score, result))
+        
+        # Sort by score (highest first)
+        scored_results.sort(key=lambda x: x[0], reverse=True)
+        
+        # Return the top results
+        top_results = [result for score, result in scored_results[:limit]]
+        logger.info(f"🏆 Final results sorted by relevance: {len(top_results)} results")
+        
+        # Debug: Log the top results with their scores
+        for i, (score, result) in enumerate(scored_results[:3]):
+            keywords = result.get('keywords', '')[:50]
+            logger.info(f"🏆 Top {i+1}: {keywords}... (score: {score})")
+        
+        return top_results
     
     async def _search_prompts_traditional(self, query: str, limit: int = 20, intent: str = None) -> List[Dict[str, Any]]:
         """Traditional keyword-based search (original search_prompts logic)"""
@@ -152,7 +169,7 @@ class DatabaseSearchEngine:
                         
                         if result.data:
                             for item in result.data:
-                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                if not self._is_duplicate_result(item, all_results):
                                     all_results.append(item)
                                     # Time entry added
                             # Time matches found
@@ -175,7 +192,9 @@ class DatabaseSearchEngine:
                             
                             if result.data:
                                 for item in result.data:
-                                    if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                    # Handle None keywords safely
+                                    item_keywords = item.get('keywords') or ''
+                                    if not any((existing.get('keywords') or '') == item_keywords for existing in all_results):
                                         all_results.append(item)
                                         # Grade 5 entry added
                                 # Grade 5 matches found
@@ -196,7 +215,7 @@ class DatabaseSearchEngine:
                         
                         if result.data:
                             for item in result.data:
-                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                if not self._is_duplicate_result(item, all_results):
                                     all_results.append(item)
                             # Staff matches found
                             
@@ -208,7 +227,7 @@ class DatabaseSearchEngine:
                         
                         if result.data:
                             for item in result.data:
-                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                if not self._is_duplicate_result(item, all_results):
                                     all_results.append(item)
                             # Staff response matches found
                             
@@ -295,7 +314,7 @@ class DatabaseSearchEngine:
                         if result.data:
                             # Add results that aren't already in all_results
                             for item in result.data:
-                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                if not self._is_duplicate_result(item, all_results):
                                     all_results.append(item)
                             logger.info(f"🎯 Found {len(result.data)} principal matches for '{principal_query}'")
                             
@@ -307,7 +326,7 @@ class DatabaseSearchEngine:
                         
                         if result.data:
                             for item in result.data:
-                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                if not self._is_duplicate_result(item, all_results):
                                     all_results.append(item)
                             logger.info(f"🎯 Found {len(result.data)} principal response matches for '{principal_query}'")
                             
@@ -324,7 +343,7 @@ class DatabaseSearchEngine:
                 if result.data:
                     # Add results that aren't already in all_results
                     for item in result.data:
-                        if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                        if not self._is_duplicate_result(item, all_results):
                             all_results.append(item)
                     logger.info(f"🎯 Found {len(result.data)} response field matches")
             except Exception as e:
@@ -349,7 +368,7 @@ class DatabaseSearchEngine:
                             for item in result.data:
                                 response_text = item.get('response', '').lower()
                                 if all(qword.lower() in response_text for qword in query_words):
-                                    if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                    if not self._is_duplicate_result(item, all_results):
                                         filtered_results.append(item)
                             
                             if filtered_results:
@@ -396,7 +415,7 @@ class DatabaseSearchEngine:
                             # Add results that aren't already in all_results
                             new_results = []
                             for item in result.data:
-                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                if not self._is_duplicate_result(item, all_results):
                                     all_results.append(item)
                                     new_results.append(item)
                             
@@ -436,7 +455,7 @@ class DatabaseSearchEngine:
                                 for item in result.data:
                                     response_text = item.get('response', '').lower()
                                     if all(part.lower() in response_text for part in name_parts):
-                                        if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                        if not self._is_duplicate_result(item, all_results):
                                             filtered_results.append(item)
                                 
                                 if filtered_results:
@@ -457,7 +476,7 @@ class DatabaseSearchEngine:
                     
                     if result.data:
                         for item in result.data:
-                            if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                            if not self._is_duplicate_result(item, all_results):
                                 all_results.append(item)
                         logger.info(f"🌐 Found {len(result.data)} translated query matches for '{translated_query}'")
                 except Exception as e:
@@ -476,7 +495,7 @@ class DatabaseSearchEngine:
                         
                         if result.data:
                             for item in result.data:
-                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                if not self._is_duplicate_result(item, all_results):
                                     all_results.append(item)
                             logger.info(f"🎯 Found {len(result.data)} grade pattern matches for '{pattern}'")
                             break  # Stop after first successful match
@@ -494,7 +513,7 @@ class DatabaseSearchEngine:
                 if result.data:
                     # Add results that aren't already in all_results
                     for item in result.data:
-                        if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                        if not self._is_duplicate_result(item, all_results):
                             all_results.append(item)
                     logger.info(f"🔍 Found {len(result.data)} formatted search matches")
             except Exception as e:
@@ -519,7 +538,7 @@ class DatabaseSearchEngine:
                     if result.data:
                         # Add results that aren't already in all_results
                         for item in result.data:
-                            if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                            if not self._is_duplicate_result(item, all_results):
                                 all_results.append(item)
                         logger.info(f"📝 Found {len(result.data)} matches for word '{word}'")
                 except Exception as e:
@@ -535,7 +554,7 @@ class DatabaseSearchEngine:
                     
                     if result.data:
                         for item in result.data:
-                            if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                            if not self._is_duplicate_result(item, all_results):
                                 all_results.append(item)
                         logger.info(f"👨‍🏫 Found {len(result.data)} adviser matches")
                 except Exception as e:
@@ -565,7 +584,7 @@ class DatabaseSearchEngine:
                     
                     if result.data:
                         for item in result.data:
-                            if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                            if not self._is_duplicate_result(item, all_results):
                                 all_results.append(item)
                         logger.info(f"🎯 Found {len(result.data)} matches for core terms '{core_query}'")
                 except Exception as e:
@@ -587,7 +606,7 @@ class DatabaseSearchEngine:
                         if result.data:
                             for item in result.data:
                                 logger.info(f"🎯 Checking result: '{item['keywords']}' -> '{item['response']}'")
-                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                if not self._is_duplicate_result(item, all_results):
                                     all_results.append(item)
                                     logger.info(f"🎯 Added result: '{item['keywords']}' -> '{item['response']}'")
                                 else:
@@ -611,7 +630,7 @@ class DatabaseSearchEngine:
                         
                         if result.data:
                             for item in result.data:
-                                if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                if not self._is_duplicate_result(item, all_results):
                                     all_results.append(item)
                             logger.info(f"🎯 Found {len(result.data)} matches for converted query '{alt_query}'")
                     except Exception as e:
@@ -638,7 +657,7 @@ class DatabaseSearchEngine:
                             
                             if result.data:
                                 for item in result.data:
-                                    if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                    if not self._is_duplicate_result(item, all_results):
                                         all_results.append(item)
                                 logger.info(f"🔢 Found {len(result.data)} matches for spelled-out number '{alt_query}'")
                         except Exception as e:
@@ -655,7 +674,7 @@ class DatabaseSearchEngine:
                             
                             if result.data:
                                 for item in result.data:
-                                    if not any(existing['keywords'] == item['keywords'] for existing in all_results):
+                                    if not self._is_duplicate_result(item, all_results):
                                         all_results.append(item)
                                 logger.info(f"🔢 Found {len(result.data)} matches for numeric version '{alt_query}'")
                         except Exception as e:
@@ -699,6 +718,19 @@ class DatabaseSearchEngine:
         except Exception as e:
             logger.warning(f"Database search failed: {e}")
             return []
+    
+    def _is_duplicate_result(self, item: Dict, existing_results: List[Dict]) -> bool:
+        """Check if a result is already in the existing results list, handling None keywords safely"""
+        item_keywords = item.get('keywords') or ''
+        return any((existing.get('keywords') or '') == item_keywords for existing in existing_results)
+    
+    def _number_to_word(self, num: str) -> str:
+        """Convert number to word for grade matching"""
+        number_words = {
+            '1': 'one', '2': 'two', '3': 'three', '4': 'four', '5': 'five', '6': 'six',
+            '7': 'seven', '8': 'eight', '9': 'nine', '10': 'ten'
+        }
+        return number_words.get(num, num)
     
     def _detect_query_intent(self, query_lower: str) -> str:
         """Detect the intent of the user query"""
@@ -875,18 +907,18 @@ class DatabaseSearchEngine:
                 
                 # Check for semantic matches (synonyms and related terms)
                 semantic_matches = 0
-                if 'superintendent' in query_lower and ('superintendent' in keywords_lower or 'superintendent' in response_lower):
+                if 'superintendent' in query_lower and ('superintendent' in (keywords_lower or '') or 'superintendent' in (response_lower or '')):
                     semantic_matches += 1
-                    logger.info(f"🎯 SUPERINTENDENT MATCH FOUND: query='{query_lower}', keywords='{keywords_lower}'")
-                if 'principal' in query_lower and ('principal' in keywords_lower or 'head' in keywords_lower):
+                    logger.info(f"🎯 SUPERINTENDENT MATCH FOUND: query='{query_lower}', keywords='{keywords_lower or ''}'")
+                if 'principal' in query_lower and ('principal' in (keywords_lower or '') or 'head' in (keywords_lower or '')):
                     semantic_matches += 1
-                if 'head' in query_lower and ('head' in keywords_lower or 'principal' in keywords_lower):
+                if 'head' in query_lower and ('head' in (keywords_lower or '') or 'principal' in (keywords_lower or '')):
                     semantic_matches += 1
-                if 'teacher' in query_lower and ('teacher' in keywords_lower or 'adviser' in keywords_lower):
+                if 'teacher' in query_lower and ('teacher' in (keywords_lower or '') or 'adviser' in (keywords_lower or '')):
                     semantic_matches += 1
                 
                 query_importance = sum(1 for term in important_terms if term in query_lower)
-                content_importance = sum(1 for term in important_terms if term in keywords_lower or term in response_lower)
+                content_importance = sum(1 for term in important_terms if term in (keywords_lower or '') or term in (response_lower or ''))
                 
                 # 4. Combined NLP similarity with importance weighting
                 base_nlp_sim = (sequence_sim * 0.3) + (jaccard_keywords * 0.4) + (jaccard_response * 0.3)
@@ -980,6 +1012,43 @@ class DatabaseSearchEngine:
         score += semantic_score * 200  # Scale semantic similarity (increased from 100)
         if semantic_score > 0.5:  # Lowered threshold for better matching
             logger.info(f"🎯 High semantic similarity: {semantic_score:.2f} (score: {score})")
+        
+        # 🎯 SPECIAL BOOST: Grade-specific queries should prioritize grade-specific results
+        if 'grade' in query_lower:
+            # Extract grade number from query
+            import re
+            query_grade_match = re.search(r'grade\s+(\d+)', query_lower)
+            
+            if query_grade_match:
+                query_grade = query_grade_match.group(1)
+                
+                # Check if this result matches the specific grade (handle both numeric and spelled out)
+                grade_patterns = [
+                    f'grade {query_grade}',
+                    f'grade {self._number_to_word(query_grade)}',
+                    f'grade {query_grade}th',
+                    f'grade {self._number_to_word(query_grade)}th'
+                ]
+                
+                is_exact_match = any(pattern in keywords_lower or pattern in response_lower for pattern in grade_patterns)
+                
+                if is_exact_match:
+                    # Exact grade match - MASSIVE boost to ensure it's first
+                    score += 10000
+                    logger.info(f"🎯 EXACT GRADE MATCH: Grade {query_grade} (score: {score})")
+                elif 'grade' in keywords_lower or 'grade' in response_lower:
+                    # Other grade - small boost but not as much
+                    score += 1000
+                    logger.info(f"🎯 Grade-related result: {keywords_lower} (score: {score})")
+                else:
+                    # Not grade-related - penalty
+                    score -= 500
+                    logger.info(f"🎯 Non-grade result: {keywords_lower} (score: {score})")
+            else:
+                # Grade query but no specific number - boost any grade-related results
+                if 'grade' in keywords_lower or 'grade' in response_lower:
+                    score += 2000
+                    logger.info(f"🎯 Grade-related result: {keywords_lower} (score: {score})")
         
         # Extract important words from query
         important_query_words = [word for word in query_lower.split() 

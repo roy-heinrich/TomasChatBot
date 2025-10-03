@@ -25,6 +25,12 @@ from core.context_aware_nlu import ContextAwareNLU
 # Import existing modules
 from nlu_engine import NLUEngine, Intent, NLUResult
 from entity_extractor import AdvancedEntityExtractor, ExtractedEntity
+from core.security import sql_protector
+
+# Import advanced AI modules
+from core.conversation_analyzer import ConversationAnalyzer, ConversationContext
+from core.emotional_intelligence import EmotionalIntelligence, EmotionalAnalysis
+from core.response_personalizer import ResponsePersonalizer, PersonalizedResponse
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +77,11 @@ class ChatBot:
         # Initialize context-aware translation
         from core.context_translator import ContextTranslator
         self.context_translator = ContextTranslator()
+        
+        # Initialize advanced AI modules
+        self.conversation_analyzer = ConversationAnalyzer()
+        self.emotional_intelligence = EmotionalIntelligence()
+        self.response_personalizer = ResponsePersonalizer()
         
         # logger.info("✅ ChatBot initialized with clean, modular architecture")  # Reduced for Railway
     
@@ -199,6 +210,18 @@ class ChatBot:
                    user_timezone: str = None, session_id: str = None) -> ChatResponse:
         """Main chat method - Groq-first approach for natural responses"""
         try:
+            # 0. Security validation - check for SQL injection attempts
+            if sql_protector.is_sql_injection(query):
+                logger.warning(f"🚨 SQL injection attempt blocked: {query[:50]}...")
+                return ChatResponse(
+                    response=["I'm sorry, but I cannot process that type of request. Please ask about school-related topics instead."],
+                    entities=[],
+                    detected_language="en",
+                    language_confidence=1.0,
+                    is_split=False,
+                    message_count=1,
+                    intent="security_block"
+                )
             # 1. Enhanced language detection with mixed-language support
             # Use sophisticated language detector (highest priority)
             try:
@@ -248,6 +271,32 @@ class ChatBot:
             if nlu_result.intent.value == "emergency":
                 logger.warning(f"🚨 EMERGENCY DETECTED: {query}")
                 return self._handle_emergency_response(query, response_lang)
+            
+            # 2.5. Advanced AI Analysis - Conversation Intelligence
+            conversation_context = None
+            emotional_analysis = None
+            
+            try:
+                # Analyze conversation context
+                conversation_context = await self.conversation_analyzer.analyze_conversation_context(
+                    current_query=query,
+                    conversation_history=conversation_history or [],
+                    nlu_result=nlu_result,
+                    entities=[]  # Will be populated later
+                )
+                logger.info(f"🧠 Conversation analysis: {conversation_context.topic_flow}, urgency: {conversation_context.urgency_level}")
+                
+                # Analyze emotions
+                emotional_analysis = await self.emotional_intelligence.analyze_emotions(
+                    current_query=query,
+                    conversation_history=conversation_history or [],
+                    language=detected_lang
+                )
+                logger.info(f"💭 Emotional analysis: {emotional_analysis.primary_emotion} (intensity: {emotional_analysis.emotion_intensity:.2f})")
+                
+            except Exception as e:
+                logger.warning(f"⚠️ Advanced AI analysis failed: {e}")
+                # Continue with basic processing
             
             # 3. Enhanced entity extraction with relationships
             entities = self.entity_extractor.extract_entities(query, nlu_result.intent.value if nlu_result else None)
@@ -479,8 +528,52 @@ class ChatBot:
                 query, context, response_lang, conversation_history, nlu_info_dict, user_name, entities, float(confidence), context_analysis
             )
             
-            # ML enhancement removed - it causes hallucinations
-            # Use the response as-is from the AI model
+            # Advanced AI Enhancement - Response Personalization (ONLY if we have database context)
+            if context and context not in ["No specific information available in database for this query", "User is introducing themselves with their name", "User is expressing their emotional state"]:
+                try:
+                    # Create user profile from conversation context
+                    user_profile = {
+                        'name': user_name,
+                        'child_name': child_name,
+                        'personality_traits': getattr(conversation_context, 'user_personality', {}) if conversation_context else {},
+                        'expertise_level': getattr(conversation_context, 'user_expertise', 'intermediate') if conversation_context else 'intermediate',
+                        'preferred_language': response_lang,
+                        'conversation_history': conversation_history or []
+                    }
+                    
+                    # Create conversation context dict
+                    conversation_context_dict = {
+                        'topic_flow': conversation_context.topic_flow if conversation_context else [],
+                        'urgency_level': conversation_context.urgency_level if conversation_context else 'medium',
+                        'conversation_stage': 'ongoing',
+                        'emotional_state': emotional_analysis.primary_emotion if emotional_analysis else 'neutral',
+                        'complexity_level': 'medium'
+                    }
+                    
+                    # Personalize the response
+                    personalized_response = await self.response_personalizer.personalize_response(
+                        base_response=response_text,
+                        user_profile=user_profile,
+                        conversation_context=conversation_context_dict,
+                        emotional_analysis=emotional_analysis,
+                        language=response_lang
+                    )
+                    
+                    # Apply personalization to the response
+                    response_text = await self.response_personalizer.apply_personalization(
+                        response=response_text,
+                        personalization=personalized_response,
+                        user_name=user_name,
+                        conversation_history=conversation_history
+                    )
+                    
+                    logger.info(f"🎨 Response personalized: tone={personalized_response.tone}, formality={personalized_response.formality_level}")
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ Response personalization failed: {e}")
+                    # Continue with original response
+            else:
+                logger.info("ℹ️ Skipping personalization - no database context available")
             
             # Apply context-aware translation if needed
             if detected_lang != "en" and confidence < 0.8:

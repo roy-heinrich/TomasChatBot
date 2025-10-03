@@ -438,7 +438,7 @@ class NLUEngine:
             r'\b(emergency|ambulance|911|call 911|call emergency)\b',
             r'\b(can\'t breathe|can\'t breath|shortness of breath|unconscious|bleeding)\b',
             r'\b(chest pain|severe pain|severe injury|accident|hurt badly)\b',
-            r'\b(medical emergency|need help now|need urgent help|urgent|critical|life threatening)\b',
+            r'\b(medical emergency|need help now|need urgent help|critical|life threatening)\b',
             r'\b(dying|cardiac arrest|stroke|heart attack)\b.*\b(now|immediately|help|emergency)\b',
             r'\b(now|immediately|help|emergency)\b.*\b(dying|cardiac arrest|stroke|heart attack)\b',
             # Real emergency help requests (multiple urgent indicators)
