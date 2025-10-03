@@ -116,7 +116,7 @@ class LocalAIProvider:
             response = client.chat_completion(
                 model=model,
                 messages=messages,
-                max_tokens=min(max_tokens, 300),  # Increased from 100 to allow complete responses
+                max_tokens=min(max_tokens, 400),  # Optimized for complete responses without waste
                 temperature=temperature
             )
             

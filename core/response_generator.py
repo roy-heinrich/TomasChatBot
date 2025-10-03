@@ -55,15 +55,16 @@ class ResponseGenerator:
         time_context = self._get_time_context()
         name_context = f" User: {user_name}." if user_name else ""
         
-        # Core instructions only
+        # Core instructions only - TOKEN EFFICIENT
         base_rules = """You are TOMAS, digital assistant for Tomas SM. Bautista Elementary School.
 
-CRITICAL RULES:
-1. Use ONLY database context information - never invent data
-2. No roleplay - you're an assistant, not human (*no actions*, no feelings)
-3. If no answer: ask about other topics first, then offer admin contact
-4. Stay school-focused and conversational
-5. Medical emergency → immediate 911 direction"""
+RULES:
+1. Use ONLY database context - never invent data
+2. No roleplay - you're an assistant
+3. If no answer: offer admin contact
+4. Stay school-focused
+5. Medical emergency → 911
+6. For lists: Use numbered format (1. Item 2. Item 3. Item)"""
         
         # Language-specific additions (keep minimal)
         lang_rules = self._get_lang_rules(lang)
@@ -78,32 +79,24 @@ CRITICAL RULES:
         return f"{time_context}{base_rules}{lang_rules}{context_hints}"
     
     def _get_lang_rules(self, lang: str) -> str:
-        """Get minimal language-specific rules"""
+        """Get minimal language-specific rules - TOKEN EFFICIENT"""
         if lang in ["tl", "akl"]:
-            return """
-
-LANGUAGE: Respond in TAGALOG only.
-TONE: Warm, conversational, helpful like a school staff member.
-GRAMMAR: Use proper Filipino pronouns and sentence structure."""
+            return "\nLANGUAGE: TAGALOG only. TONE: Warm, helpful school staff."
         else:
-            return """
-
-LANGUAGE: Respond in ENGLISH only.
-TONE: Warm, conversational, helpful like a friendly school staff member.
-STYLE: Add context about the person's role and offer additional help. Be engaging and natural."""
+            return "\nLANGUAGE: ENGLISH only. TONE: Warm, helpful school staff."
     
     def _get_time_context(self) -> str:
-        """Get time-aware context for responses"""
+        """Get time-aware context for responses - TOKEN EFFICIENT"""
         from datetime import datetime
         now = datetime.now()
         hour = now.hour
         
         if 5 <= hour < 12:
-            return "Good morning! "
+            return "Morning! "
         elif 12 <= hour < 17:
-            return "Good afternoon! "
+            return "Afternoon! "
         else:
-            return "Good evening! "
+            return "Evening! "
     
     def _build_concise_message(self, query: str, context: str, lang: str, nlu_info: Dict = None) -> str:
         """Build minimal, focused message"""
@@ -153,8 +146,8 @@ Use database info to answer directly. Be warm and conversational like a friendly
             # Build concise user message
             user_message = self._build_concise_message(query, context, lang, nlu_info)
             
-            # Reduce max_tokens based on typical response needs
-            max_tokens = 200 if lang in ["tl", "akl"] else 150
+            # Optimized max_tokens - complete responses without waste
+            max_tokens = 400 if lang in ["tl", "akl"] else 350
             
             # Use multi-provider AI system
             ai_response = await self.multi_ai.generate_response(
@@ -190,17 +183,108 @@ Use database info to answer directly. Be warm and conversational like a friendly
         else:
             return "I don't have that information. Please contact the school office for details."
     
-    def split_long_response(self, response: str, max_length: int = 250) -> List[str]:
-        """Optimized response splitting"""
+    def split_long_response(self, response: str, max_length: int = 400) -> List[str]:
+        """Enhanced response splitting that preserves numbering and formatting"""
         
         # Special case for messenger links
         if "m.me/" in response:
-            max_length = 400
+            max_length = 500
         
         if len(response) <= max_length:
             return [response]
         
-        # Use regex for faster splitting
+        # Skip numbered list splitting for now - use regular text splitting
+        # if re.search(r'\d+\.\s+', response):
+        #     return self._split_numbered_list(response, max_length)
+        
+        # Use regex for faster splitting on sentences, but avoid splitting numbered lists
+        # Split on sentence endings but not after numbers followed by periods
+        # Enhanced splitting for long responses - bubble them properly
+        if re.search(r'\d+\.\s+', response):
+            # For numbered lists, ALWAYS split by complete numbered items
+            sentences = self._split_numbered_list_smart(response, max_length)
+        else:
+            # Regular sentence splitting for non-numbered content
+            sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', response)
+        
+        messages = []
+        current = ""
+        
+        for sentence in sentences:
+            if len(current) + len(sentence) + 1 <= max_length:
+                current = f"{current} {sentence}".strip()
+            else:
+                if current:
+                    messages.append(current)
+                current = sentence if len(sentence) <= max_length else self._force_split(sentence, max_length)
+        
+        if current:
+            messages.append(current)
+        
+        return messages
+    
+    def _split_numbered_list_smart(self, response: str, max_length: int) -> List[str]:
+        """Simple splitting for numbered lists - each number gets its own bubble"""
+        # Simple approach: split by numbered items
+        parts = re.split(r'(?=\d+\.\s+)', response)
+        
+        messages = []
+        for part in parts:
+            if part.strip():
+                messages.append(part.strip())
+        
+        return messages if messages else [response]
+    
+    def _split_numbered_list(self, response: str, max_length: int) -> List[str]:
+        """Split numbered lists while preserving complete numbered items"""
+        # Simple approach: split by double newlines or by numbered items
+        # First, try to split by paragraphs (double newlines)
+        paragraphs = response.split('\n\n')
+        
+        if len(paragraphs) > 1:
+            # Split by paragraphs
+            messages = []
+            current = ""
+            
+            for paragraph in paragraphs:
+                if not paragraph.strip():
+                    continue
+                    
+                if current and len(current) + len(paragraph) + 2 > max_length:
+                    messages.append(current.strip())
+                    current = paragraph
+                else:
+                    if current:
+                        current = f"{current}\n\n{paragraph}".strip()
+                    else:
+                        current = paragraph.strip()
+            
+            if current:
+                messages.append(current)
+            
+            return messages
+        
+        # If no paragraph breaks, try to split by sentences but preserve numbering
+        sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', response)
+        
+        messages = []
+        current = ""
+        
+        for sentence in sentences:
+            if len(current) + len(sentence) + 1 <= max_length:
+                current = f"{current} {sentence}".strip()
+            else:
+                if current:
+                    messages.append(current)
+                current = sentence if len(sentence) <= max_length else self._force_split(sentence, max_length)
+        
+        if current:
+            messages.append(current)
+        
+        return messages
+    
+    def _split_regular_text(self, response: str, max_length: int) -> List[str]:
+        """Split regular text by sentences"""
         sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', response)
         
         messages = []
