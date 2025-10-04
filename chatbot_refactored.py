@@ -403,12 +403,50 @@ class ChatBot:
                         best_result = None
                         context = "User wants to talk to someone from the school - be helpful first by offering assistance with school topics, enrollment, schedules, or other school information. Only mention contact options if they specifically ask again after being helpful."
                 else:
-                    # 🎯 CRITICAL: Check for invalid grades BEFORE database search
-                    if 'grade' in query.lower():
-                        # Quick grade validation to avoid irrelevant database searches
-                        import re
-                        grade_match = re.search(r'grade\s*(-?\d+)', query.lower())
-                        if grade_match:
+                    # 3. Perform traditional database search to get context for Groq
+                    intent_name = nlu_result.intent.name.lower() if nlu_result and nlu_result.intent else None
+                    search_results = await self.database_search.search_prompts(query, limit=10, intent=intent_name)
+                    
+                    # 4. Use context-aware NLU to determine if we should use database results
+                    context_analysis = self.context_aware_nlu.analyze_context_usage(
+                        query, search_results, 
+                        intent_name, entities
+                    )
+                    
+                    # 🚨 CRITICAL FIX: For contact escalation queries, don't use irrelevant database results
+                    if nlu_result and nlu_result.intent.value == 'contact_escalation':
+                        # Override context analysis for contact escalation - don't use irrelevant database results
+                        context_analysis.should_use_context = False
+                        context_analysis.reasoning = "Contact escalation detected - not using irrelevant database results"
+                        # logger.info("🚨 Contact escalation detected - overriding context analysis to prevent irrelevant responses")
+                    
+                    # DEBUG: Log search results and context analysis
+                    # logger.info(f"🔍 DEBUG: Query: '{query}'")
+                    # logger.info(f"🔍 DEBUG: Found {len(search_results)} search results")
+                    # if search_results:
+                    #     logger.info(f"🔍 DEBUG: Top result keywords: '{search_results[0].get('keywords', 'N/A')}'")
+                    #     logger.info(f"🔍 DEBUG: Top result response: '{search_results[0].get('response', 'N/A')[:100]}...'")
+                    # logger.info(f"🔍 DEBUG: Context analysis - should_use_context: {context_analysis.should_use_context}")
+                    # logger.info(f"🔍 DEBUG: Context analysis - reasoning: {context_analysis.reasoning}")
+                    
+                    best_result = None
+                    if context_analysis.should_use_context and search_results:
+                        # logger.info("🎯 Context-aware NLU: Using database results")  # Commented out debug logs
+                        # logger.info(f"🎯 Reasoning: {context_analysis.reasoning}")  # Commented out debug logs
+                        best_result = search_results[0]
+                        # logger.info(f"🏆 Using top-ranked result: {best_result.get('keywords', 'No keywords') if best_result else 'None'}")  # Commented out debug logs
+                    else:
+                        # logger.info("🎯 Context-aware NLU: Not using database results")  # Commented out debug logs
+                        # logger.info(f"🎯 Reasoning: {context_analysis.reasoning}")  # Commented out debug logs
+                        # logger.info(f"🎯 Fallback suggestions: {context_analysis.fallback_suggestions}")  # Commented out debug logs
+                        pass
+                
+                # 🎯 CRITICAL: Check for invalid grades BEFORE database search
+                if 'grade' in query.lower():
+                    # Quick grade validation to avoid irrelevant database searches
+                    import re
+                    grade_match = re.search(r'grade\s*(-?\d+)', query.lower())
+                    if grade_match:
                             grade_num = int(grade_match.group(1))
                             # Handle negative grades, zero, and obviously invalid grades
                             if grade_num <= 0:

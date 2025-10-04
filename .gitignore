@@ -19,9 +19,10 @@ env_config.txt
 chatbot_web_gui.py
 test_chatbot.html
 test_server.py
-Testing_readme.md
 start_test.bat
 chatbot_config.php
 architecture_diagram.md
 TOMAS_CHATBOT_STATUS_REPORT.md
 deployment_guide.md
+Comprehensive_Test_server.py
+Comprehensive_Test_dashboard.html

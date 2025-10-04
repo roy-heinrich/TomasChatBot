@@ -316,7 +316,8 @@ class ContextTranslator:
                 enhanced_confidence += 0.05
             
             # Boost confidence for formality level match
-            formality = context.get('language_patterns', {}).get('formality_level', 'neutral')
+            language_patterns = context.get('language_patterns', {})
+            formality = language_patterns.get('formality_level', 'neutral') if language_patterns else 'neutral'
             if formality != 'neutral':
                 enhanced_confidence += 0.05
             
@@ -336,8 +337,9 @@ class ContextTranslator:
             prompt_parts.append(f"Topic: {context['topic_context']}")
         
         # Add language patterns
-        if context.get('language_patterns', {}).get('formality_level') != 'neutral':
-            formality = context['language_patterns']['formality_level']
+        language_patterns = context.get('language_patterns', {})
+        if language_patterns and language_patterns.get('formality_level') != 'neutral':
+            formality = language_patterns.get('formality_level', 'neutral')
             prompt_parts.append(f"Formality: {formality}")
         
         # Add recent context

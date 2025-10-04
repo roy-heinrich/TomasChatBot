@@ -44,7 +44,7 @@ class ImprovedScorer:
         # Clean query (remove question words)
         clean_query = self._clean_query(query_lower)
         
-        # DEBUG: Log scoring for school activities queries
+        # DEBUG: Log scoring for school activities queries (disabled for deployment)
         # if 'school' in query_lower and 'activ' in query_lower:
         #     logger.info(f"🔍 SCORING DEBUG: Query: '{query_lower}'")
         #     logger.info(f"🔍 SCORING DEBUG: Keywords: '{keywords_lower}'")
@@ -80,7 +80,7 @@ class ImprovedScorer:
         
         # 🚨 REMOVED: No hardcoded boosting - let the algorithm work naturally
         
-        # DEBUG: Log semantic similarity for school activities queries
+        # DEBUG: Log semantic similarity for school activities queries (disabled for deployment)
         # if 'school' in query_lower and 'activ' in query_lower:
         #     logger.info(f"🔍 SEMANTIC DEBUG: Similarity: {similarity:.3f}, Score: {similarity_score}, Total: {score}")
         
@@ -144,7 +144,7 @@ class ImprovedScorer:
             score -= 50  # Heavy penalty for department queries matching Head Teacher
             # logger.info(f"🎯 DEPARTMENT HEAD PENALTY: department query matched Head Teacher (score: {score})")
         
-        # DEBUG: Log final score for school activities queries
+        # DEBUG: Log final score for school activities queries (disabled for deployment)
         # if 'school' in query_lower and 'activ' in query_lower:
         #     logger.info(f"🔍 FINAL SCORE: {score} for '{keywords_lower[:50]}...'")
         
@@ -421,6 +421,7 @@ class DatabaseSearchEngine:
             translated_query = translated_query.replace('guro para sa', 'teacher for')
             translated_query = translated_query.replace('baitang', 'grade')
         
+        
         # 🎯 DYNAMIC TYPO FIX: Use fuzzy matching for typos
         # This will be handled in the search logic, not here
         
@@ -647,8 +648,9 @@ class DatabaseSearchEngine:
         # 🚨 CRITICAL FIX: For contact escalation queries, return empty results to prevent irrelevant responses
         contact_keywords = [
             'admin', 'administrator', 'talk to', 'speak to', 'contact', 'person', 'human',
-            'kausapin', 'makausap', 'makipag-usap', 'tao', 'staff', 'principal'
+            'kausapin', 'makausap', 'makipag-usap', 'tao', 'staff'
         ]
+        # Only block if it's explicitly a contact escalation intent or contains contact escalation phrases
         if intent == 'contact_escalation' or any(keyword in query.lower() for keyword in contact_keywords):
             # logger.info("🚨 Contact escalation query detected - returning empty results to prevent irrelevant responses")
             return []

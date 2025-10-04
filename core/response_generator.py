@@ -61,7 +61,7 @@ class ResponseGenerator:
 RULES:
 1. Use ONLY database context - never invent data
 2. NEVER make up names, contact details, or school information
-3. If no database info: say "I don't have that information" and offer to help with other school topics
+3. If no database info: provide helpful response in appropriate language and offer to help with other school topics
 4. Stay school-focused and be helpful first
 5. Medical emergency → 911
 6. For lists: Use numbered format (1. Item 2. Item 3. Item)
@@ -85,9 +85,9 @@ RULES:
     def _get_lang_rules(self, lang: str) -> str:
         """Get minimal language-specific rules - TOKEN EFFICIENT"""
         if lang in ["tl", "akl"]:
-            return "\nLANGUAGE: TAGALOG only. TONE: Warm, helpful school staff."
+            return "\nLANGUAGE: TAGALOG ONLY. CRITICAL: Use ONLY Tagalog words. NO English words in response. TONE: Warm, helpful school staff."
         else:
-            return "\nLANGUAGE: ENGLISH only. TONE: Warm, helpful school staff."
+            return "\nLANGUAGE: ENGLISH ONLY. CRITICAL: Use ONLY English words. NO Tagalog words in response. TONE: Warm, helpful school staff."
     
     def _get_time_context(self) -> str:
         """Get time-aware context for responses - TOKEN EFFICIENT"""
@@ -123,18 +123,17 @@ RULES:
 QUERY: {query}
 LANG: {lang_code}
 
-Use database info to answer directly. Be natural and helpful."""
+CRITICAL: Use ONLY Tagalog words. NO English words. Use database info to answer directly. Be natural and helpful."""
             else:
-                # Enhanced English context - conversational but token-efficient
                 return f"""DATABASE: {context}
 
 QUERY: {query}
 LANG: {lang_code}
 
-Use database info to answer directly. Be warm and conversational like a friendly school staff member. Add context about the person's role and offer additional help."""
+CRITICAL: Use ONLY English words. NO Tagalog words. Use database info to answer directly. Be warm and conversational like a friendly school staff member."""
         
         # No context available
-        return f"QUERY: {query}\nNo database info available. Say 'I don't have that information' and offer to help with other school topics or contact the school office."
+        return f"QUERY: {query}\nNo database info available. Provide a helpful response in {lang_code} and offer to help with other school topics or contact the school office."
     
     async def generate_response(self, query: str, context: str, lang: str, 
                               conversation_history: List[Dict] = None, 
@@ -190,7 +189,7 @@ Use database info to answer directly. Be warm and conversational like a friendly
         if lang in ["tl", "akl"]:
             return "Paumanhin, hindi ko alam ang sagot sa tanong na ito. Makipag-ugnayan sa opisina ng paaralan para sa karagdagang impormasyon."
         else:
-            return "I don't have that information. Please contact the school office for details."
+            return "I'm sorry, I don't have that specific information. Please contact the school office for details."
     
     def add_messenger_link_if_needed(self, response: str, query: str, context: str, lang: str) -> str:
         """Add messenger link ONLY for persistent escalation requests"""
