@@ -34,6 +34,10 @@ class EmotionalIntelligence:
         self.stress_indicators = self._build_stress_indicators()
         self.empathy_responses = self._build_empathy_responses()
         
+        # Dynamic emotion learning from database
+        self.dynamic_emotion_patterns = {}
+        self.emotion_learning_enabled = True
+        
     async def analyze_emotions(self, 
                              current_query: str, 
                              conversation_history: List[Dict],
@@ -80,81 +84,46 @@ class EmotionalIntelligence:
         query_lower = query.lower()
         emotion_scores = {}
         
-        # English emotion patterns
+        # English emotion patterns (now dynamic)
         if language in ["en", "mixed"]:
             emotion_scores.update({
-                'happy': self._score_emotion(query_lower, [
-                    'happy', 'excited', 'thrilled', 'great', 'wonderful', 'amazing',
-                    'fantastic', 'awesome', 'delighted', 'joyful', 'cheerful'
-                ]),
-                'sad': self._score_emotion(query_lower, [
-                    'sad', 'depressed', 'down', 'unhappy', 'disappointed', 'upset',
-                    'miserable', 'gloomy', 'melancholy', 'heartbroken'
-                ]),
-                'angry': self._score_emotion(query_lower, [
-                    'angry', 'mad', 'furious', 'irritated', 'annoyed', 'frustrated',
-                    'rage', 'livid', 'outraged', 'infuriated'
-                ]),
-                'worried': self._score_emotion(query_lower, [
-                    'worried', 'anxious', 'nervous', 'concerned', 'stressed', 'tense',
-                    'uneasy', 'apprehensive', 'fearful', 'scared'
-                ]),
-                'confused': self._score_emotion(query_lower, [
-                    'confused', 'lost', 'don\'t understand', 'unclear', 'bewildered',
-                    'perplexed', 'puzzled', 'mystified', 'baffled'
-                ]),
-                'excited': self._score_emotion(query_lower, [
-                    'excited', 'thrilled', 'eager', 'enthusiastic', 'pumped', 'stoked',
-                    'ecstatic', 'overjoyed', 'elated'
-                ])
+                'happy': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('happy')),
+                'sad': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('sad')),
+                'angry': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('angry')),
+                'worried': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('worried')),
+                'confused': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('confused')),
+                'excited': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('excited'))
             })
         
-        # Tagalog emotion patterns
+        # Tagalog emotion patterns (now dynamic)
         if language in ["tl", "mixed"]:
             emotion_scores.update({
-                'happy': self._score_emotion(query_lower, [
-                    'masaya', 'natutuwa', 'nagagalak', 'maligaya', 'saya',
-                    'kasiyahan', 'kaligayahan', 'tuwa'
-                ]),
-                'sad': self._score_emotion(query_lower, [
-                    'malungkot', 'nalulungkot', 'lungkot', 'kalungkutan',
-                    'nalulumbay', 'lumbay', 'hinanakit'
-                ]),
-                'angry': self._score_emotion(query_lower, [
-                    'galit', 'nagagalit', 'inis', 'naiinis', 'suya', 'nayayamot',
-                    'pagkagalit', 'pagkainis'
-                ]),
-                'worried': self._score_emotion(query_lower, [
-                    'nag-aalala', 'alala', 'nababahala', 'bahala', 'nervous',
-                    'kinakabahan', 'kaba', 'takot'
-                ]),
-                'confused': self._score_emotion(query_lower, [
-                    'nalilito', 'lito', 'hindi maintindihan', 'nalilito',
-                    'hindi alam', 'di ko alam'
-                ])
+                'happy': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('happy')),
+                'sad': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('sad')),
+                'angry': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('angry')),
+                'worried': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('worried')),
+                'confused': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('confused')),
+                'excited': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('excited'))
             })
         
-        # Aklanon emotion patterns
+        # Aklanon emotion patterns (now dynamic)
         if language in ["akl", "mixed"]:
             emotion_scores.update({
-                'happy': self._score_emotion(query_lower, [
-                    'malipayon', 'nagakalipay', 'lipay', 'kalipay',
-                    'nagakasaya', 'saya', 'kasaya'
-                ]),
-                'sad': self._score_emotion(query_lower, [
-                    'malungkot', 'nalulungkot', 'lungkot', 'kalungkutan',
-                    'nalulumbay', 'lumbay'
-                ]),
-                'worried': self._score_emotion(query_lower, [
-                    'nagakabalaka', 'balaka', 'nervous', 'kinakabahan',
-                    'kaba', 'takot'
-                ])
+                'happy': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('happy')),
+                'sad': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('sad')),
+                'angry': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('angry')),
+                'worried': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('worried')),
+                'confused': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('confused')),
+                'excited': self._score_emotion(query_lower, self._get_dynamic_emotion_patterns('excited'))
             })
         
         # Find primary emotion
         if emotion_scores:
             primary_emotion = max(emotion_scores, key=emotion_scores.get)
             intensity = emotion_scores[primary_emotion]
+            
+            # Learn typo patterns from this interaction
+            self._learn_typo_patterns(query, primary_emotion)
         else:
             primary_emotion = 'neutral'
             intensity = 0.0
@@ -350,12 +319,13 @@ class EmotionalIntelligence:
         return False
     
     def _score_emotion(self, text: str, emotion_words: List[str]) -> float:
-        """Score emotion based on word presence and context"""
+        """Score emotion based on word presence and context with fuzzy matching"""
         
         score = 0.0
         text_lower = text.lower()
         
         for word in emotion_words:
+            # Check for exact match first
             if word in text_lower:
                 # Base score for word presence
                 score += 0.3
@@ -370,20 +340,193 @@ class EmotionalIntelligence:
                 
                 nearby_words = words_before + words_after
                 intensifiers = ['very', 'really', 'so', 'extremely', 'super', 'quite']
+            else:
+                # Intelligent fuzzy matching for typos and variations
+                from difflib import SequenceMatcher
+                best_similarity = 0.0
+                best_match = None
                 
-                if any(intensifier in nearby_words for intensifier in intensifiers):
-                    score += 0.2
+                # Check each word in the text against the emotion word
+                text_words = text_lower.split()
+                for text_word in text_words:
+                    if len(text_word) > 2 and len(word) > 2:  # Only match words longer than 2 chars
+                        similarity = SequenceMatcher(None, text_word, word).ratio()
+                        
+                        # Dynamic threshold based on word characteristics
+                        # Shorter words need higher similarity, longer words can be more flexible
+                        if len(word) <= 4:
+                            threshold = 0.8  # Higher threshold for short words
+                        elif len(word) <= 8:
+                            threshold = 0.7  # Medium threshold for medium words
+                        else:
+                            threshold = 0.6  # Lower threshold for long words
+                        
+                        if similarity > best_similarity and similarity > threshold:
+                            best_similarity = similarity
+                            best_match = text_word
+                
+                if best_match:
+                    # Score based on similarity strength
+                    fuzzy_score = 0.25 * best_similarity  # Slightly higher base score for fuzzy matches
+                    score += fuzzy_score
+                    
+                    # Boost for word frequency
+                    word_count = text_lower.count(best_match)
+                    score += word_count * 0.08  # Slightly higher frequency boost for fuzzy matches
+                    
+                    # Boost for intensifiers nearby (for fuzzy matches)
+                    words_before = text_lower.split(best_match)[0].split()[-2:] if best_match in text_lower else []
+                    words_after = text_lower.split(best_match)[1].split()[:2] if best_match in text_lower else []
+                    nearby_words = words_before + words_after
+                    intensifiers = ['very', 'really', 'so', 'extremely', 'super', 'quite']
+                    if any(intensifier in nearby_words for intensifier in intensifiers):
+                        score += 0.1  # Reduced intensifier boost for fuzzy matches
         
         return min(1.0, score)  # Cap at 1.0
     
+    async def _learn_emotion_patterns_from_database(self, database_results: List[Dict]) -> None:
+        """Dynamically learn emotion patterns from database responses"""
+        if not self.emotion_learning_enabled or not database_results:
+            return
+        
+        try:
+            for result in database_results:
+                response = result.get('response', '').lower()
+                keywords = result.get('keywords', '').lower()
+                
+                # Extract emotional indicators from database content
+                emotional_indicators = self._extract_emotional_indicators_from_text(response + ' ' + keywords)
+                
+                # Update dynamic patterns
+                for emotion, indicators in emotional_indicators.items():
+                    if emotion not in self.dynamic_emotion_patterns:
+                        self.dynamic_emotion_patterns[emotion] = set()
+                    
+                    for indicator in indicators:
+                        self.dynamic_emotion_patterns[emotion].add(indicator)
+                        
+        except Exception as e:
+            logger.warning(f"Failed to learn emotion patterns from database: {e}")
+    
+    def _extract_emotional_indicators_from_text(self, text: str) -> Dict[str, List[str]]:
+        """Extract emotional indicators from text using NLP analysis"""
+        indicators = {
+            'happy': [],
+            'sad': [],
+            'angry': [],
+            'worried': [],
+            'confused': [],
+            'excited': []
+        }
+        
+        # Use semantic analysis to identify emotional words
+        words = text.split()
+        for word in words:
+            if len(word) > 3:  # Only consider meaningful words
+                # Check against base emotion patterns for semantic similarity
+                for emotion, base_patterns in self.emotion_patterns.items():
+                    if emotion in indicators:
+                        for pattern in base_patterns:
+                            # Use fuzzy matching to find similar emotional words
+                            from difflib import SequenceMatcher
+                            similarity = SequenceMatcher(None, word, pattern).ratio()
+                            if similarity > 0.7:  # 70% similarity
+                                indicators[emotion].append(word)
+        
+        return indicators
+    
+    def _get_dynamic_emotion_patterns(self, emotion: str) -> List[str]:
+        """Get emotion patterns combining static and dynamic patterns"""
+        static_patterns = self.emotion_patterns.get(emotion, [])
+        dynamic_patterns = list(self.dynamic_emotion_patterns.get(emotion, set()))
+        
+        # PRIORITIZE static patterns (including typos) over dynamic ones
+        # Static patterns should always be included and take precedence
+        all_patterns = static_patterns.copy()  # Start with static patterns
+        
+        # Add dynamic patterns that don't conflict with static ones
+        for dynamic_pattern in dynamic_patterns:
+            if dynamic_pattern not in all_patterns:
+                all_patterns.append(dynamic_pattern)
+        
+        return all_patterns
+    
+    def _learn_typo_patterns(self, user_input: str, detected_emotion: str) -> None:
+        """Learn typo patterns from user interactions"""
+        if not self.emotion_learning_enabled:
+            return
+        
+        try:
+            # Extract words from user input that might be typos
+            words = user_input.lower().split()
+            for word in words:
+                if len(word) > 3:  # Only consider meaningful words
+                    # Check if this word is similar to any known emotion words
+                    for emotion, patterns in self.emotion_patterns.items():
+                        for pattern in patterns:
+                            from difflib import SequenceMatcher
+                            similarity = SequenceMatcher(None, word, pattern).ratio()
+                            
+                            # If similarity is high but not exact, it might be a typo
+                            if 0.6 <= similarity < 0.9:
+                                # Add to dynamic patterns if it matches the detected emotion
+                                if emotion == detected_emotion:
+                                    if emotion not in self.dynamic_emotion_patterns:
+                                        self.dynamic_emotion_patterns[emotion] = set()
+                                    self.dynamic_emotion_patterns[emotion].add(word)
+                                    
+        except Exception as e:
+            logger.warning(f"Failed to learn typo patterns: {e}")
+    
     def _build_emotion_patterns(self) -> Dict:
-        """Build comprehensive emotion patterns"""
+        """Build base emotion patterns - typos handled by intelligent fuzzy matching"""
         return {
-            'happy': ['happy', 'joy', 'excited', 'thrilled', 'delighted'],
-            'sad': ['sad', 'depressed', 'down', 'unhappy', 'disappointed'],
-            'angry': ['angry', 'mad', 'furious', 'irritated', 'annoyed'],
-            'worried': ['worried', 'anxious', 'nervous', 'concerned', 'stressed'],
-            'confused': ['confused', 'lost', 'unclear', 'bewildered', 'puzzled']
+            'happy': [
+                'happy', 'excited', 'thrilled', 'great', 'wonderful', 'amazing',
+                'fantastic', 'awesome', 'delighted', 'joyful', 'cheerful',
+                # Tagalog base patterns
+                'masaya', 'natutuwa', 'nagagalak', 'maligaya', 'saya',
+                'kasiyahan', 'kaligayahan', 'tuwa',
+                # Aklanon base patterns
+                'malipayon', 'nagakalipay', 'lipay', 'kalipay', 'nagakasaya', 'kasaya'
+            ],
+            'sad': [
+                'sad', 'depressed', 'down', 'unhappy', 'disappointed', 'upset',
+                'miserable', 'gloomy', 'melancholy', 'heartbroken',
+                # Tagalog base patterns
+                'malungkot', 'nalulungkot', 'lungkot', 'kalungkutan',
+                'nalulumbay', 'lumbay', 'hinanakit',
+                # Aklanon base patterns
+                'malungkot', 'nalulungkot', 'lungkot', 'kalungkutan', 'nalulumbay', 'lumbay'
+            ],
+            'angry': [
+                'angry', 'mad', 'furious', 'irritated', 'annoyed', 'frustrated',
+                'rage', 'livid', 'outraged', 'infuriated',
+                # Tagalog base patterns
+                'galit', 'nagagalit', 'inis', 'naiinis', 'suya', 'nayayamot',
+                'pagkagalit', 'pagkainis'
+            ],
+            'worried': [
+                'worried', 'anxious', 'nervous', 'concerned', 'stressed', 'tense',
+                'uneasy', 'apprehensive', 'fearful', 'scared',
+                # Tagalog base patterns
+                'nag-aalala', 'alala', 'nababahala', 'bahala', 'nervous',
+                'kinakabahan', 'kaba', 'takot',
+                # Aklanon base patterns
+                'nagakabalaka', 'balaka', 'nervous', 'kinakabahan', 'kaba', 'takot'
+            ],
+            'confused': [
+                'confused', 'lost', 'don\'t understand', 'unclear', 'bewildered',
+                'perplexed', 'puzzled', 'mystified', 'baffled',
+                # Tagalog base patterns
+                'nalilito', 'lito', 'hindi maintindihan', 'hindi alam', 'di ko alam',
+                # Looking for/lost patterns
+                'hinahanap', 'hanap', 'naghahanap', 'nawawala', 'nasaan', 'saan'
+            ],
+            'excited': [
+                'excited', 'thrilled', 'eager', 'enthusiastic', 'pumped', 'stoked',
+                'ecstatic', 'overjoyed', 'elated'
+            ]
         }
     
     def _build_stress_indicators(self) -> Dict:

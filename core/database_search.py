@@ -44,11 +44,7 @@ class ImprovedScorer:
         # Clean query (remove question words)
         clean_query = self._clean_query(query_lower)
         
-        # DEBUG: Log scoring for school activities queries (disabled for deployment)
-        # if 'school' in query_lower and 'activ' in query_lower:
-        #     logger.info(f"🔍 SCORING DEBUG: Query: '{query_lower}'")
-        #     logger.info(f"🔍 SCORING DEBUG: Keywords: '{keywords_lower}'")
-        #     logger.info(f"🔍 SCORING DEBUG: Response: '{response_lower[:100]}...'")
+        # DEBUG: Log scoring for school activities queries (reduced) - removed verbose logging
         
         # 1. Exact match (highest priority)
         if clean_query == keywords_lower or query_lower == keywords_lower:
@@ -69,6 +65,16 @@ class ImprovedScorer:
         score += keyword_overlap * self.weights['word_overlap']
         score += response_overlap * self.weights['response_match']
         
+        # 3.5. Enhanced word matching for activities
+        if 'activ' in query_lower:
+            # Check for activity-related words in keywords and response
+            activity_words = ['activ', 'event', 'program', 'celebration', 'annual', 'major']
+            for word in activity_words:
+                if word in keywords_lower:
+                    score += 15
+                if word in response_lower:
+                    score += 10
+        
         # 4. Length bonus (concise answers preferred)
         if len(result.get('response', '')) < 150:
             score += self.weights['length_bonus']
@@ -77,6 +83,23 @@ class ImprovedScorer:
         similarity = SequenceMatcher(None, clean_query, keywords_lower).ratio()
         similarity_score = int(similarity * self.weights['semantic_similarity'])
         score += similarity_score
+        
+        # 5.5. Enhanced semantic matching for activities
+        if 'activ' in query_lower and 'activ' in keywords_lower:
+            score += 30  # Boost for activity-related queries
+        if 'school' in query_lower and 'school' in keywords_lower:
+            score += 20  # Boost for school-related queries
+        
+        # 5.6. Enhanced scoring for CR/comfort room queries
+        if any(word in query_lower for word in ['cr', 'comfort', 'banyo', 'toilet', 'restroom']):
+            if any(word in keywords_lower for word in ['cr', 'comfort', 'banyo', 'toilet', 'restroom']):
+                score += 50  # Major boost for CR-related keywords
+            if any(word in response_lower for word in ['cr', 'comfort', 'banyo', 'toilet', 'restroom']):
+                score += 30  # Boost for CR-related response content
+        
+        # DEBUG: Log final score for school activities queries (reduced) - removed verbose logging
+        
+        # DEBUG: Log scoring for CR queries (reduced) - removed verbose logging
         
         # 🚨 REMOVED: No hardcoded boosting - let the algorithm work naturally
         
@@ -410,16 +433,15 @@ class DatabaseSearchEngine:
         try:
             # Get translation mappings from database or use AI-based translation
             translated_query = self._get_dynamic_translation(query_lower)
+            # Removed verbose translation logging
         except Exception as e:
             logger.warning(f"Dynamic translation failed: {e}, using fallback")
             # Fallback to basic pattern matching
             translated_query = self._get_fallback_translation(query_lower)
+            # Removed verbose fallback translation logging
         
-        # Handle specific patterns
-        if 'guro para sa' in query_lower:
-            # "guro para sa ikatlong baitang" -> "teacher for grade three"
-            translated_query = translated_query.replace('guro para sa', 'teacher for')
-            translated_query = translated_query.replace('baitang', 'grade')
+        # Dynamic pattern handling - no hardcoded translations
+        # Let the intelligent translation system handle all patterns
         
         
         # 🎯 DYNAMIC TYPO FIX: Use fuzzy matching for typos
@@ -634,6 +656,41 @@ class DatabaseSearchEngine:
             logger.warning(f"Intelligent translation failed: {e}")
             return self._get_fallback_translation(query)
     
+    def _expand_synonyms(self, query: str) -> str:
+        """Dynamically expand synonyms using database content"""
+        try:
+            # Get all keywords from database to find synonyms
+            result = self.supabase.table("chatbot_prompts") \
+                .select("keywords") \
+                .execute()
+            
+            if result.data:
+                all_keywords = []
+                for item in result.data:
+                    if item.get('keywords'):
+                        all_keywords.extend(item['keywords'].split(', '))
+                
+                # Find synonyms for words in the query
+                expanded_terms = []
+                query_words = query.split()
+                
+                for word in query_words:
+                    expanded_terms.append(word)
+                    
+                    # Find synonyms from database keywords
+                    for keyword in all_keywords:
+                        if word in keyword.lower() and keyword.lower() != word:
+                            # This keyword contains our word - might be a synonym
+                            expanded_terms.append(keyword.lower())
+                
+                # Return expanded query
+                return ' '.join(expanded_terms)
+            
+        except Exception as e:
+            logger.warning(f"Synonym expansion error: {e}")
+        
+        return query
+    
     def _get_fallback_translation(self, query: str) -> str:
         """Fallback translation using basic pattern matching"""
         # Basic fallback - just clean up common particles
@@ -682,6 +739,10 @@ class DatabaseSearchEngine:
         # Sort by score (highest first)
         scored_results.sort(key=lambda x: x[0], reverse=True)
         
+        # Debug: Log top results for school activities (reduced) - removed verbose logging
+        
+        # Debug: Log top results for CR/comfort room searches (reduced) - removed verbose logging
+        
         # Return the top results
         top_results = [result for score, result in scored_results[:limit]]
         
@@ -711,6 +772,25 @@ class DatabaseSearchEngine:
                         # logger.info(f"🔍 Found {len(result.data)} formatted search matches")
                 except Exception as e:
                     logger.warning(f"Full-text search failed: {e}")
+            
+            # Strategy 1.5: Dynamic synonym expansion for better matching
+            if any(word in query.lower() for word in ['cr', 'comfort', 'banyo', 'toilet', 'restroom']):
+                try:
+                    # Use dynamic synonym expansion instead of hardcoded patterns
+                    expanded_query = self._expand_synonyms(query.lower())
+                    if expanded_query != query.lower():
+                        logger.info(f"🔍 SYNONYM EXPANSION: '{query}' -> '{expanded_query}'")
+                        # Search with expanded query
+                        expanded_result = self.supabase.table("chatbot_prompts") \
+                            .select("keywords, response, search_tsv") \
+                            .text_search("search_tsv", expanded_query) \
+                            .execute()
+                        
+                        if expanded_result.data:
+                            all_results.extend(expanded_result.data)
+                            logger.info(f"🔍 EXPANDED SEARCH: Found {len(expanded_result.data)} additional results")
+                except Exception as e:
+                    logger.warning(f"Synonym expansion failed: {e}")
                     # Fallback: Try with even more aggressive cleaning
                     try:
                         # Remove all punctuation and special characters
@@ -797,7 +877,10 @@ class DatabaseSearchEngine:
                             school_related.append(entry)
                     
                     all_results.extend(school_related)
-                    # logger.info(f"🎯 Found {len(school_related)} school-related entries for fuzzy matching")
+                    logger.info(f"🎯 Found {len(school_related)} school-related entries for fuzzy matching")
+                    # Debug: Log school activities entries
+                    for entry in school_related[:3]:  # Log first 3 entries
+                        logger.info(f"🎯 School entry: Keywords='{entry.get('keywords', '')[:50]}...' Response='{entry.get('response', '')[:50]}...'")
             except Exception as e:
                 logger.warning(f"Fuzzy search failed: {e}")
             

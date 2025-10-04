@@ -60,15 +60,13 @@ class ResponseGenerator:
 
 RULES:
 1. Use ONLY database context - never invent data
-2. NEVER make up names, contact details, or school information
-3. If no database info: provide helpful response in appropriate language and offer to help with other school topics
-4. Stay school-focused and be helpful first
-5. Medical emergency → 911
-6. For lists: Use numbered format (1. Item 2. Item 3. Item)
-7. CRITICAL: Complete numbered lists - never cut off mid-sentence.
-8. FORMAT: End intro with period. Start each numbered item on new line.
-9. NO HALLUCINATIONS: Only use information provided in database context.
-10. BE HELPFUL FIRST: Offer assistance with school topics before suggesting contact options."""
+2. If no database info: provide helpful response and offer to help with other school topics
+3. Medical emergency → 911
+4. For lists: Use numbered format (1. Item 2. Item 3. Item)
+5. Complete numbered lists - never cut off mid-sentence
+6. NO HALLUCINATIONS: Only use information provided in database context
+7. TONE: Be polite, professional, conversational, and helpful
+8. NO EXCESSIVE INTRODUCTIONS: Don't introduce yourself in every response"""
         
         # Language-specific additions (keep minimal)
         lang_rules = self._get_lang_rules(lang)
@@ -85,9 +83,9 @@ RULES:
     def _get_lang_rules(self, lang: str) -> str:
         """Get minimal language-specific rules - TOKEN EFFICIENT"""
         if lang in ["tl", "akl"]:
-            return "\nLANGUAGE: TAGALOG ONLY. CRITICAL: Use ONLY Tagalog words. NO English words in response. TONE: Warm, helpful school staff."
+            return "\nLANGUAGE: TAGALOG ONLY. Use natural, grammatically correct Tagalog. Be conversational but professional."
         else:
-            return "\nLANGUAGE: ENGLISH ONLY. CRITICAL: Use ONLY English words. NO Tagalog words in response. TONE: Warm, helpful school staff."
+            return "\nLANGUAGE: ENGLISH ONLY. Use ONLY English words. NO Tagalog words in response."
     
     def _get_time_context(self) -> str:
         """Get time-aware context for responses - TOKEN EFFICIENT"""
@@ -112,6 +110,13 @@ RULES:
         if context == "User is expressing their emotional state":
             return f"User emotional: {query}\nAcknowledge briefly, redirect to school services."
         
+        # Handle name requests - be direct and helpful
+        if "pangalan" in query.lower() or "name" in query.lower():
+            if lang in ["tl", "akl"]:
+                return f"QUERY: {query}\nUser asking for their name. Respond in Tagalog that you don't have their name but can help with school info."
+            else:
+                return f"QUERY: {query}\nUser asking for their name. Respond in English that you don't have their name but can help with school info."
+        
         # Database context - the priority case
         if context and context not in ["General school information query", 
                                        "No specific information available in database for this query"]:
@@ -123,17 +128,20 @@ RULES:
 QUERY: {query}
 LANG: {lang_code}
 
-CRITICAL: Use ONLY Tagalog words. NO English words. Use database info to answer directly. Be natural and helpful."""
+Answer in natural Tagalog using database info. Be conversational but professional. Don't introduce yourself."""
             else:
                 return f"""DATABASE: {context}
 
 QUERY: {query}
 LANG: {lang_code}
 
-CRITICAL: Use ONLY English words. NO Tagalog words. Use database info to answer directly. Be warm and conversational like a friendly school staff member."""
+Use ONLY English words. Use database info to answer directly. Be conversational. Don't introduce yourself."""
         
         # No context available
-        return f"QUERY: {query}\nNo database info available. Provide a helpful response in {lang_code} and offer to help with other school topics or contact the school office."
+        if lang in ["tl", "akl"]:
+            return f"QUERY: {query}\nNo database info available. Provide helpful response in Tagalog. Offer to help with other school topics."
+        else:
+            return f"QUERY: {query}\nNo database info available. Provide helpful response in {lang_code}. Offer to help with other school topics."
     
     async def generate_response(self, query: str, context: str, lang: str, 
                               conversation_history: List[Dict] = None, 
@@ -166,9 +174,17 @@ CRITICAL: Use ONLY English words. NO Tagalog words. Use database info to answer 
                 
                 # Remove bold formatting and context annotations
                 response = response.replace('**', '')
-                response = response.replace('(context: academic)', '')
-                response = response.replace('(context: staff)', '')
-                response = response.replace('(context: general)', '')
+                
+                # Remove all context annotations (comprehensive)
+                import re
+                # Remove context annotations in various formats
+                response = re.sub(r'\(context:\s*[^)]+\)', '', response, flags=re.IGNORECASE)
+                response = re.sub(r'\[context:\s*[^\]]+\]', '', response, flags=re.IGNORECASE)
+                response = re.sub(r'\{context:\s*[^}]+\}', '', response, flags=re.IGNORECASE)
+                
+                # Clean up any extra spaces or punctuation left behind
+                response = re.sub(r'\s+', ' ', response)  # Multiple spaces to single space
+                response = response.strip()
                 
                 # 🚨 CRITICAL FIX: Add messenger link for contact escalation
                 response = self.add_messenger_link_if_needed(response, query, context, lang)
@@ -177,7 +193,7 @@ CRITICAL: Use ONLY English words. NO Tagalog words. Use database info to answer 
                 split_responses = self.split_long_response(response)
                 return split_responses
             else:
-                logger.warning(f"⚠️ Multi-provider AI failed: {ai_response.error}")
+                # Removed verbose AI provider logging
                 return self._get_fallback_response(lang)
             
         except Exception as e:

@@ -44,7 +44,11 @@ class ContextAwareNLU:
                 r"guro", r"faculty", r"staff",
                 # Activities and events
                 r"activities", r"events", r"programs", r"drill", r"celebration",
-                r"aktibidad", r"programa", r"pagdiriwang"
+                r"aktibidad", r"programa", r"pagdiriwang",
+                # Location queries
+                r"where.*cr", r"where.*comfort", r"where.*banyo", r"where.*toilet", r"where.*restroom",
+                r"saan.*cr", r"saan.*comfort", r"saan.*banyo",
+                r"ginausoy.*cr", r"hinahanap.*cr", r"looking.*cr"
             ],
             "medium": [
                 # General school terms
@@ -60,6 +64,7 @@ class ContextAwareNLU:
         
     def analyze_context_usage(self, query: str, database_results: List[Dict], 
                             intent: str, entities: List[Dict]) -> ContextAnalysis:
+        """Simple relevance-based context analysis - treat all entries equally"""
         if not database_results:
             return ContextAnalysis(
                 should_use_context=False,
@@ -69,35 +74,36 @@ class ContextAwareNLU:
                 fallback_suggestions=["Ask about specific staff", "Inquire about locations"]
             )
         
-        specificity_score = self._calculate_specificity_score(query)
-        match_quality = self._analyze_match_quality(query, database_results)
+        # Simple approach: if we have database results, use them
+        # The scoring system already ranked them by relevance
+        top_result = database_results[0]
+        keywords = top_result.get('keywords', '').lower()
+        response = top_result.get('response', '').lower()
         
-        # Much more liberal logic - if we have ANY decent database results, use them!
-        # 🎯 FIX: Special handling for grade-related questions
-        query_lower = query.lower()
-        is_grade_question = 'grade' in query_lower
-        has_grade_info = any('grade' in str(result.get('keywords', '')).lower() or 'grade' in str(result.get('response', '')).lower() for result in database_results)
+        # Check for basic word overlap - clean punctuation from words
+        import re
+        query_words = set(re.sub(r'[^\w]', '', word) for word in query.lower().split())
+        keyword_words = set(re.sub(r'[^\w]', '', word) for word in keywords.split())
+        response_words = set(re.sub(r'[^\w]', '', word) for word in response.split())
         
-        if is_grade_question and has_grade_info:
-            # For grade questions, always use database context if we have grade information
-            return ContextAnalysis(
-                should_use_context=True,
-                confidence_level=ContextConfidence.HIGH,
-                reasoning="Grade question with grade information in database",
-                suggested_response_style="confident_with_details",
-                fallback_suggestions=[]
-            )
+        # Remove empty strings
+        query_words = {word for word in query_words if word}
+        keyword_words = {word for word in keyword_words if word}
+        response_words = {word for word in response_words if word}
         
-        # Context analysis completed
+        keyword_overlap = len(query_words & keyword_words)
+        response_overlap = len(query_words & response_words)
         
-        # 🎯 ULTRA-PERMISSIVE APPROACH: If we have ANY database results, use them
-        # Let the AI determine what's relevant and what's not
-        # Using database context for response generation
+        # Removed verbose debug logging
+        
+        # If there's any overlap, use the result
+        should_use = (keyword_overlap > 0 or response_overlap > 0)
+        
         return ContextAnalysis(
-            should_use_context=True,
-            confidence_level=ContextConfidence.HIGH,
-            reasoning=f"Found {len(database_results)} database results - let AI determine relevance",
-            suggested_response_style="confident_with_details",
+            should_use_context=should_use,
+            confidence_level=ContextConfidence.HIGH if should_use else ContextConfidence.NONE,
+            reasoning=f"Word overlap - keywords: {keyword_overlap}, response: {response_overlap}",
+            suggested_response_style="direct_and_helpful",
             fallback_suggestions=[]
         )
     

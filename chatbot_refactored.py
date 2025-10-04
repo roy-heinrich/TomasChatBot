@@ -89,7 +89,7 @@ class ChatBot:
         """Extract user name from conversation history using NLP entity extraction"""
         for msg in reversed(conversation_history):
             if not isinstance(msg, dict):
-                logger.warning(f"⚠️ Skipping non-dict message: {type(msg)} - {msg}")
+                # Removed verbose warning logging
                 continue
             if msg.get("role") == "user":
                 content = msg.get("content", "")
@@ -121,7 +121,7 @@ class ChatBot:
         """Extract child name from conversation history"""
         for msg in reversed(conversation_history):
             if not isinstance(msg, dict):
-                logger.warning(f"⚠️ Skipping non-dict message: {type(msg)} - {msg}")
+                # Removed verbose warning logging
                 continue
             if msg.get("role") == "user":
                 content = msg.get("content", "").lower()
@@ -146,7 +146,7 @@ class ChatBot:
             
             for msg in recent_messages:
                 if not isinstance(msg, dict):
-                    logger.warning(f"⚠️ Skipping non-dict message: {type(msg)} - {msg}")
+                    # Removed verbose warning logging
                     continue
                 if msg.get("role") == "user":
                     content = msg.get("content", "")
@@ -216,7 +216,7 @@ class ChatBot:
         try:
             # 0. Security validation - check for SQL injection attempts
             if sql_protector.is_sql_injection(query):
-                logger.warning(f"🚨 SQL injection attempt blocked: {query[:50]}...")
+                # Removed verbose SQL injection logging
                 return ChatResponse(
                     response=["I'm sorry, but I cannot process that type of request. Please ask about school-related topics instead."],
                     entities=[],
@@ -227,26 +227,26 @@ class ChatBot:
                     intent="security_block"
                 )
             # 1. Enhanced language detection with mixed-language support
-            # Use sophisticated language detector (highest priority)
+            # Use multilingual NLP as primary (most advanced), with fallbacks
             try:
-                from core.language_detector import LanguageDetector
-                advanced_detector = LanguageDetector()
-                detected_lang, confidence = advanced_detector.detect_language(query)
-                # logger.info(f"🌍 Advanced detector: {detected_lang} (confidence: {confidence:.2f})")  # Reduced for Railway
+                from multilingual_nlp import multilingual_nlp
+                if multilingual_nlp:
+                    lang_result = await multilingual_nlp.detect_language_semantic(query)
+                    detected_lang = lang_result.language
+                    confidence = lang_result.confidence
+                    # logger.info(f"🌍 Multilingual NLP primary: {detected_lang} (confidence: {confidence:.2f})")  # Reduced for Railway
+                else:
+                    raise ImportError("Multilingual NLP not available")
             except Exception as e:
-                logger.warning(f"⚠️ Advanced detector failed: {e}")
-                # Fallback to multilingual NLP
+                # Removed verbose multilingual NLP logging
+                # Fallback to advanced language detector
                 try:
-                    from multilingual_nlp import multilingual_nlp
-                    if multilingual_nlp:
-                        lang_result = await multilingual_nlp.detect_language_semantic(query)
-                        detected_lang = lang_result.language
-                        confidence = lang_result.confidence
-                        # logger.info(f"🌍 Multilingual NLP fallback: {detected_lang} (confidence: {confidence:.2f})")  # Reduced for Railway
-                    else:
-                        raise ImportError("Multilingual NLP not available")
+                    from core.language_detector import LanguageDetector
+                    advanced_detector = LanguageDetector()
+                    detected_lang, confidence = advanced_detector.detect_language(query)
+                    # logger.info(f"🌍 Advanced detector fallback: {detected_lang} (confidence: {confidence:.2f})")  # Reduced for Railway
                 except Exception as e2:
-                    logger.warning(f"⚠️ Multilingual NLP fallback failed: {e2}")
+                    # Removed verbose advanced detector logging
                     # Ultimate fallback
                     detected_lang, confidence = self.language_detector.detect_language(query)
                     # logger.info(f"🌍 Ultimate fallback: {detected_lang} (confidence: {confidence:.2f})")  # Reduced for Railway
@@ -267,13 +267,40 @@ class ChatBot:
                         confidence = context_confidence
                         # logger.info(f"🌍 Context-based language detection: {detected_lang} → {response_lang} (confidence: {confidence:.2f})")  # Commented out debug logs
             
-            # 2. Get NLU analysis for intent
+            # 2. Get NLU analysis for intent with multilingual NLP enhancement
             nlu_result = await self.nlu_engine.analyze_intent(query)
+            
+            # Enhance with multilingual NLP semantic intent classification
+            try:
+                from multilingual_nlp import multilingual_nlp
+                if multilingual_nlp:
+                    semantic_intent = await multilingual_nlp.classify_intent_semantic(query, detected_lang)
+                    if semantic_intent.confidence >= 0.6:  # High confidence semantic classification
+                        # Use semantic intent as primary if confidence is high
+                        from nlu_engine import Intent
+                        try:
+                            semantic_intent_enum = Intent(semantic_intent.intent)
+                            # Boost confidence by combining with rule-based result
+                            combined_confidence = max(nlu_result.confidence, semantic_intent.confidence)
+                            # Create new NLUResult with updated values
+                            nlu_result = NLUResult(
+                                intent=semantic_intent_enum, 
+                                confidence=combined_confidence,
+                                entities=nlu_result.entities
+                            )
+                            # logger.info(f"🎯 Enhanced with semantic intent: {semantic_intent.intent} (confidence: {combined_confidence:.2f})")  # Commented out debug logs
+                        except ValueError:
+                            # Intent not in our enum, keep original result
+                            pass
+            except Exception as e:
+                # Removed verbose multilingual intent logging
+                pass
+            
             # logger.info(f"🎯 NLU Intent: {nlu_result.intent.value} for query: {query}")  # Reduced for Railway
             
             # CRITICAL SAFETY: Check for medical emergencies (HIGHEST PRIORITY)
             if nlu_result.intent.value == "emergency":
-                logger.warning(f"🚨 EMERGENCY DETECTED: {query}")
+                # Removed verbose emergency logging
                 return self._handle_emergency_response(query, response_lang)
             
             # 2.5. Advanced AI Analysis - Conversation Intelligence
@@ -296,14 +323,37 @@ class ChatBot:
                     conversation_history=conversation_history or [],
                     language=detected_lang
                 )
-                # logger.info(f"💭 Emotional analysis: {emotional_analysis.primary_emotion} (intensity: {emotional_analysis.emotion_intensity:.2f})")  # Reduced for Railway
+                logger.info(f"💭 Emotional analysis: {emotional_analysis.primary_emotion} (intensity: {emotional_analysis.emotion_intensity:.2f})")
                 
             except Exception as e:
                 logger.warning(f"⚠️ Advanced AI analysis failed: {e}")
                 # Continue with basic processing
             
-            # 3. Enhanced entity extraction with relationships
+            # 3. Enhanced entity extraction with relationships and multilingual NLP
             entities = self.entity_extractor.extract_entities(query, nlu_result.intent.value if nlu_result else None)
+            
+            # Enhance with multilingual NLP entity extraction
+            try:
+                from multilingual_nlp import multilingual_nlp
+                if multilingual_nlp:
+                    multilingual_entities = await multilingual_nlp.extract_entities_multilingual(query, detected_lang)
+                    # Convert multilingual entities to our format and merge
+                    for ml_entity in multilingual_entities:
+                        # Create entity in our format
+                        from entity_extractor import ExtractedEntity
+                        entity = ExtractedEntity(
+                            entity_type=ml_entity.label.lower(),
+                            value=ml_entity.normalized_form or ml_entity.text,
+                            confidence=ml_entity.confidence,
+                            start_pos=ml_entity.start,
+                            end_pos=ml_entity.end,
+                            context=query[ml_entity.start:ml_entity.end]
+                        )
+                        entities.append(entity)
+                    # logger.info(f"🔍 Multilingual NLP added {len(multilingual_entities)} entities")  # Commented out debug logs
+            except Exception as e:
+                logger.warning(f"⚠️ Multilingual entity extraction failed: {e}")
+            
             # logger.info(f"🔍 Enhanced entity extraction: {len(entities)} entities with relationships")  # Commented out debug logs
             
             # Log entity relationships
@@ -405,7 +455,20 @@ class ChatBot:
                 else:
                     # 3. Perform traditional database search to get context for Groq
                     intent_name = nlu_result.intent.name.lower() if nlu_result and nlu_result.intent else None
-                    search_results = await self.database_search.search_prompts(query, limit=10, intent=intent_name)
+                    
+                    # Enhance search with emotional context
+                    search_query = query
+                    if emotional_analysis and emotional_analysis.primary_emotion != 'neutral':
+                        # Add emotional context to search for better results
+                        if emotional_analysis.primary_emotion == 'sad':
+                            search_query = f"{query} emotional support help support aide"
+                        elif emotional_analysis.primary_emotion == 'worried':
+                            search_query = f"{query} support help guidance"
+                        elif emotional_analysis.primary_emotion == 'confused':
+                            search_query = f"{query} help guidance support"
+                        logger.info(f"💭 Enhanced search query: '{search_query}' (emotion: {emotional_analysis.primary_emotion})")
+                    
+                    search_results = await self.database_search.search_prompts(search_query, limit=10, intent=intent_name)
                     
                     # 4. Use context-aware NLU to determine if we should use database results
                     context_analysis = self.context_aware_nlu.analyze_context_usage(
@@ -472,7 +535,20 @@ class ChatBot:
                     
                     # 3. Perform traditional database search to get context for Groq
                     intent_name = nlu_result.intent.name.lower() if nlu_result and nlu_result.intent else None
-                    search_results = await self.database_search.search_prompts(query, limit=10, intent=intent_name)
+                    
+                    # Enhance search with emotional context
+                    search_query = query
+                    if emotional_analysis and emotional_analysis.primary_emotion != 'neutral':
+                        # Add emotional context to search for better results
+                        if emotional_analysis.primary_emotion == 'sad':
+                            search_query = f"{query} emotional support help support aide"
+                        elif emotional_analysis.primary_emotion == 'worried':
+                            search_query = f"{query} support help guidance"
+                        elif emotional_analysis.primary_emotion == 'confused':
+                            search_query = f"{query} help guidance support"
+                        logger.info(f"💭 Enhanced search query: '{search_query}' (emotion: {emotional_analysis.primary_emotion})")
+                    
+                    search_results = await self.database_search.search_prompts(search_query, limit=10, intent=intent_name)
                     # logger.info(f"🔍 Traditional search found {len(search_results)  # Commented out debug logs} results")
                     
                     # 4. Use context-aware NLU to determine if we should use database results
@@ -510,14 +586,16 @@ class ChatBot:
                         pass
             
             # 5. Generate response using Groq with context-aware analysis
-            if best_result and context_analysis.should_use_context:
-                # logger.info("📚 Using database context for response generation")
+            if best_result:
+                logger.info("📚 Using database context for response generation")
                 # Provide complete database information as context
                 if isinstance(best_result, dict):
                     keywords = best_result.get('keywords', '')
                     response = best_result.get('response', '')
                     context = f"Database Information: {keywords} - {response}"
-                    # logger.info(f"📚 DEBUG: Context built: {context[:200]}...")
+                    logger.info(f"📚 DEBUG: Context built: {context[:200]}...")
+                    logger.info(f"📚 DEBUG: Keywords: '{keywords}'")
+                    logger.info(f"📚 DEBUG: Response: '{response[:100]}...'")
                 else:
                     logger.warning(f"⚠️ Best result is not a dict: {type(best_result)} - {best_result}")
                     context = f"Database Information: {best_result}"
@@ -545,10 +623,10 @@ class ChatBot:
                 if detected_lang in ['tl', 'akl']:
                     # Add more comprehensive context for Tagalog queries
                     if len(context) < 200:  # If context is too short, add more information
-                        context += "\n\nADDITIONAL CONTEXT: Please provide a comprehensive, detailed response in Tagalog. Include background information and be helpful and informative."
+                        context += "\n\nADDITIONAL CONTEXT: Answer in natural, grammatically correct Tagalog. Be conversational but professional. Use proper Tagalog grammar and natural sentence structure."
             else:
                 # Context-aware NLU determined not to use database context
-                # logger.info("🎯 Context-aware NLU: Not using database context")  # Reduced for Railway
+                logger.info("🎯 Context-aware NLU: Not using database context")
                 if nlu_result and nlu_result.intent.value == 'contact_escalation':
                     context = "User wants to talk to someone from the school - be helpful first by offering assistance with school topics, enrollment, schedules, or other school information. Only mention contact options if they specifically ask again after being helpful."
                 else:
@@ -563,6 +641,26 @@ class ChatBot:
                 if memory_context:
                     context += f"\n\nPersonal Context: {memory_context}"
                     # logger.info(f"🧠 Added memory context: {memory_context}")  # Commented out debug logs
+            
+            # Add conversation analysis context for better responses
+            if conversation_context:
+                # Add topic flow context
+                if conversation_context.topic_flow:
+                    context += f"\n\nConversation Topics: {', '.join(conversation_context.topic_flow)}"
+                
+                # Add urgency context
+                if conversation_context.urgency_level != 'medium':
+                    context += f"\n\nUrgency Level: {conversation_context.urgency_level}"
+                
+                # Add user expertise context
+                if conversation_context.user_expertise != 'intermediate':
+                    context += f"\n\nUser Expertise: {conversation_context.user_expertise}"
+                
+                # Add emotional context
+                if emotional_analysis and emotional_analysis.primary_emotion != 'neutral':
+                    context += f"\n\nUser Emotion: {emotional_analysis.primary_emotion} (intensity: {emotional_analysis.emotion_intensity:.1f})"
+                    if emotional_analysis.support_needed:
+                        context += "\n\nUser needs additional support - be extra helpful and empathetic"
                 
                 # Check if this is a greeting/returning user
                 if any(word in query.lower() for word in ["hi", "hello", "hey", "kumusta", "kamusta"]):
@@ -575,7 +673,21 @@ class ChatBot:
             nlu_info = {
                 'intent': nlu_result.intent.value if nlu_result else 'unknown',
                 'confidence': nlu_result.confidence if nlu_result else 0.0,
-                'entities': [(e.entity_type, e.value) for e in entities]
+                'entities': [(e.entity_type, e.value) for e in entities],
+                'emotional_analysis': {
+                    'primary_emotion': emotional_analysis.primary_emotion if emotional_analysis else 'neutral',
+                    'emotion_intensity': emotional_analysis.emotion_intensity if emotional_analysis else 0.0,
+                    'sentiment_score': emotional_analysis.sentiment_score if emotional_analysis else 0.0,
+                    'suggested_response_tone': emotional_analysis.suggested_response_tone if emotional_analysis else 'professional_friendly',
+                    'empathy_level': emotional_analysis.empathy_level if emotional_analysis else 'low',
+                    'support_needed': emotional_analysis.support_needed if emotional_analysis else False
+                } if emotional_analysis else None,
+                'conversation_context': {
+                    'topic_flow': conversation_context.topic_flow if conversation_context else [],
+                    'urgency_level': conversation_context.urgency_level if conversation_context else 'medium',
+                    'user_expertise': conversation_context.user_expertise if conversation_context else 'intermediate',
+                    'conversation_sentiment': conversation_context.conversation_sentiment if conversation_context else 0.0
+                } if conversation_context else None
             }
             
             # 🚨 CRITICAL FIX: Removed ML-based gibberish detection since we stripped ML dependencies
@@ -612,10 +724,7 @@ class ChatBot:
             
             # Generate response with Groq (professional, factual, humane, jolly, no roleplay)
             # Pass enhanced NLP/NLU information for better response generation
-            nlu_info_dict = {
-                'intent': nlu_result.intent.value if nlu_result and nlu_result.intent else 'unknown',
-                'confidence': nlu_result.confidence if nlu_result else 0.0
-            } if nlu_result else None
+            nlu_info_dict = nlu_info  # Use the enhanced nlu_info with emotional analysis
             
             # Add context analysis to nlu_info if available
             if 'context_analysis' in locals():
@@ -898,31 +1007,53 @@ class ChatBot:
     
     def _detect_gibberish_input(self, query: str, nlu_result, entities: List, detected_lang: str, confidence: float) -> bool:
         """
-        Enhanced gibberish detection for meaningless input - language-aware
+        Enhanced gibberish detection with sophisticated language-aware patterns
         """
         query_lower = query.lower().strip()
         
         # If NLU has high confidence, trust it (especially for Tagalog/Aklanon)
         if nlu_result and nlu_result.confidence > 0.4:
-            # logger.info(f"✅ NLU has high confidence {nlu_result.confidence:.3f} - not gibberish")  # Commented out debug logs
             return False
         
         # If language detection is confident for Tagalog/Aklanon, don't flag as gibberish
         if detected_lang in ['tl', 'akl'] and confidence > 0.7:
-            # logger.info(f"✅ High confidence {detected_lang} detection ({confidence:.3f})  # Commented out debug logs - not gibberish")
             return False
         
-        # Check for obvious gibberish patterns first, regardless of NLU confidence
-        if len(query) > 8:
-            # Check if it's mostly the same few characters repeated
-            unique_chars = len(set(query_lower))
-            if unique_chars <= 6 and len(query) > 8:  # Too few unique characters
-                # logger.info(f"🔍 Gibberish detected: too few unique characters ({unique_chars})  # Commented out debug logs in '{query}'")
-                return True
+        # Enhanced gibberish detection with multiple sophisticated checks
+        gibberish_score = 0.0
+        max_score = 1.0
         
-        # Check for random character sequences (but be more lenient for Filipino languages)
+        # 1. Character diversity analysis (more sophisticated)
         if len(query) > 6:
-            # Count consecutive consonants
+            unique_chars = len(set(query_lower.replace(' ', '')))
+            total_chars = len(query_lower.replace(' ', ''))
+            diversity_ratio = unique_chars / total_chars if total_chars > 0 else 0
+            
+            if diversity_ratio < 0.3:  # Less than 30% unique characters
+                gibberish_score += 0.3
+            elif diversity_ratio < 0.5:  # Less than 50% unique characters
+                gibberish_score += 0.2
+        
+        # 2. Vowel-consonant ratio analysis (language-aware)
+        if len(query) > 4:
+            vowels = set('aeiou')
+            vowel_count = sum(1 for char in query_lower if char in vowels)
+            consonant_count = sum(1 for char in query_lower if char.isalpha() and char not in vowels)
+            
+            if consonant_count > 0:
+                vc_ratio = vowel_count / consonant_count
+                # Different thresholds for different languages
+                if detected_lang in ['tl', 'akl']:
+                    # Filipino languages have more consonant clusters
+                    if vc_ratio < 0.2:  # Too few vowels
+                        gibberish_score += 0.2
+                else:
+                    # English has more balanced vowel-consonant ratio
+                    if vc_ratio < 0.1:  # Extremely few vowels
+                        gibberish_score += 0.3
+        
+        # 3. Consecutive consonant analysis (enhanced)
+        if len(query) > 6:
             consecutive_consonants = 0
             max_consecutive = 0
             vowels = set('aeiou')
@@ -935,32 +1066,100 @@ class ChatBot:
                     else:
                         consecutive_consonants = 0
             
-            # Be more lenient for Filipino languages (Tagalog/Aklanon have more consonant clusters)
-            threshold = 5 if detected_lang in ['tl', 'akl'] else 4
-            if max_consecutive >= threshold:
-                # logger.info(f"🔍 Gibberish detected: {max_consecutive} consecutive consonants in '{query}'")  # Commented out debug logs
-                return True
+            # Language-aware thresholds
+            if detected_lang in ['tl', 'akl']:
+                if max_consecutive >= 6:  # Very high for Filipino languages
+                    gibberish_score += 0.3
+                elif max_consecutive >= 5:
+                    gibberish_score += 0.2
+            else:
+                if max_consecutive >= 5:  # High for English
+                    gibberish_score += 0.3
+                elif max_consecutive >= 4:
+                    gibberish_score += 0.2
         
-        # Check for patterns that are clearly not human language
+        # 4. Pattern recognition (enhanced with more patterns)
         obvious_gibberish_patterns = [
-            "qwertyuiop", "asdfghjkl", "zxcvbnm",  # Keyboard patterns
-            "aaaaaaaa", "bbbbbbbb", "cccccccc",    # Repeated single characters
-            "123456789", "abcdefgh",               # Sequential patterns
+            # Keyboard patterns
+            "qwertyuiop", "asdfghjkl", "zxcvbnm", "qwerty", "asdfgh", "zxcvbn",
+            # Repeated characters
+            "aaaaaaaa", "bbbbbbbb", "cccccccc", "dddddddd", "eeeeeeee",
+            # Sequential patterns
+            "123456789", "abcdefgh", "qwertyui", "asdfghjk",
+            # Common gibberish
+            "asdfasdf", "qwerqwer", "zxcvzxcv", "hjklhjkl",
+            # Random character sequences
+            "qwerty", "asdfgh", "zxcvbn", "hjklui", "mnbvcx",
+            # Number-letter mixed gibberish
+            "q1w2e3", "a1s2d3", "z1x2c3", "h1j2k3",
+            # Repeated patterns
+            "qweqwe", "asdasd", "zxcxzc", "hjkhjk"
         ]
         
         for pattern in obvious_gibberish_patterns:
             if pattern in query_lower:
-                # logger.info(f"🔍 Obvious gibberish pattern detected: '{pattern}'")  # Commented out debug logs
-                return True
+                gibberish_score += 0.4
+                break
         
-        # Only trust NLU if it has high confidence AND the input looks reasonable
-        if nlu_result and nlu_result.confidence > 0.3:  # Higher threshold
-            # logger.info(f"✅ NLU has high confidence {nlu_result.confidence:.3f} - not gibberish")  # Commented out debug logs
-            return False
+        # 5. Entropy analysis (measure of randomness)
+        if len(query) > 8:
+            import math
+            char_counts = {}
+            for char in query_lower:
+                if char.isalpha():
+                    char_counts[char] = char_counts.get(char, 0) + 1
+            
+            if char_counts:
+                total_chars = sum(char_counts.values())
+                entropy = 0
+                for count in char_counts.values():
+                    probability = count / total_chars
+                    if probability > 0:
+                        entropy -= probability * math.log2(probability)
+                
+                # Low entropy indicates repetitive patterns (gibberish)
+                if entropy < 2.0:  # Very low entropy
+                    gibberish_score += 0.3
+                elif entropy < 2.5:  # Low entropy
+                    gibberish_score += 0.2
         
-        # If we get here, it's not gibberish - let Groq handle it with NLP/NLU
-        # logger.info("✅ Input passed gibberish detection - using Groq with NLP/NLU processing")  # Commented out debug logs
-        return False
+        # 6. Word structure analysis
+        words = query_lower.split()
+        if words:
+            valid_words = 0
+            for word in words:
+                if len(word) > 1:
+                    # Check if word has reasonable vowel-consonant structure
+                    vowel_count = sum(1 for char in word if char in 'aeiou')
+                    consonant_count = sum(1 for char in word if char.isalpha() and char not in 'aeiou')
+                    
+                    if consonant_count > 0:
+                        vc_ratio = vowel_count / consonant_count
+                        # Reasonable vowel-consonant ratio
+                        if 0.1 <= vc_ratio <= 2.0:  # Reasonable range
+                            valid_words += 1
+            
+            word_validity_ratio = valid_words / len(words) if words else 0
+            if word_validity_ratio < 0.3:  # Less than 30% valid words
+                gibberish_score += 0.2
+        
+        # 7. Language-specific validation
+        if detected_lang == 'en':
+            # English-specific checks
+            english_indicators = ['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by']
+            if not any(indicator in query_lower for indicator in english_indicators):
+                if len(query) > 10:  # Long query without common English words
+                    gibberish_score += 0.1
+        
+        elif detected_lang in ['tl', 'akl']:
+            # Filipino language-specific checks
+            filipino_indicators = ['ang', 'ng', 'sa', 'na', 'ay', 'mga', 'ko', 'mo', 'niya', 'nila', 'namin', 'natin']
+            if not any(indicator in query_lower for indicator in filipino_indicators):
+                if len(query) > 10:  # Long query without common Filipino words
+                    gibberish_score += 0.1
+        
+        # Final decision based on cumulative score
+        return gibberish_score >= 0.5  # Threshold for gibberish detection
     
     def _handle_emergency_response(self, query: str, response_lang: str) -> ChatResponse:
         """Handle medical emergency responses with immediate action guidance"""

@@ -16,7 +16,7 @@ gunicorn>=21.2.0
 
 # NLP dependencies (lightweight)
 nltk>=3.8.1
-langid>=1.1.6
+# langid>=1.1.6  # Removed - using langdetect instead
 textblob>=0.17.1
 
 # Optional ML dependencies (for multilingual_nlp.py)

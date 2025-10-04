@@ -160,14 +160,9 @@ class LanguageDetector:
         return any(re.match(pattern, word) for pattern in aklanon_patterns)
     
     def _detect_with_langid(self, text: str) -> Tuple[str, float]:
-        """Detect language using langid library"""
-        try:
-            import langid
-            lang, confidence = langid.classify(text)
-            return self._map_language(lang, text.lower(), confidence)
-        except Exception as e:
-            logger.warning(f"Langid detection failed: {e}")
-            return "en", 0.3
+        """Detect language using langid library (removed - using langdetect instead)"""
+        # Fallback to English with low confidence
+        return "en", 0.3
     
     def _detect_with_nlp_analysis(self, text_lower: str) -> Tuple[str, float]:
         """Detect language using NLP analysis"""
@@ -235,25 +230,21 @@ class LanguageDetector:
         # Weight different methods based on text characteristics
         text_length = len(text_lower.split())
         
-        # Adjust weights based on text length and complexity
+        # Adjust weights based on text length and complexity (langid removed)
         if text_length < 3:
             # Short text: rely more on patterns
-            weights = {"langid": 0.3, "nlp": 0.2, "pattern": 0.5}
+            weights = {"nlp": 0.3, "pattern": 0.7}
         elif text_length < 10:
             # Medium text: balanced approach
-            weights = {"langid": 0.4, "nlp": 0.3, "pattern": 0.3}
+            weights = {"nlp": 0.5, "pattern": 0.5}
         else:
             # Long text: rely more on NLP analysis
-            weights = {"langid": 0.3, "nlp": 0.5, "pattern": 0.2}
+            weights = {"nlp": 0.7, "pattern": 0.3}
         
         # Calculate weighted scores for each language
         language_scores = {"en": 0.0, "tl": 0.0, "akl": 0.0}
         
         for lang in language_scores:
-            # Langid contribution
-            if langid_result[0] == lang:
-                language_scores[lang] += langid_result[1] * weights["langid"]
-            
             # NLP contribution
             if nlp_result[0] == lang:
                 language_scores[lang] += nlp_result[1] * weights["nlp"]

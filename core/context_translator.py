@@ -257,12 +257,8 @@ class ContextTranslator:
             # Add context to text for better translation
             enhanced_text = text
             
-            # Add topic context if available
-            for element in context_elements:
-                if element.startswith('Topic:'):
-                    topic = element.replace('Topic:', '').strip()
-                    enhanced_text = f"{text} (context: {topic})"
-                    break
+            # Topic context enhancement removed - no longer adding context annotations
+            # This was causing unwanted "(context: academic)" text in responses
             
             return enhanced_text
             
