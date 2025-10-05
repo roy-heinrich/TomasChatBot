@@ -62,11 +62,13 @@ RULES:
 1. Use ONLY database context - never invent data
 2. If no database info: provide helpful response and offer to help with other school topics
 3. Medical emergency → 911
-4. For lists: Use numbered format (1. Item 2. Item 3. Item)
+4. For lists: Use numbered format (1. Item 2. Item 3. Item) - but NOT for years like 1960
 5. Complete numbered lists - never cut off mid-sentence
 6. NO HALLUCINATIONS: Only use information provided in database context
-7. TONE: Be polite, professional, conversational, and helpful
-8. NO EXCESSIVE INTRODUCTIONS: Don't introduce yourself in every response"""
+7. TONE: Be polite, professional, factual, and communicative - vary your responses naturally, use different sentence structures and openings, and offer additional help when appropriate
+8. NO EXCESSIVE INTRODUCTIONS: Don't introduce yourself in every response
+9. FORMAT NUMBERS PROPERLY: Write years like "1960" not "1 9 6 0" - keep numbers together
+10. NO LINE BREAKS IN NUMBERS: Never put line breaks between digits in years or numbers"""
         
         # Language-specific additions (keep minimal)
         lang_rules = self._get_lang_rules(lang)
@@ -128,14 +130,14 @@ RULES:
 QUERY: {query}
 LANG: {lang_code}
 
-Answer in natural Tagalog using database info. Be conversational but professional. Don't introduce yourself."""
+CRITICAL: Use ONLY database info above. Do NOT invent staff names, positions, contacts, or stats. Answer exactly what database says. Use proper Tagalog grammar. Vary response format. Offer help (e.g. "Kung may iba pang katanungan..."). Don't introduce yourself. Format numbers properly: "1960" not "1 9 6 0"."""
             else:
                 return f"""DATABASE: {context}
 
 QUERY: {query}
 LANG: {lang_code}
 
-Use ONLY English words. Use database info to answer directly. Be conversational. Don't introduce yourself."""
+Use ONLY English. Answer directly. Be polite, professional, factual, communicative. Vary response format. Offer help (e.g. "Feel free to ask..."). Don't introduce yourself. Format numbers properly: "1960" not "1 9 6 0"."""
         
         # No context available
         if lang in ["tl", "akl"]:
@@ -181,6 +183,22 @@ Use ONLY English words. Use database info to answer directly. Be conversational.
                 response = re.sub(r'\(context:\s*[^)]+\)', '', response, flags=re.IGNORECASE)
                 response = re.sub(r'\[context:\s*[^\]]+\]', '', response, flags=re.IGNORECASE)
                 response = re.sub(r'\{context:\s*[^}]+\}', '', response, flags=re.IGNORECASE)
+                
+                # Fix broken numbers BEFORE any other processing - ULTRA AGGRESSIVE
+                # Fix numbers with spaces (like "1 9 6 0" should be "1960")
+                response = re.sub(r'\b(\d)\s+(\d)\s+(\d)\s+(\d)\b', r'\1\2\3\4', response)
+                response = re.sub(r'\b(\d)\s+(\d)\s+(\d)\b', r'\1\2\3', response)
+                response = re.sub(r'\b(\d)\s+(\d)\b', r'\1\2', response)
+                
+                # Fix numbers split across lines (like "1\n9\n6\n0" should be "1960")
+                response = re.sub(r'(\d)\s*\n\s*(\d)\s*\n\s*(\d)\s*\n\s*(\d)', r'\1\2\3\4', response)
+                response = re.sub(r'(\d)\s*\n\s*(\d)\s*\n\s*(\d)', r'\1\2\3', response)
+                response = re.sub(r'(\d)\s*\n\s*(\d)', r'\1\2', response)
+                
+                # Fix numbers with any whitespace (tabs, spaces, newlines)
+                response = re.sub(r'(\d)\s+(\d)\s+(\d)\s+(\d)', r'\1\2\3\4', response)
+                response = re.sub(r'(\d)\s+(\d)\s+(\d)', r'\1\2\3', response)
+                response = re.sub(r'(\d)\s+(\d)', r'\1\2', response)
                 
                 # Clean up any extra spaces or punctuation left behind
                 response = re.sub(r'\s+', ' ', response)  # Multiple spaces to single space
@@ -244,7 +262,8 @@ Use ONLY English words. Use database info to answer directly. Be conversational.
         
         if len(response) <= max_length:
             # Even for short responses, check if we have numbered items that should be split
-            if re.search(r'\d+\.\s+', response):
+            # BUT NEVER split if it's just a year like "1960" or "1 9 6 0"
+            if re.search(r'\d+\.\s+', response) and not re.search(r'\b\d{4}\b', response):
                 return self._split_numbered_list_smart(response, max_length)
             return [response]
         
@@ -255,7 +274,10 @@ Use ONLY English words. Use database info to answer directly. Be conversational.
         # Use regex for faster splitting on sentences, but avoid splitting numbered lists
         # Split on sentence endings but not after numbers followed by periods
         # Enhanced splitting for long responses - bubble them properly
-        if re.search(r'\d+\.\s+', response):
+        # Only split numbered lists if they are actual lists (like "1. Item 2. Item")
+        # Must have multiple numbered items to be considered a list
+        # BUT NEVER split if it's just a year like "1960" or "1 9 6 0"
+        if re.search(r'\d+\.\s+[A-Za-z].*\d+\.\s+[A-Za-z]', response) and not re.search(r'\b\d{4}\b', response):
             # For numbered lists, ALWAYS split by complete numbered items
             return self._split_numbered_list_smart(response, max_length)
         else:
@@ -281,7 +303,8 @@ Use ONLY English words. Use database info to answer directly. Be conversational.
     def _split_numbered_list_smart(self, response: str, max_length: int) -> List[str]:
         """SIMPLE splitting - each number gets its own bubble"""
         # Find all numbered items and split them aggressively
-        numbered_items = re.findall(r'\d+\.\s+[^0-9]*(?=\d+\.\s+|$)', response)
+        # Only match actual numbered lists (like "1. Item", "2. Item") not years like "1960"
+        numbered_items = re.findall(r'\d+\.\s+[A-Za-z][^0-9]*(?=\d+\.\s+|$)', response)
         
         if numbered_items:
             messages = []

@@ -779,7 +779,7 @@ class DatabaseSearchEngine:
                     # Use dynamic synonym expansion instead of hardcoded patterns
                     expanded_query = self._expand_synonyms(query.lower())
                     if expanded_query != query.lower():
-                        logger.info(f"🔍 SYNONYM EXPANSION: '{query}' -> '{expanded_query}'")
+                        # logger.info(f"🔍 SYNONYM EXPANSION: '{query}' -> '{expanded_query}'")
                         # Search with expanded query
                         expanded_result = self.supabase.table("chatbot_prompts") \
                             .select("keywords, response, search_tsv") \
@@ -788,7 +788,7 @@ class DatabaseSearchEngine:
                         
                         if expanded_result.data:
                             all_results.extend(expanded_result.data)
-                            logger.info(f"🔍 EXPANDED SEARCH: Found {len(expanded_result.data)} additional results")
+                            # logger.info(f"🔍 EXPANDED SEARCH: Found {len(expanded_result.data)} additional results")
                 except Exception as e:
                     logger.warning(f"Synonym expansion failed: {e}")
                     # Fallback: Try with even more aggressive cleaning
@@ -877,10 +877,11 @@ class DatabaseSearchEngine:
                             school_related.append(entry)
                     
                     all_results.extend(school_related)
-                    logger.info(f"🎯 Found {len(school_related)} school-related entries for fuzzy matching")
+                    # logger.info(f"🎯 Found {len(school_related)} school-related entries for fuzzy matching")
                     # Debug: Log school activities entries
-                    for entry in school_related[:3]:  # Log first 3 entries
-                        logger.info(f"🎯 School entry: Keywords='{entry.get('keywords', '')[:50]}...' Response='{entry.get('response', '')[:50]}...'")
+                    # for entry in school_related[:3]:  # Log first 3 entries
+                    #     logger.info(f"🎯 School entry: Keywords='{entry.get('keywords', '')[:50]}...' Response='{entry.get('response', '')[:50]}...'")
+                    pass
             except Exception as e:
                 logger.warning(f"Fuzzy search failed: {e}")
             

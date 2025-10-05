@@ -323,7 +323,7 @@ class ChatBot:
                     conversation_history=conversation_history or [],
                     language=detected_lang
                 )
-                logger.info(f"💭 Emotional analysis: {emotional_analysis.primary_emotion} (intensity: {emotional_analysis.emotion_intensity:.2f})")
+                # logger.info(f"💭 Emotional analysis: {emotional_analysis.primary_emotion} (intensity: {emotional_analysis.emotion_intensity:.2f})")
                 
             except Exception as e:
                 logger.warning(f"⚠️ Advanced AI analysis failed: {e}")
@@ -466,7 +466,7 @@ class ChatBot:
                             search_query = f"{query} support help guidance"
                         elif emotional_analysis.primary_emotion == 'confused':
                             search_query = f"{query} help guidance support"
-                        logger.info(f"💭 Enhanced search query: '{search_query}' (emotion: {emotional_analysis.primary_emotion})")
+                        # logger.info(f"💭 Enhanced search query: '{search_query}' (emotion: {emotional_analysis.primary_emotion})")
                     
                     search_results = await self.database_search.search_prompts(search_query, limit=10, intent=intent_name)
                     
@@ -546,7 +546,7 @@ class ChatBot:
                             search_query = f"{query} support help guidance"
                         elif emotional_analysis.primary_emotion == 'confused':
                             search_query = f"{query} help guidance support"
-                        logger.info(f"💭 Enhanced search query: '{search_query}' (emotion: {emotional_analysis.primary_emotion})")
+                        # logger.info(f"💭 Enhanced search query: '{search_query}' (emotion: {emotional_analysis.primary_emotion})")
                     
                     search_results = await self.database_search.search_prompts(search_query, limit=10, intent=intent_name)
                     # logger.info(f"🔍 Traditional search found {len(search_results)  # Commented out debug logs} results")
@@ -587,15 +587,15 @@ class ChatBot:
             
             # 5. Generate response using Groq with context-aware analysis
             if best_result:
-                logger.info("📚 Using database context for response generation")
+                # logger.info("📚 Using database context for response generation")
                 # Provide complete database information as context
                 if isinstance(best_result, dict):
                     keywords = best_result.get('keywords', '')
                     response = best_result.get('response', '')
                     context = f"Database Information: {keywords} - {response}"
-                    logger.info(f"📚 DEBUG: Context built: {context[:200]}...")
-                    logger.info(f"📚 DEBUG: Keywords: '{keywords}'")
-                    logger.info(f"📚 DEBUG: Response: '{response[:100]}...'")
+                    # logger.info(f"📚 DEBUG: Context built: {context[:200]}...")
+                    # logger.info(f"📚 DEBUG: Keywords: '{keywords}'")
+                    # logger.info(f"📚 DEBUG: Response: '{response[:100]}...'")
                 else:
                     logger.warning(f"⚠️ Best result is not a dict: {type(best_result)} - {best_result}")
                     context = f"Database Information: {best_result}"
@@ -626,7 +626,7 @@ class ChatBot:
                         context += "\n\nADDITIONAL CONTEXT: Answer in natural, grammatically correct Tagalog. Be conversational but professional. Use proper Tagalog grammar and natural sentence structure."
             else:
                 # Context-aware NLU determined not to use database context
-                logger.info("🎯 Context-aware NLU: Not using database context")
+                # logger.info("🎯 Context-aware NLU: Not using database context")
                 if nlu_result and nlu_result.intent.value == 'contact_escalation':
                     context = "User wants to talk to someone from the school - be helpful first by offering assistance with school topics, enrollment, schedules, or other school information. Only mention contact options if they specifically ask again after being helpful."
                 else:
