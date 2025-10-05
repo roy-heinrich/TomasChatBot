@@ -128,6 +128,8 @@ class NLUResult:
     intent: Intent
     confidence: float
     entities: List[Entity]
+    is_multi_question: bool = False
+    questions: List[str] = None
 
 class NLUEngine:
     """
@@ -138,11 +140,70 @@ class NLUEngine:
     def __init__(self):
         # Optional: Initialize AI clients (OpenAI/Groq) for advanced classification
         self.openai_client = None
+        
+        # Multi-question detection patterns
+        self.question_separators = [
+            r'\?',  # Question marks
+            r'\.\s+(?=[A-Z])',  # Periods followed by capital letters
+            r';\s+',  # Semicolons
+            r'and\s+',  # "and" as separator
+            r'also\s+',  # "also" as separator
+            r'what\s+about\s+',  # "what about" as separator
+            r'how\s+about\s+',  # "how about" as separator
+        ]
         self.groq_client = None
         
         # Initialize NLTK components for enhanced text processing
         self.stemmer = None
         self.stop_words = set()
+    
+    def detect_multi_questions(self, user_input: str) -> Tuple[bool, List[str]]:
+        """Detect if the input contains multiple questions and parse them"""
+        import re
+        
+        # Clean the input
+        cleaned_input = user_input.strip()
+        
+        # Count question marks
+        question_marks = cleaned_input.count('?')
+        
+        # If there are multiple question marks, split by them
+        if question_marks > 1:
+            questions = [q.strip() for q in cleaned_input.split('?') if q.strip()]
+            # Remove the last empty element if it exists
+            if questions and not questions[-1]:
+                questions = questions[:-1]
+            return True, questions
+        
+        # Check for other separators that might indicate multiple questions
+        for pattern in self.question_separators:
+            if re.search(pattern, cleaned_input, re.IGNORECASE):
+                # Split by the pattern
+                parts = re.split(pattern, cleaned_input, flags=re.IGNORECASE)
+                questions = [part.strip() for part in parts if part.strip()]
+                if len(questions) > 1:
+                    return True, questions
+        
+        # Check for common multi-question patterns
+        multi_question_patterns = [
+            r'what\s+is\s+.*\s+and\s+where\s+is',  # "what is X and where is Y"
+            r'who\s+is\s+.*\s+and\s+what\s+is',   # "who is X and what is Y"
+            r'when\s+is\s+.*\s+and\s+where\s+is', # "when is X and where is Y"
+            r'how\s+many\s+.*\s+and\s+what\s+are', # "how many X and what are Y"
+        ]
+        
+        for pattern in multi_question_patterns:
+            if re.search(pattern, cleaned_input, re.IGNORECASE):
+                # Split by "and" or similar conjunctions
+                parts = re.split(r'\s+and\s+', cleaned_input, flags=re.IGNORECASE)
+                questions = [part.strip() for part in parts if part.strip()]
+                if len(questions) > 1:
+                    return True, questions
+        
+        return False, [user_input]
+    
+    def _initialize_nltk_components(self):
+        """Initialize NLTK components safely"""
         if _initialize_nltk():
             try:
                 from nltk.stem import PorterStemmer
@@ -510,6 +571,25 @@ class NLUEngine:
     async def analyze_intent(self, user_input: str, context: Dict = None) -> NLUResult:
         """
         Analyze user input to determine intent and extract entities using advanced NLP
+        """
+        
+        # 🚨 MULTI-QUESTION DETECTION: Check if input contains multiple questions
+        is_multi_question, questions = self.detect_multi_questions(user_input)
+        
+        if is_multi_question:
+            # For multi-question inputs, analyze the primary intent but mark as multi-question
+            primary_question = questions[0] if questions else user_input
+            result = await self._analyze_single_intent(primary_question, context)
+            result.is_multi_question = True
+            result.questions = questions
+            return result
+        
+        # Single question - proceed with normal analysis
+        return await self._analyze_single_intent(user_input, context)
+    
+    async def _analyze_single_intent(self, user_input: str, context: Dict = None) -> NLUResult:
+        """
+        Analyze a single question for intent and entities
         """
         
         # FIRST PRIORITY: Check for medical emergencies with context awareness (CRITICAL SAFETY)

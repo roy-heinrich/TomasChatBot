@@ -210,11 +210,518 @@ class ChatBot:
         else:
             return "en"  # Default to English
     
+    def _detect_multiple_questions(self, query: str) -> Tuple[bool, List[str]]:
+        """Detect if user sent multiple questions (1-5) and parse them"""
+        import re
+        
+        # Clean the query and apply typo correction
+        query = query.strip()
+        query = self._correct_common_typos(query)
+        
+        # Common question patterns
+        question_indicators = [
+            r'\?',  # Question marks
+            r'\b(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has)\b',
+            r'\b(ano|saan|kailan|sino|paano|bakit|alin|pwed|maaari|gusto|kailangan)\b',  # Tagalog
+            r'\b(ginausoy|hinahanap|gusto ko|kailangan ko|pwede|maaari)\b'  # Aklanon
+        ]
+        
+        # Count question indicators
+        question_count = 0
+        for pattern in question_indicators:
+            matches = re.findall(pattern, query, re.IGNORECASE)
+            question_count += len(matches)
+        
+        # Special handling for comma-separated questions
+        # If we have commas and question words, it's likely multiple questions
+        comma_count = query.count(',')
+        if comma_count > 0 and question_count >= 2:
+            # Boost the question count for comma-separated patterns
+            question_count += comma_count
+        
+        # Enhanced detection for space-separated questions
+        # Look for patterns like "What is X? where is Y" (question mark followed by lowercase)
+        space_separated_pattern = r'\?\s+[a-z]'
+        if re.search(space_separated_pattern, query, re.IGNORECASE):
+            question_count += 1
+        
+        # Look for multiple question words in sequence
+        # Pattern: question word + content + question word + content
+        sequential_questions = r'\b(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has|ano|saan|kailan|sino|paano|bakit|alin|pwed|maaari|gusto|kailangan)\b.*?\b(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has|ano|saan|kailan|sino|paano|bakit|alin|pwed|maaari|gusto|kailangan)\b'
+        if re.search(sequential_questions, query, re.IGNORECASE):
+            question_count += 1
+        
+        # Debug: Print question count for troubleshooting
+        # print(f"DEBUG: Query='{query}', Question count={question_count}")
+        
+        # If we have multiple question indicators, try to split
+        if question_count >= 2:
+            # First try simple separators
+            simple_separators = [
+                r'\s+and\s+',  # "and" with spaces
+                r'\s+at\s+',   # "at" (Tagalog "and")
+                r'\s+,\s+',    # Comma with spaces (more specific)
+                r'\s+\.\s+',   # Period with spaces
+                r'\s+;\s*',    # Semicolon
+                r'\s+also\s+', # "also"
+                r'\s+din\s+', # "din" (Tagalog "also")
+                r'\s+pati\s+', # "pati" (Tagalog "including")
+                r'\s+plus\s+', # "plus"
+                r'\s+at\s+saka\s+', # "at saka" (Tagalog "and also")
+                r'\s*,\s*',    # Comma with optional spaces (fallback)
+                r'\?\s+',      # Question mark followed by space (for "What is X? where is Y")
+            ]
+            
+            questions = [query]  # Start with original query
+            
+            # Try simple separators first
+            for separator in simple_separators:
+                new_questions = []
+                for q in questions:
+                    parts = re.split(separator, q, flags=re.IGNORECASE)
+                    if len(parts) > 1:
+                        # Check if each part looks like a question
+                        for part in parts:
+                            part = part.strip()
+                            if len(part) > 10:  # Minimum length for a question
+                                # Check if it has question characteristics
+                                has_question_mark = '?' in part
+                                has_question_word = any(re.search(pattern, part, re.IGNORECASE) for pattern in question_indicators[1:])
+                                
+                                if has_question_mark or has_question_word:
+                                    new_questions.append(part)
+                                else:
+                                    # If no clear question indicators, keep as is
+                                    new_questions.append(part)
+                    else:
+                        new_questions.append(q)
+                questions = new_questions
+                
+                # If we found multiple questions, stop here
+                if len(questions) > 1:
+                    break
+            
+            # If simple separators didn't work, try intelligent question word splitting
+            if len(questions) == 1:
+                # Look for patterns like "What is X who is Y what is Z"
+                question_word_pattern = r'\b(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has|ano|saan|kailan|sino|paano|bakit|alin|pwed|maaari|gusto|kailangan)\b'
+                
+                # Find all question word positions
+                matches = list(re.finditer(question_word_pattern, query, re.IGNORECASE))
+                
+                if len(matches) >= 2:
+                    # Split at question word boundaries
+                    new_questions = []
+                    for i, match in enumerate(matches):
+                        start = match.start()
+                        if i == 0:
+                            # First question starts from beginning
+                            end = matches[i + 1].start() if i + 1 < len(matches) else len(query)
+                        else:
+                            # Subsequent questions start from this match
+                            end = matches[i + 1].start() if i + 1 < len(matches) else len(query)
+                        
+                        question_part = query[start:end].strip()
+                        if len(question_part) > 10:  # Minimum length
+                            new_questions.append(question_part)
+                    
+                    if len(new_questions) >= 2:
+                        questions = new_questions
+            
+            # Filter out very short questions and clean up
+            filtered_questions = []
+            for q in questions:
+                q = q.strip()
+                if len(q) > 15:  # Minimum meaningful question length
+                    # Remove leading/trailing punctuation
+                    q = re.sub(r'^[.,;:\s]+|[.,;:\s]+$', '', q)
+                    if q:
+                        filtered_questions.append(q)
+            
+            # Limit to 5 questions maximum
+            if len(filtered_questions) > 5:
+                filtered_questions = filtered_questions[:5]
+            
+            # Only consider it multiple questions if we have 2-5 valid questions
+            if 2 <= len(filtered_questions) <= 5:
+                return True, filtered_questions
+        
+        return False, [query]
+    
+    def _process_multiple_questions(self, questions: List[str], conversation_history: List[Dict] = None, 
+                                   session_id: str = None) -> List[Dict]:
+        """Process multiple questions and return structured results"""
+        results = []
+        
+        for i, question in enumerate(questions):
+            # Create a context for this specific question
+            question_context = {
+                'question_number': i + 1,
+                'total_questions': len(questions),
+                'is_multi_question': True,
+                'other_questions': [q for j, q in enumerate(questions) if j != i]
+            }
+            
+            results.append({
+                'question': question,
+                'context': question_context,
+                'processed': False  # Will be processed in main chat method
+            })
+        
+        return results
+    
+    async def _handle_multiple_questions(self, questions: List[str], conversation_history: List[Dict] = None, 
+                                       user_timezone: str = None, session_id: str = None) -> ChatResponse:
+        """Handle multiple questions in a context-aware manner"""
+        try:
+            # Process each question individually but maintain context
+            question_responses = []
+            all_entities = []
+            detected_language = "en"
+            language_confidence = 0.5
+            combined_intent = "multi_question"
+            
+            # Track conversation context for each question
+            current_conversation_history = conversation_history or []
+            
+            for i, question in enumerate(questions):
+                # Add context from previous questions in this session
+                multi_question_context = f"Question {i+1} of {len(questions)}: {question}"
+                
+                # Create enhanced conversation history for this question
+                enhanced_history = current_conversation_history.copy()
+                if i > 0:
+                    # Add context from previous questions in this multi-question session
+                    enhanced_history.append({
+                        "role": "system", 
+                        "content": f"User is asking multiple questions. This is question {i+1} of {len(questions)}. Previous questions: {', '.join(questions[:i])}"
+                    })
+                
+                # Process this individual question
+                try:
+                    # Use the main chat logic for each question
+                    single_response = await self._process_single_question(
+                        question, enhanced_history, user_timezone, session_id, 
+                        is_multi_question=True, question_number=i+1, total_questions=len(questions)
+                    )
+                    
+                    if single_response:
+                        question_responses.append(single_response)
+                        # Collect entities and language info
+                        if hasattr(single_response, 'entities'):
+                            all_entities.extend(single_response.entities)
+                        if hasattr(single_response, 'detected_language'):
+                            detected_language = single_response.detected_language
+                        if hasattr(single_response, 'language_confidence'):
+                            language_confidence = single_response.language_confidence
+                            
+                except Exception as e:
+                    logger.error(f"Error processing question {i+1}: {e}")
+                    # Add error response for this question
+                    question_responses.append(f"Question {i+1}: I encountered an error processing this question. Please try rephrasing it.")
+            
+            # Combine all responses into a coherent multi-question response
+            if question_responses:
+                # Create a structured response that addresses all questions
+                combined_response = self._combine_multi_question_responses(question_responses, questions, detected_language)
+                
+                return ChatResponse(
+                    response=combined_response,
+                    entities=all_entities,
+                    detected_language=detected_language,
+                    language_confidence=language_confidence,
+                    is_split=len(combined_response) > 1,
+                    message_count=len(combined_response),
+                    intent=combined_intent
+                )
+            else:
+                # Fallback if no responses were generated
+                return ChatResponse(
+                    response=["I received multiple questions but couldn't process them properly. Please try asking one question at a time."],
+                    entities=[],
+                    detected_language="en",
+                    language_confidence=0.5,
+                    is_split=False,
+                    message_count=1,
+                    intent="error"
+                )
+                
+        except Exception as e:
+            logger.error(f"Error handling multiple questions: {e}")
+            return ChatResponse(
+                response=["I encountered an error processing your multiple questions. Please try asking one question at a time."],
+                entities=[],
+                detected_language="en",
+                language_confidence=0.5,
+                is_split=False,
+                message_count=1,
+                intent="error"
+            )
+    
+    async def _process_single_question(self, question: str, conversation_history: List[Dict], 
+                                     user_timezone: str, session_id: str, 
+                                     is_multi_question: bool = False, question_number: int = 1, 
+                                     total_questions: int = 1) -> ChatResponse:
+        """Process a single question with multi-question context"""
+        try:
+            # 0. Typo correction for individual questions
+            question = self._correct_common_typos(question)
+            
+            # Use the existing chat logic but with multi-question context
+            # This is essentially the same as the main chat method but with additional context
+            
+            # 0.1. Security validation
+            if sql_protector.is_sql_injection(question):
+                return ChatResponse(
+                    response=["I'm sorry, but I cannot process that type of request. Please ask about school-related topics instead."],
+                    entities=[],
+                    detected_language="en",
+                    language_confidence=1.0,
+                    is_split=False,
+                    message_count=1,
+                    intent="security_block"
+                )
+            
+            # 1. Enhanced language detection
+            try:
+                from multilingual_nlp import multilingual_nlp
+                if multilingual_nlp:
+                    lang_result = await multilingual_nlp.detect_language_semantic(question)
+                    detected_lang = lang_result.language
+                    confidence = lang_result.confidence
+                else:
+                    raise ImportError("Multilingual NLP not available")
+            except Exception as e:
+                try:
+                    from core.language_detector import LanguageDetector
+                    advanced_detector = LanguageDetector()
+                    detected_lang, confidence = advanced_detector.detect_language(question)
+                except Exception as e2:
+                    detected_lang, confidence = self.language_detector.detect_language(question)
+            
+            response_lang = self._map_to_response_language(detected_lang)
+            
+            # 2. Get NLU analysis
+            nlu_result = await self.nlu_engine.analyze_intent(question)
+            
+            # 3. Enhanced entity extraction
+            entities = self.entity_extractor.extract_entities(question, nlu_result.intent.value if nlu_result else None)
+            
+            # 4. Update conversation memory with multi-question context
+            user_name = ""
+            if session_id:
+                existing_name = self.conversation_memory.get_user_name(session_id)
+                if existing_name:
+                    user_name = existing_name
+                else:
+                    if conversation_history:
+                        extracted_user_name = self.conversation_memory.extract_user_name(conversation_history)
+                        if extracted_user_name:
+                            user_name = extracted_user_name
+                
+                # Update memory with multi-question context
+                multi_question_context = f"Multi-question session: {question_number}/{total_questions}"
+                user_memory = self.conversation_memory.update_user_memory(
+                    session_id, user_name, f"{multi_question_context}: {question}", conversation_history
+                )
+            
+            # 5. Database search with multi-question context
+            intent_name = nlu_result.intent.name.lower() if nlu_result and nlu_result.intent else None
+            search_results = await self.database_search.search_prompts(question, limit=10, intent=intent_name)
+            
+            # 6. Context-aware analysis
+            context_analysis = self.context_aware_nlu.analyze_context_usage(
+                question, search_results, intent_name, entities
+            )
+            
+            best_result = None
+            if context_analysis.should_use_context and search_results:
+                best_result = search_results[0]
+            
+            # 7. Generate response with multi-question context
+            if best_result:
+                if isinstance(best_result, dict):
+                    keywords = best_result.get('keywords', '')
+                    response = best_result.get('response', '')
+                    context = f"Database Information: {keywords} - {response}"
+                else:
+                    context = f"Database Information: {best_result}"
+            else:
+                context = "No specific information available in database for this query"
+            
+            # Add multi-question context to the response
+            if is_multi_question:
+                context += f"\n\nMulti-question context: This is question {question_number} of {total_questions} questions the user asked."
+            
+            # Add personalized memory context
+            if session_id:
+                memory_context = self.conversation_memory.get_conversation_context(session_id, user_name)
+                if memory_context:
+                    context += f"\n\nPersonal Context: {memory_context}"
+            
+            # Generate response
+            nlu_info = {
+                'intent': nlu_result.intent.value if nlu_result else 'unknown',
+                'confidence': nlu_result.confidence if nlu_result else 0.0,
+                'entities': [(e.entity_type, e.value) for e in entities],
+                'is_multi_question': is_multi_question,
+                'question_number': question_number,
+                'total_questions': total_questions
+            }
+            
+            response_text = await self.response_generator.generate_response(
+                question, context, response_lang, conversation_history, nlu_info, user_name, entities, float(confidence), context_analysis
+            )
+            
+            # Split response if needed
+            split_messages = response_text if isinstance(response_text, list) else [response_text]
+            
+            return ChatResponse(
+                response=split_messages,
+                entities=[{"entity_type": e.entity_type, "value": e.value, "confidence": e.confidence} for e in entities],
+                detected_language=response_lang,
+                language_confidence=confidence,
+                is_split=len(split_messages) > 1,
+                message_count=len(split_messages),
+                intent=nlu_result.intent.value if nlu_result and nlu_result.intent else 'unknown'
+            )
+            
+        except Exception as e:
+            logger.error(f"Error processing single question: {e}")
+            return ChatResponse(
+                response=[f"Question {question_number}: I encountered an error processing this question."],
+                entities=[],
+                detected_language="en",
+                language_confidence=0.5,
+                is_split=False,
+                message_count=1,
+                intent="error"
+            )
+    
+    def _combine_multi_question_responses(self, question_responses: List[ChatResponse], 
+                                        original_questions: List[str], detected_language: str) -> List[str]:
+        """Combine multiple question responses into separate bubbles for each question"""
+        try:
+            combined_messages = []
+            
+            # Add each question and its response as separate bubbles
+            for i, (question, response) in enumerate(zip(original_questions, question_responses)):
+                if hasattr(response, 'response') and response.response:
+                    # Create a professional, paragraph-style response for each question
+                    if detected_language in ["tl", "akl"]:
+                        # Tagalog format
+                        question_intro = f"Tungkol sa inyong tanong na '{question}':"
+                    else:
+                        # English format
+                        question_intro = f"Regarding your question about '{question}':"
+                    
+                    combined_messages.append(question_intro)
+                    
+                    # Add the response content as a natural paragraph
+                    if isinstance(response.response, list):
+                        # Combine multiple response parts into a single paragraph
+                        response_text = " ".join(response.response)
+                        combined_messages.append(response_text)
+                    else:
+                        combined_messages.append(response.response)
+            
+            # Add a polite closing message
+            if detected_language in ["tl", "akl"]:
+                closing = "Kung may iba pang katanungan, huwag mag-atubiling magtanong!"
+            else:
+                closing = "If you have any other questions, feel free to ask!"
+            
+            combined_messages.append(closing)
+            
+            return combined_messages
+            
+        except Exception as e:
+            logger.error(f"Error combining multi-question responses: {e}")
+            # Fallback: return individual responses
+            fallback_responses = []
+            for i, response in enumerate(question_responses):
+                if hasattr(response, 'response') and response.response:
+                    if isinstance(response.response, list):
+                        fallback_responses.extend(response.response)
+                    else:
+                        fallback_responses.append(response.response)
+            return fallback_responses
+
+    def _correct_common_typos(self, query: str) -> str:
+        """Real fuzzy matching typo correction using string similarity"""
+        import re
+        try:
+            from difflib import SequenceMatcher
+        except ImportError:
+            # Fallback to basic similarity if difflib not available
+            return query
+        
+        # School-related vocabulary for fuzzy matching
+        school_vocabulary = [
+            'school', 'activities', 'available', 'principal', 'enrollment', 
+            'student', 'students', 'teacher', 'teachers', 'education',
+            'program', 'programs', 'schedule', 'hours', 'location', 'address',
+            'grade', 'grades', 'class', 'classes', 'subject', 'subjects',
+            'event', 'events', 'celebration', 'month', 'year', 'semester',
+            'curriculum', 'academic', 'extracurricular', 'sports', 'music',
+            'art', 'science', 'mathematics', 'english', 'filipino', 'history',
+            'social', 'studies', 'physical', 'education', 'computer', 'technology'
+        ]
+        
+        words = query.split()
+        corrected_words = []
+        
+        for word in words:
+            # Clean the word (remove punctuation for matching)
+            clean_word = re.sub(r'[^\w]', '', word.lower())
+            
+            if len(clean_word) < 3:  # Skip very short words
+                corrected_words.append(word)
+                continue
+            
+            # Find the best match using fuzzy matching
+            best_match = None
+            best_ratio = 0.0
+            
+            for vocab_word in school_vocabulary:
+                # Calculate similarity ratio
+                ratio = SequenceMatcher(None, clean_word, vocab_word.lower()).ratio()
+                
+                # If similarity is high enough (threshold: 0.7)
+                if ratio > 0.7 and ratio > best_ratio:
+                    best_ratio = ratio
+                    best_match = vocab_word
+            
+            # Use the best match if found, otherwise keep original
+            if best_match and best_ratio > 0.7:
+                # Preserve original capitalization pattern
+                if word.isupper():
+                    corrected_words.append(best_match.upper())
+                elif word.istitle():
+                    corrected_words.append(best_match.title())
+                else:
+                    corrected_words.append(best_match)
+            else:
+                corrected_words.append(word)
+        
+        return ' '.join(corrected_words)
+
     async def chat(self, query: str, conversation_history: List[Dict] = None, 
                    user_timezone: str = None, session_id: str = None) -> ChatResponse:
-        """Main chat method - Groq-first approach for natural responses"""
+        """Main chat method - Groq-first approach for natural responses with multi-question support"""
         try:
-            # 0. Security validation - check for SQL injection attempts
+            # 0. Typo correction
+            original_query = query
+            query = self._correct_common_typos(query)
+            
+            # 0.1. Multi-question detection and processing
+            is_multi_question, questions = self._detect_multiple_questions(query)
+            
+            if is_multi_question:
+                # Process multiple questions
+                return await self._handle_multiple_questions(questions, conversation_history, user_timezone, session_id)
+            
+            # 0.2. Security validation - check for SQL injection attempts
             if sql_protector.is_sql_injection(query):
                 # Removed verbose SQL injection logging
                 return ChatResponse(

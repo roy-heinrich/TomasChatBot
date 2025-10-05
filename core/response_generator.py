@@ -47,6 +47,7 @@ class ResponseGenerator:
             "en": "Sorry, there was a problem. Please try again later."
         }
         
+        
         self._messenger_button = '<a href="https://m.me/114901Tomas" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Messenger</a>'
 
     def get_system_prompt(self, lang: str, user_name: str = "", nlu_info: Dict = None, 
@@ -103,7 +104,38 @@ RULES:
             return "Evening! "
     
     def _build_concise_message(self, query: str, context: str, lang: str, nlu_info: Dict = None) -> str:
-        """Build minimal, focused message"""
+        """Build minimal, focused message with multi-question support"""
+        
+        # Handle multi-question context
+        if nlu_info and nlu_info.get('is_multi_question'):
+            question_number = nlu_info.get('question_number', 1)
+            total_questions = nlu_info.get('total_questions', 1)
+            
+            if context and context not in ["General school information query", 
+                                           "No specific information available in database for this query"]:
+                lang_code = "TL" if lang in ["tl", "akl"] else "EN"
+                
+                if lang in ["tl", "akl"]:
+                    return f"""DATABASE: {context}
+
+QUERY: {query}
+LANG: {lang_code}
+MULTI-QUESTION: Question {question_number} of {total_questions}
+
+CRITICAL: Use ONLY database info above. This is part of a multi-question session. Provide a natural, paragraph-style response that directly answers the question. Be polite, professional, factual, and communicative. Use proper Tagalog grammar. Don't introduce yourself. Format numbers properly: "1960" not "1 9 6 0". Write as a complete paragraph, not bullet points."""
+                else:
+                    return f"""DATABASE: {context}
+
+QUERY: {query}
+LANG: {lang_code}
+MULTI-QUESTION: Question {question_number} of {total_questions}
+
+Use ONLY English. Provide a natural, paragraph-style response that directly answers the question. This is part of a multi-question session. Be polite, professional, factual, and communicative. Don't introduce yourself. Format numbers properly: "1960" not "1 9 6 0". Write as a complete paragraph, not bullet points."""
+            else:
+                if lang in ["tl", "akl"]:
+                    return f"QUERY: {query}\nMULTI-QUESTION: Question {question_number} of {total_questions}\nNo database info available. Provide helpful response in Tagalog. Answer concisely since this is part of multiple questions."
+                else:
+                    return f"QUERY: {query}\nMULTI-QUESTION: Question {question_number} of {total_questions}\nNo database info available. Provide helpful response in English. Answer concisely since this is part of multiple questions."
         
         # Handle special cases first
         if context == "User is introducing themselves with their name":
@@ -149,7 +181,8 @@ Use ONLY English. Answer directly. Be polite, professional, factual, communicati
                               conversation_history: List[Dict] = None, 
                               nlu_info: Dict = None, user_name: str = "", 
                               entities: List = None, confidence: float = 0.0, 
-                              context_analysis: Dict = None) -> str:
+                              context_analysis: Dict = None, is_multi_question: bool = False, 
+                              questions: List[str] = None) -> str:
         """Generate response using multi-provider AI system with intelligent fallback"""
         
         try:
@@ -173,6 +206,7 @@ Use ONLY English. Answer directly. Be polite, professional, factual, communicati
             if ai_response.success:
                 # logger.info(f"✅ Response generated using {ai_response.provider} ({ai_response.model})")  # Reduced for Railway
                 response = ai_response.content.strip()
+                
                 
                 # Remove bold formatting and context annotations
                 response = response.replace('**', '')
@@ -205,11 +239,16 @@ Use ONLY English. Answer directly. Be polite, professional, factual, communicati
                 response = response.strip()
                 
                 # 🚨 CRITICAL FIX: Add messenger link for contact escalation
-                response = self.add_messenger_link_if_needed(response, query, context, lang)
+                messenger_result = self.add_messenger_link_if_needed(response, query, context, lang)
                 
-                # Split long responses into multiple bubbles
-                split_responses = self.split_long_response(response)
-                return split_responses
+                # Handle messenger link result (could be string or list)
+                if isinstance(messenger_result, list):
+                    # Messenger link was added as separate bubbles
+                    return messenger_result
+                else:
+                    # No messenger link, split long responses into multiple bubbles
+                    split_responses = self.split_long_response(messenger_result)
+                    return split_responses
             else:
                 # Removed verbose AI provider logging
                 return self._get_fallback_response(lang)
@@ -226,7 +265,7 @@ Use ONLY English. Answer directly. Be polite, professional, factual, communicati
             return "I'm sorry, I don't have that specific information. Please contact the school office for details."
     
     def add_messenger_link_if_needed(self, response: str, query: str, context: str, lang: str) -> str:
-        """Add messenger link ONLY for persistent escalation requests"""
+        """Add messenger link ONLY for persistent escalation requests - returns list for separate bubbles"""
         context_lower = context.lower() if context else ""
         
         # 🚨 DEBUG: Log the context to see what's being passed
@@ -245,10 +284,9 @@ Use ONLY English. Answer directly. Be polite, professional, factual, communicati
         # Only add messenger link for persistent escalation, not for first-time requests
         if persistent_escalation_context:
             # logger.info("🔍 MESSENGER LINK DEBUG: Adding messenger link!")
-            if lang in ["tl", "akl"]:
-                return f"{response}\n\n{self._messenger_button}"
-            else:
-                return f"{response}\n\n{self._messenger_button}"
+            # Return as separate bubbles: main response + messenger link with intro text
+            messenger_intro = "If none, here's the messenger link:"
+            return [response, f"{messenger_intro}\n\n{self._messenger_button}"]
         
         # logger.info("🔍 MESSENGER LINK DEBUG: Not adding messenger link")
         return response
@@ -260,11 +298,15 @@ Use ONLY English. Answer directly. Be polite, professional, factual, communicati
         if "m.me/" in response:
             max_length = 500
         
+        # Enhanced numbered list detection - look for multiple numbered items
+        numbered_list_pattern = r'\d+\.\s+[A-Za-z]'
+        numbered_matches = re.findall(numbered_list_pattern, response)
+        
+        if len(numbered_matches) >= 2 and not re.search(r'\b\d{4}\b', response):
+            # This is a numbered list - split each item into its own bubble
+            return self._split_numbered_list_smart(response, max_length)
+        
         if len(response) <= max_length:
-            # Even for short responses, check if we have numbered items that should be split
-            # BUT NEVER split if it's just a year like "1960" or "1 9 6 0"
-            if re.search(r'\d+\.\s+', response) and not re.search(r'\b\d{4}\b', response):
-                return self._split_numbered_list_smart(response, max_length)
             return [response]
         
         # Skip numbered list splitting for now - use regular text splitting
@@ -301,56 +343,43 @@ Use ONLY English. Answer directly. Be polite, professional, factual, communicati
             return messages
     
     def _split_numbered_list_smart(self, response: str, max_length: int) -> List[str]:
-        """SIMPLE splitting - each number gets its own bubble"""
-        # Find all numbered items and split them aggressively
-        # Only match actual numbered lists (like "1. Item", "2. Item") not years like "1960"
-        numbered_items = re.findall(r'\d+\.\s+[A-Za-z][^0-9]*(?=\d+\.\s+|$)', response)
+        """Enhanced splitting - each numbered item gets its own bubble"""
+        messages = []
+        
+        # Find all numbered items with their content
+        numbered_pattern = r'(\d+\.\s+[^0-9]+?)(?=\d+\.\s+|$)'
+        numbered_items = re.findall(numbered_pattern, response, re.DOTALL)
         
         if numbered_items:
-            messages = []
+            # Extract intro text before the first numbered item
+            first_number_match = re.search(r'(\d+\.\s+)', response)
+            if first_number_match:
+                intro_text = response[:first_number_match.start()].strip()
+                if intro_text and len(intro_text) > 10:
+                    messages.append(intro_text)
             
-            # Split by each numbered item
-            parts = re.split(r'(?=\d+\.\s+)', response)
-            
-            for part in parts:
-                if not part.strip():
-                    continue
-                    
-                part = part.strip()
-                
-                # Check if this part contains multiple numbers (like intro + 1. Item + 2. Item)
-                if re.search(r'\d+\.\s+.*\d+\.\s+', part):
-                    # This part has multiple numbers - split them aggressively
-                    sub_parts = re.split(r'(?=\d+\.\s+)', part)
-                    for sub_part in sub_parts:
-                        if sub_part.strip():
-                            messages.append(sub_part.strip())
-                else:
-                    # Single number or intro text
-                    if re.search(r'\d+\.\s+', part):
-                        # Split by the first number found
-                        first_number_match = re.search(r'(\d+\.\s+)', part)
-                        if first_number_match:
-                            # Split at the first number
-                            intro_part = part[:first_number_match.start()].strip()
-                            numbered_part = part[first_number_match.start():].strip()
-                            
-                            # Add intro separately if substantial
-                            if intro_part and len(intro_part) > 20:
-                                messages.append(intro_part)
-                            
-                            # Add the numbered part
-                            if numbered_part:
-                                messages.append(numbered_part)
-                        else:
-                            messages.append(part)
-                    else:
-                        # No numbers in this part, just add it
-                        messages.append(part)
+            # Add each numbered item as a separate bubble
+            for item in numbered_items:
+                item = item.strip()
+                if item:
+                    messages.append(item)
             
             return messages if messages else [response]
         else:
-            return [response]
+            # Fallback: try to split by numbered items manually
+            parts = re.split(r'(?=\d+\.\s+)', response)
+            
+            for part in parts:
+                part = part.strip()
+                if part:
+                    # If this part starts with a number, it's a numbered item
+                    if re.match(r'\d+\.\s+', part):
+                        messages.append(part)
+                    elif not re.search(r'\d+\.\s+', part) and len(part) > 10:
+                        # This is intro text
+                        messages.append(part)
+            
+            return messages if messages else [response]
     
     def _split_numbered_list(self, response: str, max_length: int) -> List[str]:
         """Split numbered lists while preserving complete numbered items"""

@@ -134,7 +134,7 @@ class ConversationMemory:
     
     def update_user_memory(self, session_id: str, user_name: str, query: str, 
                           conversation_history: List[Dict]) -> UserMemory:
-        """Update user memory with new information"""
+        """Update user memory with new information, including multi-question support"""
         now = datetime.now()
         
         # Get or create user memory
@@ -155,8 +155,21 @@ class ConversationMemory:
         if user_name and user_name != user_memory.name:
             user_memory.name = user_name
         
+        # Check if this is a multi-question session
+        is_multi_question = "Multi-question session:" in query
+        
         # Extract and update topics
         topics = self.extract_topics_from_query(query)
+        
+        # For multi-question sessions, add special topic tracking
+        if is_multi_question:
+            # Extract the actual question part (after the multi-question context)
+            actual_query = query.split(": ", 1)[1] if ": " in query else query
+            topics.extend(self.extract_topics_from_query(actual_query))
+            
+            # Add multi-question session topic
+            topics.append("multi_question_session")
+        
         for topic in topics:
             if topic in user_memory.topics:
                 user_memory.topics[topic].last_mentioned = now

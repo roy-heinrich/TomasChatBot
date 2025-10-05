@@ -80,9 +80,25 @@ class ContextAwareNLU:
         keywords = top_result.get('keywords', '').lower()
         response = top_result.get('response', '').lower()
         
+        # 🚨 CRITICAL FIX: Use translated query for word overlap calculation
+        # Use intelligent translation directly
+        try:
+            from deep_translator import GoogleTranslator
+            translator = GoogleTranslator(source='auto', target='en')
+            translated_text = translator.translate(query)
+            
+            # Clean up the translated result
+            particles = ['ang', 'ng', 'sa', 'na', 'para', 'in', 'the', 'a', 'an', 'and', 'or', 'but']
+            words = translated_text.lower().split()
+            cleaned_words = [word for word in words if word not in particles and len(word) > 1]
+            translated_query = ' '.join(cleaned_words)
+        except Exception:
+            # Fallback to original query if translation fails
+            translated_query = query
+        
         # Check for basic word overlap - clean punctuation from words
         import re
-        query_words = set(re.sub(r'[^\w]', '', word) for word in query.lower().split())
+        query_words = set(re.sub(r'[^\w]', '', word) for word in translated_query.lower().split())
         keyword_words = set(re.sub(r'[^\w]', '', word) for word in keywords.split())
         response_words = set(re.sub(r'[^\w]', '', word) for word in response.split())
         
@@ -98,6 +114,12 @@ class ContextAwareNLU:
         
         # If there's any overlap, use the result
         should_use = (keyword_overlap > 0 or response_overlap > 0)
+        
+        # 🚨 DEBUG: Log word overlap for location queries
+        if any(word in query.lower() for word in ['where', 'location', 'located', 'saan', 'lokasyon']):
+            logger.info(f"🔍 LOCATION DEBUG: Query='{query[:50]}...', Translated='{translated_query[:50]}...'")
+            logger.info(f"🔍 LOCATION DEBUG: Query words={query_words}, Keyword words={keyword_words}, Response words={response_words}")
+            logger.info(f"🔍 LOCATION DEBUG: Keyword overlap={keyword_overlap}, Response overlap={response_overlap}, Should use={should_use}")
         
         return ContextAnalysis(
             should_use_context=should_use,
