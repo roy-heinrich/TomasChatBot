@@ -377,17 +377,17 @@ class MultiProviderAI:
         """Initialize all available providers"""
         import os
         
-        # Initialize providers in order of preference: Cohere → Groq → HuggingFace → Local AI
+        # Initialize providers in order of preference: Groq → Cohere → HuggingFace → Local AI
         providers_config = [
-            {
-                "class": CohereProvider,
-                "api_key": os.environ.get("COHERE_API_KEY"),
-                "model": "command-a-03-2025"
-            },
             {
                 "class": GroqProvider,
                 "api_key": os.environ.get("GROQ_API_KEY"),
                 "model": "llama-3.1-8b-instant"
+            },
+            {
+                "class": CohereProvider,
+                "api_key": os.environ.get("COHERE_API_KEY"),
+                "model": "command-a-03-2025"
             },
             {
                 "class": HuggingFaceProvider,

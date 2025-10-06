@@ -19,7 +19,7 @@ from core.language_detector import LanguageDetector
 from core.response_generator import ResponseGenerator
 from core.keyword_matcher import KeywordMatcher
 from core.conversation_memory import ConversationMemory
-from core.context_aware_nlu import ContextAwareNLU
+# Context-aware NLU removed - using simple logic instead
 # ML enhancements removed - they cause hallucinations
 
 # Import existing modules
@@ -71,8 +71,7 @@ class ChatBot:
         # Initialize conversation memory
         self.conversation_memory = ConversationMemory()
         
-        # Initialize context-aware NLU
-        self.context_aware_nlu = ContextAwareNLU()
+        # Context-aware NLU removed - using simple logic instead
         
         # Initialize context-aware translation
         from core.context_translator import ContextTranslator
@@ -245,17 +244,37 @@ class ChatBot:
         if re.search(space_separated_pattern, query, re.IGNORECASE):
             question_count += 1
         
-        # Look for multiple question words in sequence
-        # Pattern: question word + content + question word + content
-        sequential_questions = r'\b(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has|ano|saan|kailan|sino|paano|bakit|alin|pwed|maaari|gusto|kailangan)\b.*?\b(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has|ano|saan|kailan|sino|paano|bakit|alin|pwed|maaari|gusto|kailangan)\b'
+        # Look for multiple question words in sequence - but be more careful
+        # Only count as multiple if they're clearly separate questions, not part of one question
+        # Pattern: question word + content + question word + content (with significant separation)
+        sequential_questions = r'\b(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has|ano|saan|kailan|sino|paano|bakit|alin|pwed|maaari|gusto|kailangan)\b.*?(?:\?|\.|,|;).*?\b(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has|ano|saan|kailan|sino|paano|bakit|alin|pwed|maaari|gusto|kailangan)\b'
         if re.search(sequential_questions, query, re.IGNORECASE):
             question_count += 1
         
         # Debug: Print question count for troubleshooting
         # print(f"DEBUG: Query='{query}', Question count={question_count}")
         
+        # Special case: Don't split questions that are clearly single questions
+        # Check for common single question patterns that shouldn't be split
+        single_question_patterns = [
+            r'does\s+\w+\s+\w+\s+have\s+',  # "does the grade five have"
+            r'do\s+\w+\s+\w+\s+have\s+',    # "do the students have"
+            r'is\s+\w+\s+\w+\s+',           # "is the school"
+            r'are\s+\w+\s+\w+\s+',          # "are the students"
+            r'can\s+\w+\s+\w+\s+',          # "can the school"
+            r'will\s+\w+\s+\w+\s+',         # "will the school"
+            r'does\s+the\s+\w+\s+\w+\s+',   # "does the grade five"
+            r'saan\s+ang\s+\w+\s+',         # "saan ang guidance office" (Tagalog)
+            r'ano\s+ang\s+\w+\s+',          # "ano ang school" (Tagalog)
+            r'sino\s+ang\s+\w+\s+',         # "sino ang teacher" (Tagalog)
+            r'kailan\s+ang\s+\w+\s+',        # "kailan ang exam" (Tagalog)
+            r'paano\s+ang\s+\w+\s+',        # "paano ang enrollment" (Tagalog)
+        ]
+        
+        is_single_question = any(re.search(pattern, query, re.IGNORECASE) for pattern in single_question_patterns)
+        
         # If we have multiple question indicators, try to split
-        if question_count >= 2:
+        if question_count >= 2 and not is_single_question:
             # First try simple separators
             simple_separators = [
                 r'\s+and\s+',  # "and" with spaces
@@ -482,22 +501,8 @@ class ChatBot:
                     intent="security_block"
                 )
             
-            # 1. Enhanced language detection
-            try:
-                from multilingual_nlp import multilingual_nlp
-                if multilingual_nlp:
-                    lang_result = await multilingual_nlp.detect_language_semantic(question)
-                    detected_lang = lang_result.language
-                    confidence = lang_result.confidence
-                else:
-                    raise ImportError("Multilingual NLP not available")
-            except Exception as e:
-                try:
-                    from core.language_detector import LanguageDetector
-                    advanced_detector = LanguageDetector()
-                    detected_lang, confidence = advanced_detector.detect_language(question)
-                except Exception as e2:
-                    detected_lang, confidence = self.language_detector.detect_language(question)
+            # 1. Use reliable language detection only
+            detected_lang, confidence = self.language_detector.detect_language(question)
             
             response_lang = self._map_to_response_language(detected_lang)
             
@@ -529,10 +534,13 @@ class ChatBot:
             intent_name = nlu_result.intent.name.lower() if nlu_result and nlu_result.intent else None
             search_results = await self.database_search.search_prompts(question, limit=10, intent=intent_name)
             
-            # 6. Context-aware analysis
-            context_analysis = self.context_aware_nlu.analyze_context_usage(
-                question, search_results, intent_name, entities
-            )
+            # 6. Simple context analysis - use database results if available
+            context_analysis = type('ContextAnalysis', (), {
+                'should_use_context': len(search_results) > 0,
+                'reasoning': 'Simple logic: use database results if found',
+                'confidence_level': type('ConfidenceLevel', (), {'value': 'high'})(),
+                'fallback_suggestions': []
+            })()
             
             best_result = None
             if context_analysis.should_use_context and search_results:
@@ -733,30 +741,9 @@ class ChatBot:
                     message_count=1,
                     intent="security_block"
                 )
-            # 1. Enhanced language detection with mixed-language support
-            # Use multilingual NLP as primary (most advanced), with fallbacks
-            try:
-                from multilingual_nlp import multilingual_nlp
-                if multilingual_nlp:
-                    lang_result = await multilingual_nlp.detect_language_semantic(query)
-                    detected_lang = lang_result.language
-                    confidence = lang_result.confidence
-                    # logger.info(f"🌍 Multilingual NLP primary: {detected_lang} (confidence: {confidence:.2f})")  # Reduced for Railway
-                else:
-                    raise ImportError("Multilingual NLP not available")
-            except Exception as e:
-                # Removed verbose multilingual NLP logging
-                # Fallback to advanced language detector
-                try:
-                    from core.language_detector import LanguageDetector
-                    advanced_detector = LanguageDetector()
-                    detected_lang, confidence = advanced_detector.detect_language(query)
-                    # logger.info(f"🌍 Advanced detector fallback: {detected_lang} (confidence: {confidence:.2f})")  # Reduced for Railway
-                except Exception as e2:
-                    # Removed verbose advanced detector logging
-                    # Ultimate fallback
-                    detected_lang, confidence = self.language_detector.detect_language(query)
-                    # logger.info(f"🌍 Ultimate fallback: {detected_lang} (confidence: {confidence:.2f})")  # Reduced for Railway
+            # 1. Use reliable language detection only
+            detected_lang, confidence = self.language_detector.detect_language(query)
+            # logger.info(f"🌍 Language detection: {detected_lang} (confidence: {confidence:.2f})")
             
             # Map detected language to response language
             response_lang = self._map_to_response_language(detected_lang)
@@ -774,34 +761,10 @@ class ChatBot:
                         confidence = context_confidence
                         # logger.info(f"🌍 Context-based language detection: {detected_lang} → {response_lang} (confidence: {confidence:.2f})")  # Commented out debug logs
             
-            # 2. Get NLU analysis for intent with multilingual NLP enhancement
+            # 2. Get NLU analysis for intent
             nlu_result = await self.nlu_engine.analyze_intent(query)
             
-            # Enhance with multilingual NLP semantic intent classification
-            try:
-                from multilingual_nlp import multilingual_nlp
-                if multilingual_nlp:
-                    semantic_intent = await multilingual_nlp.classify_intent_semantic(query, detected_lang)
-                    if semantic_intent.confidence >= 0.6:  # High confidence semantic classification
-                        # Use semantic intent as primary if confidence is high
-                        from nlu_engine import Intent
-                        try:
-                            semantic_intent_enum = Intent(semantic_intent.intent)
-                            # Boost confidence by combining with rule-based result
-                            combined_confidence = max(nlu_result.confidence, semantic_intent.confidence)
-                            # Create new NLUResult with updated values
-                            nlu_result = NLUResult(
-                                intent=semantic_intent_enum, 
-                                confidence=combined_confidence,
-                                entities=nlu_result.entities
-                            )
-                            # logger.info(f"🎯 Enhanced with semantic intent: {semantic_intent.intent} (confidence: {combined_confidence:.2f})")  # Commented out debug logs
-                        except ValueError:
-                            # Intent not in our enum, keep original result
-                            pass
-            except Exception as e:
-                # Removed verbose multilingual intent logging
-                pass
+            # Semantic intent classification removed - using simple NLU only
             
             # logger.info(f"🎯 NLU Intent: {nlu_result.intent.value} for query: {query}")  # Reduced for Railway
             
@@ -836,30 +799,10 @@ class ChatBot:
                 logger.warning(f"⚠️ Advanced AI analysis failed: {e}")
                 # Continue with basic processing
             
-            # 3. Enhanced entity extraction with relationships and multilingual NLP
+            # 3. Enhanced entity extraction with relationships
             entities = self.entity_extractor.extract_entities(query, nlu_result.intent.value if nlu_result else None)
             
-            # Enhance with multilingual NLP entity extraction
-            try:
-                from multilingual_nlp import multilingual_nlp
-                if multilingual_nlp:
-                    multilingual_entities = await multilingual_nlp.extract_entities_multilingual(query, detected_lang)
-                    # Convert multilingual entities to our format and merge
-                    for ml_entity in multilingual_entities:
-                        # Create entity in our format
-                        from entity_extractor import ExtractedEntity
-                        entity = ExtractedEntity(
-                            entity_type=ml_entity.label.lower(),
-                            value=ml_entity.normalized_form or ml_entity.text,
-                            confidence=ml_entity.confidence,
-                            start_pos=ml_entity.start,
-                            end_pos=ml_entity.end,
-                            context=query[ml_entity.start:ml_entity.end]
-                        )
-                        entities.append(entity)
-                    # logger.info(f"🔍 Multilingual NLP added {len(multilingual_entities)} entities")  # Commented out debug logs
-            except Exception as e:
-                logger.warning(f"⚠️ Multilingual entity extraction failed: {e}")
+            # Entity extraction completed
             
             # logger.info(f"🔍 Enhanced entity extraction: {len(entities)} entities with relationships")  # Commented out debug logs
             
@@ -972,44 +915,26 @@ class ChatBot:
                         elif emotional_analysis.primary_emotion == 'worried':
                             search_query = f"{query} support help guidance"
                         elif emotional_analysis.primary_emotion == 'confused':
-                            search_query = f"{query} help guidance support"
+                            # Special handling for guidance office queries - don't enhance them
+                            if 'guidance office' in query.lower() or 'guidance' in query.lower():
+                                search_query = query  # Keep original query for guidance office
+                            else:
+                                search_query = f"{query} help guidance support"
                         # logger.info(f"💭 Enhanced search query: '{search_query}' (emotion: {emotional_analysis.primary_emotion})")
                     
                     search_results = await self.database_search.search_prompts(search_query, limit=10, intent=intent_name)
                     
-                    # 4. Use context-aware NLU to determine if we should use database results
-                    context_analysis = self.context_aware_nlu.analyze_context_usage(
-                        query, search_results, 
-                        intent_name, entities
-                    )
-                    
-                    # 🚨 CRITICAL FIX: For contact escalation queries, don't use irrelevant database results
-                    if nlu_result and nlu_result.intent.value == 'contact_escalation':
-                        # Override context analysis for contact escalation - don't use irrelevant database results
-                        context_analysis.should_use_context = False
-                        context_analysis.reasoning = "Contact escalation detected - not using irrelevant database results"
-                        # logger.info("🚨 Contact escalation detected - overriding context analysis to prevent irrelevant responses")
-                    
-                    # DEBUG: Log search results and context analysis
-                    # logger.info(f"🔍 DEBUG: Query: '{query}'")
-                    # logger.info(f"🔍 DEBUG: Found {len(search_results)} search results")
-                    # if search_results:
-                    #     logger.info(f"🔍 DEBUG: Top result keywords: '{search_results[0].get('keywords', 'N/A')}'")
-                    #     logger.info(f"🔍 DEBUG: Top result response: '{search_results[0].get('response', 'N/A')[:100]}...'")
-                    # logger.info(f"🔍 DEBUG: Context analysis - should_use_context: {context_analysis.should_use_context}")
-                    # logger.info(f"🔍 DEBUG: Context analysis - reasoning: {context_analysis.reasoning}")
-                    
+                    # 4. Simple logic: Use top database result if available
                     best_result = None
-                    if context_analysis.should_use_context and search_results:
-                        # logger.info("🎯 Context-aware NLU: Using database results")  # Commented out debug logs
-                        # logger.info(f"🎯 Reasoning: {context_analysis.reasoning}")  # Commented out debug logs
-                        best_result = search_results[0]
-                        # logger.info(f"🏆 Using top-ranked result: {best_result.get('keywords', 'No keywords') if best_result else 'None'}")  # Commented out debug logs
-                    else:
-                        # logger.info("🎯 Context-aware NLU: Not using database results")  # Commented out debug logs
-                        # logger.info(f"🎯 Reasoning: {context_analysis.reasoning}")  # Commented out debug logs
-                        # logger.info(f"🎯 Fallback suggestions: {context_analysis.fallback_suggestions}")  # Commented out debug logs
-                        pass
+                    if search_results:
+                        # Skip contact escalation queries - don't use irrelevant database results
+                        if nlu_result and nlu_result.intent.value == 'contact_escalation':
+                            # logger.info("🚨 Contact escalation detected - not using database results")
+                            pass
+                        else:
+                            # Use the top-ranked result (scoring algorithm already ranked by relevance)
+                            best_result = search_results[0]
+                            # logger.info(f"🏆 Using top-ranked result: {best_result.get('keywords', 'No keywords')}")
                 
                 # 🎯 CRITICAL: Check for invalid grades BEFORE database search
                 if 'grade' in query.lower():
@@ -1052,45 +977,27 @@ class ChatBot:
                         elif emotional_analysis.primary_emotion == 'worried':
                             search_query = f"{query} support help guidance"
                         elif emotional_analysis.primary_emotion == 'confused':
-                            search_query = f"{query} help guidance support"
+                            # Special handling for guidance office queries - don't enhance them
+                            if 'guidance office' in query.lower() or 'guidance' in query.lower():
+                                search_query = query  # Keep original query for guidance office
+                            else:
+                                search_query = f"{query} help guidance support"
                         # logger.info(f"💭 Enhanced search query: '{search_query}' (emotion: {emotional_analysis.primary_emotion})")
                     
                     search_results = await self.database_search.search_prompts(search_query, limit=10, intent=intent_name)
                     # logger.info(f"🔍 Traditional search found {len(search_results)  # Commented out debug logs} results")
                     
-                    # 4. Use context-aware NLU to determine if we should use database results
-                    context_analysis = self.context_aware_nlu.analyze_context_usage(
-                        query, search_results, 
-                        intent_name, entities
-                    )
-                    
-                    # 🚨 CRITICAL FIX: For contact escalation queries, don't use irrelevant database results
-                    if nlu_result and nlu_result.intent.value == 'contact_escalation':
-                        # Override context analysis for contact escalation - don't use irrelevant database results
-                        context_analysis.should_use_context = False
-                        context_analysis.reasoning = "Contact escalation detected - not using irrelevant database results"
-                        # logger.info("🚨 Contact escalation detected - overriding context analysis to prevent irrelevant responses")
-                    
-                    # DEBUG: Log search results and context analysis
-                    # logger.info(f"🔍 DEBUG: Query: '{query}'")
-                    # logger.info(f"🔍 DEBUG: Found {len(search_results)} search results")
-                    # if search_results:
-                    #     logger.info(f"🔍 DEBUG: Top result keywords: '{search_results[0].get('keywords', 'N/A')}'")
-                    #     logger.info(f"🔍 DEBUG: Top result response: '{search_results[0].get('response', 'N/A')[:100]}...'")
-                    # logger.info(f"🔍 DEBUG: Context analysis - should_use_context: {context_analysis.should_use_context}")
-                    # logger.info(f"🔍 DEBUG: Context analysis - reasoning: {context_analysis.reasoning}")
-                    
+                    # 4. Simple logic: Use top database result if available
                     best_result = None
-                    if context_analysis.should_use_context and search_results:
-                        # logger.info("🎯 Context-aware NLU: Using database results")  # Commented out debug logs
-                        # logger.info(f"🎯 Reasoning: {context_analysis.reasoning}")  # Commented out debug logs
-                        best_result = search_results[0]
-                        # logger.info(f"🏆 Using top-ranked result: {best_result.get('keywords', 'No keywords') if best_result else 'None'}")  # Commented out debug logs
-                    else:
-                        # logger.info("🎯 Context-aware NLU: Not using database results")  # Commented out debug logs
-                        # logger.info(f"🎯 Reasoning: {context_analysis.reasoning}")  # Commented out debug logs
-                        # logger.info(f"🎯 Fallback suggestions: {context_analysis.fallback_suggestions}")  # Commented out debug logs
-                        pass
+                    if search_results:
+                        # Skip contact escalation queries - don't use irrelevant database results
+                        if nlu_result and nlu_result.intent.value == 'contact_escalation':
+                            # logger.info("🚨 Contact escalation detected - not using database results")
+                            pass
+                        else:
+                            # Use the top-ranked result (scoring algorithm already ranked by relevance)
+                            best_result = search_results[0]
+                            # logger.info(f"🏆 Using top-ranked result: {best_result.get('keywords', 'No keywords')}")
             
             # 5. Generate response using Groq with context-aware analysis
             if best_result:
@@ -1138,6 +1045,7 @@ class ChatBot:
                     context = "User wants to talk to someone from the school - be helpful first by offering assistance with school topics, enrollment, schedules, or other school information. Only mention contact options if they specifically ask again after being helpful."
                 else:
                     context = "No specific information available in database for this query"
+                # logger.info(f"🔍 DEBUG: No best_result, context set to: {context}")
             
             # Debug: Log the final context before sending to AI
             # logger.info(f"🔍 FINAL CONTEXT: {context[:200]}...")  # Reduced for Railway
@@ -1202,7 +1110,7 @@ class ChatBot:
             
             # 🚨 FIX: Handle name introductions and greeting with name even without database context
             # BUT ONLY if we don't have database context already
-            if not (best_result and context_analysis.should_use_context):
+            if not best_result:
                 if nlu_result and nlu_result.intent.value in ['name_introduction', 'greeting_with_name']:
                     # logger.info(f"👋 {nlu_result.intent.value} detected - handling with Groq even without database context")  # Commented out debug logs
                     # For name introductions, we don't need database context
@@ -1233,21 +1141,25 @@ class ChatBot:
             # Pass enhanced NLP/NLU information for better response generation
             nlu_info_dict = nlu_info  # Use the enhanced nlu_info with emotional analysis
             
-            # Add context analysis to nlu_info if available
-            if 'context_analysis' in locals():
-                nlu_info_dict['context_analysis'] = {
-                    'should_use_context': context_analysis.should_use_context,
-                    'confidence_level': context_analysis.confidence_level.value,
-                    'reasoning': context_analysis.reasoning,
-                    'fallback_suggestions': context_analysis.fallback_suggestions
-                }
-            
-            # Extract context analysis from nlu_info if available
-            context_analysis = nlu_info_dict.get('context_analysis') if nlu_info_dict else None
-            
             response_text = await self.response_generator.generate_response(
-                query, context, response_lang, conversation_history, nlu_info_dict, user_name, entities, float(confidence), context_analysis
+                query, context, response_lang, conversation_history, nlu_info_dict, user_name, entities, float(confidence), None
             )
+            
+            # Add Messenger link for contact escalation requests
+            if nlu_result and nlu_result.intent.value == 'contact_escalation':
+                response_text = self.response_generator.add_messenger_link_if_needed(
+                    response_text, query, context, response_lang
+                )
+                # Ensure response_text is properly flattened if it's a nested list
+                if isinstance(response_text, list) and len(response_text) > 0 and isinstance(response_text[0], list):
+                    # Flatten nested lists
+                    flattened = []
+                    for item in response_text:
+                        if isinstance(item, list):
+                            flattened.extend(item)
+                        else:
+                            flattened.append(item)
+                    response_text = flattened
             
             # Advanced AI Enhancement - Response Personalization (ONLY if we have database context)
             if context and context not in ["No specific information available in database for this query", "User is introducing themselves with their name", "User is expressing their emotional state"]:
@@ -1398,35 +1310,9 @@ class ChatBot:
         
         # Generate appropriate response based on detected language and topic
         if detected_lang in ['tl', 'akl']:  # Tagalog/Aklanon
-            if detected_topic == 'enrollment':
-                response_text = "Paumanhin, wala akong impormasyon tungkol sa enrollment. Mas mabuti kung makipag-ugnayan kayo sa school office para sa mas tiyak na kasagutan."
-            elif detected_topic == 'schedule':
-                response_text = "Paumanhin, wala akong impormasyon tungkol sa schedule na ito. Mas mabuti kung makipag-ugnayan kayo sa school office para sa mas tiyak na kasagutan."
-            elif detected_topic == 'location':
-                response_text = "Paumanhin, wala akong impormasyon tungkol sa lokasyon na ito. Mas mabuti kung makipag-ugnayan kayo sa school office para sa mas tiyak na kasagutan."
-            elif detected_topic == 'contact':
-                response_text = "Paumanhin, wala akong impormasyon tungkol sa contact na ito. Mas mabuti kung makipag-ugnayan kayo sa school office para sa mas tiyak na kasagutan."
-            elif detected_topic == 'academic':
-                response_text = "Paumanhin, wala akong impormasyon tungkol sa academic na ito. Mas mabuti kung makipag-ugnayan kayo sa school office para sa mas tiyak na kasagutan."
-            elif detected_topic == 'services':
-                response_text = "Paumanhin, wala akong impormasyon tungkol sa serbisyo na ito. Mas mabuti kung makipag-ugnayan kayo sa school office para sa mas tiyak na kasagutan."
-            else:
-                response_text = "Paumanhin, wala akong impormasyon tungkol sa inyong tanong. Mas mabuti kung makipag-ugnayan kayo sa school office para sa mas tiyak na kasagutan."
+            response_text = "Paumanhin po, wala pong impormasyon tungkol dito sa database."
         else:  # English
-            if detected_topic == 'enrollment':
-                response_text = "I couldn't find any information about enrollment. It would be best if you can contact the school office to better cater your question."
-            elif detected_topic == 'schedule':
-                response_text = "I couldn't find any information about this schedule. It would be best if you can contact the school office to better cater your question."
-            elif detected_topic == 'location':
-                response_text = "I couldn't find any information about this location. It would be best if you can contact the school office to better cater your question."
-            elif detected_topic == 'contact':
-                response_text = "I couldn't find any information about this contact. It would be best if you can contact the school office to better cater your question."
-            elif detected_topic == 'academic':
-                response_text = "I couldn't find any information about this academic matter. It would be best if you can contact the school office to better cater your question."
-            elif detected_topic == 'services':
-                response_text = "I couldn't find any information about this service. It would be best if you can contact the school office to better cater your question."
-            else:
-                response_text = "I couldn't find any information about your question. It would be best if you can contact the school office to better cater your question."
+            response_text = "I'm sorry, no information is available in the database for this topic."
         
         # Split long responses if needed
         split_messages = response_text if isinstance(response_text, list) else [response_text]
@@ -1481,9 +1367,9 @@ class ChatBot:
             # Only use this as absolute last resort
             # Use appropriate language for fallback
             if response_lang == "tl":
-                fallback_text = "Paumanhin, hindi ko naintindihan ang inyong mensahe. Ako si TOMAS, ang inyong school assistant para sa Tomas SM. Bautista Elementary School. Ano ang gusto ninyong malaman tungkol sa aming paaralan?"
+                fallback_text = "Paumanhin po, wala pong impormasyon tungkol dito sa database."
             else:
-                fallback_text = "I'm sorry, I didn't understand your message. I'm TOMAS, your school assistant for Tomas SM. Bautista Elementary School. What would you like to know about our school?"
+                fallback_text = "I'm sorry, no information is available in the database for this topic."
             
             return ChatResponse(
                 response=[fallback_text],
@@ -1498,9 +1384,9 @@ class ChatBot:
     def _create_error_response(self, detected_lang: str) -> ChatResponse:
         """Create error response"""
         if detected_lang == "tl" or detected_lang == "akl":
-            error_text = "Paumanhin, may problema sa pagproseso ng inyong tanong. Subukan ninyo ulit mamaya."
+            error_text = "Paumanhin po, wala pong impormasyon tungkol dito sa database."
         else:
-            error_text = "Sorry, there was a problem processing your question. Please try again later."
+            error_text = "I'm sorry, no information is available in the database for this topic."
         
         return ChatResponse(
             response=[error_text],

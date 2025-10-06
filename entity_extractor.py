@@ -80,13 +80,8 @@ def _initialize_nltk():
         print(f"NLTK initialization failed: {e}")
         return False
 
-# Import the new multilingual NLP engine
-try:
-    from multilingual_nlp import multilingual_nlp
-    MULTILINGUAL_NLP_AVAILABLE = True
-except ImportError:
-    MULTILINGUAL_NLP_AVAILABLE = False
-    print("⚠️ Multilingual NLP engine not available - using fallback entity extraction")
+# Multilingual NLP engine removed - using rule-based entity extraction only
+MULTILINGUAL_NLP_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -246,33 +241,7 @@ class AdvancedEntityExtractor:
         """
         entities = []
         
-        # First, try semantic multilingual entity extraction if available
-        if MULTILINGUAL_NLP_AVAILABLE:
-            try:
-                # Detect language first for better extraction
-                lang_result = await multilingual_nlp.detect_language_semantic(text)
-                language = lang_result.language
-                
-                # Extract entities using multilingual NER
-                semantic_entities = await multilingual_nlp.extract_entities_multilingual(text, language)
-                
-                # Convert to our format
-                for entity in semantic_entities:
-                    entities.append(ExtractedEntity(
-                        entity_type=entity.label.lower(),
-                        value=entity.normalized_form or entity.text,
-                        confidence=entity.confidence,
-                        start_pos=entity.start,
-                        end_pos=entity.end,
-                        context=f"Language: {language}, Method: semantic"
-                    ))
-                
-                logger.info(f"🔍 Semantic extraction found {len(entities)} entities")
-                
-            except Exception as e:
-                logger.warning(f"⚠️ Semantic entity extraction failed: {e}, falling back to rule-based")
-        
-        # Add rule-based extraction for domain-specific entities
+        # Use rule-based extraction for domain-specific entities
         text_lower = text.lower()
         
         # Extract different entity types using pattern matching

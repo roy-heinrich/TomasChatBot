@@ -52,13 +52,8 @@ def _initialize_nltk():
         logger.warning(f"NLTK initialization failed: {e}")
         return False
 
-# Import the new multilingual NLP engine
-try:
-    from multilingual_nlp import multilingual_nlp, SemanticIntent, MultilingualEntity
-    MULTILINGUAL_NLP_AVAILABLE = True
-except ImportError:
-    MULTILINGUAL_NLP_AVAILABLE = False
-    logger.warning("Multilingual NLP engine not available")
+# Multilingual NLP engine removed - using simple rule-based classification only
+MULTILINGUAL_NLP_AVAILABLE = False
 
 class Intent(Enum):
     """Defined intents for the school chatbot"""
@@ -619,61 +614,12 @@ class NLUEngine:
             # logger.info(f"🎯 Rule-based staff inquiry detected: 'may prinsipal' pattern (normalized from '{user_input}')")
             return NLUResult(Intent.STAFF_INQUIRY, 0.9, [])
         
-        # Then try semantic classification with the new multilingual NLP engine
-        if MULTILINGUAL_NLP_AVAILABLE:
-            try:
-                # Detect language semantically
-                lang_result = await multilingual_nlp.detect_language_semantic(user_input)
-                # logger.info(f"🔍 Semantic language detection: {lang_result.language} (confidence: {lang_result.confidence:.2f})")
-                
-                # Classify intent semantically
-                semantic_intent = await multilingual_nlp.classify_intent_semantic(user_input, lang_result.language)
-                
-                # If semantic classification is confident, use it
-                if semantic_intent.confidence >= 0.5:
-                    # Extract entities using multilingual NER
-                    entities = await multilingual_nlp.extract_entities_multilingual(user_input, lang_result.language)
-                    
-                    # Convert to our format
-                    nlu_entities = []
-                    for entity in entities:
-                        nlu_entities.append(Entity(
-                            type=entity.label.lower(),
-                            value=entity.normalized_form or entity.text,
-                            confidence=entity.confidence,
-                            start=entity.start,
-                            end=entity.end
-                        ))
-                    
-                    # Convert semantic intent to Intent enum
-                    try:
-                        intent_enum = Intent(semantic_intent.intent)
-                    except ValueError:
-                        intent_enum = Intent.UNKNOWN
-                    
-                    # logger.info(f"🎯 Semantic classification: {intent_enum.value} (confidence: {semantic_intent.confidence:.2f}, similarity: {semantic_intent.similarity_score:.2f})")
-                    # logger.info(f"📝 Matched example: '{semantic_intent.matched_example}'")
-                    
-                    return NLUResult(intent_enum, semantic_intent.confidence, nlu_entities)
-                    
-            except Exception as e:
-                logger.warning(f"⚠️ Semantic classification failed: {e}, falling back to rule-based")
+        # Multilingual NLP engine removed - using rule-based classification only
         
         # Fallback to rule-based classification with enhanced confidence
         rule_result = self._rule_based_classification(user_input)
         
-        # Boost confidence if we have semantic backup data
-        if MULTILINGUAL_NLP_AVAILABLE and rule_result.confidence < 0.7:
-            try:
-                # Get semantic confirmation
-                semantic_intent = await multilingual_nlp.classify_intent_semantic(user_input)
-                if semantic_intent.intent == rule_result.intent.value and semantic_intent.confidence > 0.3:
-                    # Boost confidence when both methods agree
-                    boosted_confidence = min(rule_result.confidence + 0.2, 0.9)
-                    # logger.info(f"🔗 Semantic confirmation boosted confidence: {rule_result.confidence:.2f} → {boosted_confidence:.2f}")
-                    return NLUResult(rule_result.intent, boosted_confidence, rule_result.entities)
-            except Exception:
-                pass
+        # Multilingual NLP engine removed - using rule-based classification only
         
         # logger.info(f"🔍 Using rule-based result: {rule_result.intent.value} (confidence: {rule_result.confidence:.2f})")
         return rule_result

@@ -69,7 +69,12 @@ RULES:
 7. TONE: Be polite, professional, factual, and communicative - vary your responses naturally, use different sentence structures and openings, and offer additional help when appropriate
 8. NO EXCESSIVE INTRODUCTIONS: Don't introduce yourself in every response
 9. FORMAT NUMBERS PROPERLY: Write years like "1960" not "1 9 6 0" - keep numbers together
-10. NO LINE BREAKS IN NUMBERS: Never put line breaks between digits in years or numbers"""
+10. NO LINE BREAKS IN NUMBERS: Never put line breaks between digits in years or numbers
+11. TAGALOG GRAMMAR: Use correct Tagalog grammar for negative statements:
+    - "Walang batas na nangangailangan ng..." (There are no laws requiring...)
+    - "Hindi kailangan ang..." (It is not required...)
+    - "Walang patakaran tungkol sa..." (There are no policies about...)
+    - "Hindi may batas" is INCORRECT - use "Walang batas" instead"""
         
         # Language-specific additions (keep minimal)
         lang_rules = self._get_lang_rules(lang)
@@ -86,7 +91,7 @@ RULES:
     def _get_lang_rules(self, lang: str) -> str:
         """Get minimal language-specific rules - TOKEN EFFICIENT"""
         if lang in ["tl", "akl"]:
-            return "\nLANGUAGE: TAGALOG ONLY. Use natural, grammatically correct Tagalog. Be conversational but professional."
+            return "\nLANGUAGE: TAGALOG ONLY. Use natural, grammatically correct Tagalog. Be conversational but professional. Use proper Tagalog grammar for negative statements: 'Walang batas na nangangailangan ng...' not 'Hindi may batas sa...'"
         else:
             return "\nLANGUAGE: ENGLISH ONLY. Use ONLY English words. NO Tagalog words in response."
     
@@ -122,7 +127,7 @@ QUERY: {query}
 LANG: {lang_code}
 MULTI-QUESTION: Question {question_number} of {total_questions}
 
-CRITICAL: Use ONLY database info above. This is part of a multi-question session. Provide a natural, paragraph-style response that directly answers the question. Be polite, professional, factual, and communicative. Use proper Tagalog grammar. Don't introduce yourself. Format numbers properly: "1960" not "1 9 6 0". Write as a complete paragraph, not bullet points."""
+Write a concise paragraph in proper Tagalog using ONLY the database info above. Be polite, professional, factual, and a little communicative. Use correct Tagalog grammar and natural expressions. Do not ask questions or add details not in the database. Do not make assumptions about the user's emotions or state of mind. If information is missing, state it briefly. Use 'punong-guro' for principal. Be warm but professional. For lists of activities or items, use bullet points to separate each item clearly. Avoid introductions."""
                 else:
                     return f"""DATABASE: {context}
 
@@ -130,7 +135,7 @@ QUERY: {query}
 LANG: {lang_code}
 MULTI-QUESTION: Question {question_number} of {total_questions}
 
-Use ONLY English. Provide a natural, paragraph-style response that directly answers the question. This is part of a multi-question session. Be polite, professional, factual, and communicative. Don't introduce yourself. Format numbers properly: "1960" not "1 9 6 0". Write as a complete paragraph, not bullet points."""
+Write a concise paragraph in English using ONLY the database info above. Be polite, professional, factual. Do not ask the user questions. Do not make assumptions. Provide the information directly and clearly. Avoid bullet points and introductions."""
             else:
                 if lang in ["tl", "akl"]:
                     return f"QUERY: {query}\nMULTI-QUESTION: Question {question_number} of {total_questions}\nNo database info available. Provide helpful response in Tagalog. Answer concisely since this is part of multiple questions."
@@ -159,17 +164,24 @@ Use ONLY English. Provide a natural, paragraph-style response that directly answ
             if lang in ["tl", "akl"]:
                 return f"""DATABASE: {context}
 
-QUERY: {query}
-LANG: {lang_code}
+TANONG: {query}
 
-CRITICAL: Use ONLY database info above. Do NOT invent staff names, positions, contacts, or stats. Answer exactly what database says. Use proper Tagalog grammar. Vary response format. Offer help (e.g. "Kung may iba pang katanungan..."). Don't introduce yourself. Format numbers properly: "1960" not "1 9 6 0"."""
+TAGALOG LANG. MAXIMUM 2 PANGUNGUSAP. Gamitin ang tamang gramatika sa Tagalog. Kung may listahan (activities, items, etc), isulat bawat item sa sariling linya na nagsisimula sa "•". Direkta lang.
+
+IMPORTANTE: Kung ang database ay nagsasabing "walang batas" o "no rules", gamitin ang tamang Tagalog:
+- "Walang batas na nangangailangan ng..." (There are no laws requiring...)
+- "Hindi kailangan ang..." (It is not required...)
+- "Walang patakaran tungkol sa..." (There are no policies about...)
+
+Sagot:"""
             else:
                 return f"""DATABASE: {context}
 
 QUERY: {query}
-LANG: {lang_code}
 
-Use ONLY English. Answer directly. Be polite, professional, factual, communicative. Vary response format. Offer help (e.g. "Feel free to ask..."). Don't introduce yourself. Format numbers properly: "1960" not "1 9 6 0"."""
+ENGLISH ONLY. MAXIMUM 2 SENTENCES. If there's a list (activities, items, etc), write each item on its own line starting with "•". Direct answer.
+
+Answer:"""
         
         # No context available
         if lang in ["tl", "akl"]:
@@ -192,8 +204,8 @@ Use ONLY English. Answer directly. Be polite, professional, factual, communicati
             # Build concise user message
             user_message = self._build_concise_message(query, context, lang, nlu_info)
             
-            # Optimized max_tokens - complete responses without waste
-            max_tokens = 400 if lang in ["tl", "akl"] else 350
+            # Keep responses concise to save tokens
+            max_tokens = 160 if lang in ["tl", "akl"] else 140
             
             # Use multi-provider AI system
             ai_response = await self.multi_ai.generate_response(
@@ -207,48 +219,18 @@ Use ONLY English. Answer directly. Be polite, professional, factual, communicati
                 # logger.info(f"✅ Response generated using {ai_response.provider} ({ai_response.model})")  # Reduced for Railway
                 response = ai_response.content.strip()
                 
+                # Check if response contains list items and split them into separate bubbles
+                response = self._split_list_items(response)
                 
-                # Remove bold formatting and context annotations
-                response = response.replace('**', '')
-                
-                # Remove all context annotations (comprehensive)
-                import re
-                # Remove context annotations in various formats
-                response = re.sub(r'\(context:\s*[^)]+\)', '', response, flags=re.IGNORECASE)
-                response = re.sub(r'\[context:\s*[^\]]+\]', '', response, flags=re.IGNORECASE)
-                response = re.sub(r'\{context:\s*[^}]+\}', '', response, flags=re.IGNORECASE)
-                
-                # Fix broken numbers BEFORE any other processing - ULTRA AGGRESSIVE
-                # Fix numbers with spaces (like "1 9 6 0" should be "1960")
-                response = re.sub(r'\b(\d)\s+(\d)\s+(\d)\s+(\d)\b', r'\1\2\3\4', response)
-                response = re.sub(r'\b(\d)\s+(\d)\s+(\d)\b', r'\1\2\3', response)
-                response = re.sub(r'\b(\d)\s+(\d)\b', r'\1\2', response)
-                
-                # Fix numbers split across lines (like "1\n9\n6\n0" should be "1960")
-                response = re.sub(r'(\d)\s*\n\s*(\d)\s*\n\s*(\d)\s*\n\s*(\d)', r'\1\2\3\4', response)
-                response = re.sub(r'(\d)\s*\n\s*(\d)\s*\n\s*(\d)', r'\1\2\3', response)
-                response = re.sub(r'(\d)\s*\n\s*(\d)', r'\1\2', response)
-                
-                # Fix numbers with any whitespace (tabs, spaces, newlines)
-                response = re.sub(r'(\d)\s+(\d)\s+(\d)\s+(\d)', r'\1\2\3\4', response)
-                response = re.sub(r'(\d)\s+(\d)\s+(\d)', r'\1\2\3', response)
-                response = re.sub(r'(\d)\s+(\d)', r'\1\2', response)
-                
-                # Clean up any extra spaces or punctuation left behind
-                response = re.sub(r'\s+', ' ', response)  # Multiple spaces to single space
-                response = response.strip()
-                
-                # 🚨 CRITICAL FIX: Add messenger link for contact escalation
-                messenger_result = self.add_messenger_link_if_needed(response, query, context, lang)
-                
-                # Handle messenger link result (could be string or list)
-                if isinstance(messenger_result, list):
-                    # Messenger link was added as separate bubbles
-                    return messenger_result
+                # Process each response item
+                if isinstance(response, list):
+                    processed_responses = []
+                    for item in response:
+                        processed_item = self._clean_response(item)
+                        processed_responses.append(processed_item)
+                    return processed_responses
                 else:
-                    # No messenger link, split long responses into multiple bubbles
-                    split_responses = self.split_long_response(messenger_result)
-                    return split_responses
+                    return self._clean_response(response)
             else:
                 # Removed verbose AI provider logging
                 return self._get_fallback_response(lang)
@@ -456,3 +438,66 @@ Use ONLY English. Answer directly. Be polite, professional, factual, communicati
         
         split_point = text[:max_length].rfind(' ')
         return text[:split_point] + '.' if split_point > 0 else text[:max_length]
+    
+    def _split_list_items(self, response: str) -> List[str]:
+        """Split bullet-pointed lists into separate bubbles"""
+        
+        # Check if response contains bullet points
+        if '•' not in response:
+            return [response]
+        
+        # Split by lines
+        lines = response.strip().split('\n')
+        messages = []
+        current = ""
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            if line.startswith('•'):
+                # This is a list item - send as separate bubble
+                if current:
+                    messages.append(current)
+                    current = ""
+                messages.append(line)
+            else:
+                # This is intro/regular text
+                if current:
+                    current += " " + line
+                else:
+                    current = line
+        
+        if current:
+            messages.append(current)
+        
+        return messages if len(messages) > 1 else [response]
+    
+    def _clean_response(self, response: str) -> str:
+        """Clean and format a single response"""
+        # Remove bold formatting and context annotations
+        response = response.replace('**', '')
+        
+        # Remove all context annotations (comprehensive)
+        import re
+        # Remove context annotations in various formats
+        response = re.sub(r'\(context:\s*[^)]+\)', '', response, flags=re.IGNORECASE)
+        response = re.sub(r'\[context:\s*[^\]]+\]', '', response, flags=re.IGNORECASE)
+        response = re.sub(r'\{context:\s*[^}]+\}', '', response, flags=re.IGNORECASE)
+        
+        # Fix broken numbers BEFORE any other processing - ULTRA AGGRESSIVE
+        # Fix numbers with spaces (like "1 9 6 0" should be "1960")
+        response = re.sub(r'\b(\d)\s+(\d)\s+(\d)\s+(\d)\b', r'\1\2\3\4', response)
+        response = re.sub(r'\b(\d)\s+(\d)\s+(\d)\b', r'\1\2\3', response)
+        response = re.sub(r'\b(\d)\s+(\d)\b', r'\1\2', response)
+        
+        # Fix numbers split across lines (like "1\n9\n6\n0" should be "1960")
+        response = re.sub(r'(\d)\s*\n\s*(\d)\s*\n\s*(\d)\s*\n\s*(\d)', r'\1\2\3\4', response)
+        response = re.sub(r'(\d)\s*\n\s*(\d)\s*\n\s*(\d)', r'\1\2\3', response)
+        response = re.sub(r'(\d)\s*\n\s*(\d)', r'\1\2', response)
+        
+        # Clean up extra whitespace
+        response = re.sub(r'\s+', ' ', response).strip()
+        
+        return response

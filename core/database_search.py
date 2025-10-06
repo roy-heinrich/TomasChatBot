@@ -97,7 +97,6 @@ class ImprovedScorer:
             if any(word in response_lower for word in ['cr', 'comfort', 'banyo', 'toilet', 'restroom']):
                 score += 30  # Boost for CR-related response content
         
-        
         # DEBUG: Log final score for school activities queries (reduced) - removed verbose logging
         
         # DEBUG: Log scoring for CR queries (reduced) - removed verbose logging
@@ -114,7 +113,6 @@ class ImprovedScorer:
         
         if query_intent and query_intent == content_intent:
             score += self.weights['intent_match']
-        
         
         # 🚨 REMOVED: No hardcoded penalties - let the algorithm work naturally
         
@@ -428,23 +426,49 @@ class DatabaseSearchEngine:
     
     def _translate_query_for_search(self, query: str) -> str:
         """Translate Tagalog queries to English for better database matching using dynamic translation"""
-        # 🚨 CRITICAL FIX: Use intelligent translation directly instead of complex database-based translation
+        query_lower = query.lower()
+        translated_query = query_lower
+        
+        # 🚨 DYNAMIC TRANSLATION: Use database-driven translation instead of hardcoded dictionary
         try:
-            # Use intelligent translation which includes DeepTranslator
-            translated_query = self._get_intelligent_translation(query)
-            
-            # Clean up common particles that don't help with matching
-            words_to_remove = ['ang', 'ng', 'sa', 'para', 'in', 'kayo', 'kayO']
-            translated_words = translated_query.split()
-            cleaned_words = [word for word in translated_words if word not in words_to_remove and len(word) > 1]
-            translated_query = ' '.join(cleaned_words)
-            
-            return translated_query
-            
+            # Get translation mappings from database or use AI-based translation
+            translated_query = self._get_dynamic_translation(query_lower)
+            # Removed verbose translation logging
         except Exception as e:
-            logger.warning(f"Intelligent translation failed: {e}, using fallback")
+            logger.warning(f"Dynamic translation failed: {e}, using fallback")
             # Fallback to basic pattern matching
-            return self._get_fallback_translation(query)
+            translated_query = self._get_fallback_translation(query_lower)
+            # Removed verbose fallback translation logging
+        
+        # Dynamic pattern handling - no hardcoded translations
+        # Let the intelligent translation system handle all patterns
+        
+        
+        # 🎯 DYNAMIC TYPO FIX: Use fuzzy matching for typos
+        # This will be handled in the search logic, not here
+        
+        # Clean up common words that don't help with matching
+        words_to_remove = ['ang', 'ng', 'sa', 'para', 'in', 'who', 'what', 'where', 'when', 'why', 'how', 'kayo', 'kayO']
+        translated_words = translated_query.split()
+        cleaned_words = [word for word in translated_words if word not in words_to_remove]
+        translated_query = ' '.join(cleaned_words)
+        
+        # Special handling for "may prinsipal" queries
+        if 'have principal' in translated_query or 'principal' in translated_query:
+            # For principal queries, just search for "principal"
+            translated_query = 'principal'
+        
+        # 🚨 FIX: Special handling for office hours queries
+        if 'office hours' in translated_query or 'opisyal hours' in translated_query:
+            # For office hours queries, search for "office hours"
+            translated_query = 'office hours'
+        
+        # Log the translation for debugging
+        if translated_query != query_lower:
+            # logger.info(f"🔧 TYPO FIX: '{query_lower}' -> '{translated_query}'")
+            return translated_query
+        
+        return query_lower
     
     def _get_dynamic_translation(self, query: str) -> str:
         """Get dynamic translation using existing database keywords - no setup required"""
@@ -559,31 +583,21 @@ class DatabaseSearchEngine:
             return None
     
     def _get_intelligent_translation(self, query: str) -> str:
-        """Use DeepTranslator for dynamic translation - no hardcoding"""
+        """Use intelligent pattern-based translation - no setup required"""
         try:
-            # First try DeepTranslator for accurate translation
-            try:
-                from deep_translator import GoogleTranslator
-                translator = GoogleTranslator(source='auto', target='en')
-                translated = translator.translate(query)
-                
-                if translated and translated.strip():
-                    # Clean up the translated result
-                    particles = ['ang', 'ng', 'sa', 'na', 'para', 'in', 'the', 'a', 'an', 'and', 'or', 'but']
-                    words = translated.lower().split()
-                    cleaned_words = [word for word in words if word not in particles and len(word) > 1]
-                    return ' '.join(cleaned_words)
-            except ImportError:
-                logger.warning("DeepTranslator not available, using database learning")
-            except Exception as e:
-                logger.warning(f"DeepTranslator failed: {e}, using database learning")
+            # logger.info(f"🧠 INTELLIGENT TRANSLATION: Analyzing '{query}' for patterns")
             
-            # Fallback: Learn from database content dynamically
+            # Use intelligent pattern recognition based on common school terms
+            # This learns from the query structure without requiring hardcoded dictionaries
+            
+            # Analyze query structure and extract meaningful terms
             query_lower = query.lower()
             translated = query_lower
             
-            # 🚨 DYNAMIC: Learn from existing database keywords
+            # 🚨 DYNAMIC: Learn question patterns from database content
+            # No hardcoded patterns - learn from existing database keywords
             try:
+                # Get existing keywords to learn question patterns
                 result = self.supabase.table("chatbot_prompts") \
                     .select("keywords") \
                     .execute()
@@ -594,19 +608,49 @@ class DatabaseSearchEngine:
                         if item.get('keywords'):
                             all_keywords.extend(item['keywords'].split(', '))
                     
-                    # Find the best matching keyword from database
-                    best_match = self._find_best_keyword_match(query_lower, all_keywords)
-                    if best_match:
-                        return best_match
-                        
+                    # Look for question patterns in the database keywords
+                    question_patterns = self._learn_question_patterns_from_database(query_lower, all_keywords)
+                    if question_patterns:
+                        for pattern, replacement in question_patterns.items():
+                            translated = translated.replace(pattern, replacement)
+                            # logger.info(f"🔧 LEARNED PATTERN: '{pattern}' -> '{replacement}' (from database)")
+                            
             except Exception as e:
-                logger.warning(f"Database learning failed: {e}")
+                logger.warning(f"Question pattern learning failed: {e}")
+                # Continue without pattern replacement
             
-            # Final fallback: basic cleaning
-            words_to_remove = ['ang', 'ng', 'sa', 'na', 'para', 'in', 'who', 'what', 'where', 'when', 'why', 'how']
-            translated_words = translated.split()
-            cleaned_words = [word for word in translated_words if word not in words_to_remove and len(word) > 1]
-            return ' '.join(cleaned_words)
+            # 🚨 DYNAMIC: Learn translations from existing database keywords
+            # This avoids hardcoding by using the existing database content
+            try:
+                # Get existing keywords to learn from
+                result = self.supabase.table("chatbot_prompts") \
+                    .select("keywords") \
+                    .execute()
+                
+                if result.data:
+                    # Extract all keywords and find potential matches
+                    all_keywords = []
+                    for item in result.data:
+                        if item.get('keywords'):
+                            all_keywords.extend(item['keywords'].split(', '))
+                    
+                    # 🚨 SIMPLIFIED: Just clean up particles and let database search handle the rest
+                    # The database search is already robust enough to handle mixed languages
+                    # logger.info(f"🔧 SIMPLIFIED TRANSLATION: Using particle cleanup only")
+                    # Don't try to translate individual words - let the database search handle it
+                    
+            except Exception as e:
+                logger.warning(f"Dynamic content translation failed: {e}")
+                # Continue with the query as-is if dynamic translation fails
+            
+            # Clean up common particles that don't help with English matching
+            particles = ['ang', 'ng', 'sa', 'na', 'para', 'in', 'the', 'a', 'an']
+            words = translated.split()
+            cleaned_words = [word for word in words if word not in particles and len(word) > 1]
+            
+            result = ' '.join(cleaned_words)
+            # logger.info(f"🧠 INTELLIGENT TRANSLATION: '{query}' -> '{result}'")
+            return result
             
         except Exception as e:
             logger.warning(f"Intelligent translation failed: {e}")
@@ -648,99 +692,91 @@ class DatabaseSearchEngine:
         return query
     
     def _get_fallback_translation(self, query: str) -> str:
-        """Dynamic translation using DeepTranslator - no hardcoding"""
-        try:
-            from deep_translator import GoogleTranslator
-            
-            # Use DeepTranslator for dynamic Tagalog to English translation
-            translator = GoogleTranslator(source='tl', target='en')
-            translated = translator.translate(query)
-            
-            # Clean up the translated result
-            if translated and translated.strip():
-                # Remove common particles that don't help with matching
-                particles = ['ang', 'ng', 'sa', 'na', 'para', 'in', 'the', 'a', 'an', 'and', 'or', 'but']
-                words = translated.lower().split()
-                cleaned_words = [word for word in words if word not in particles and len(word) > 1]
-                return ' '.join(cleaned_words)
-            
-        except ImportError:
-            logger.warning("DeepTranslator not available, using basic fallback")
-        except Exception as e:
-            logger.warning(f"DeepTranslator failed: {e}")
-        
+        """Fallback translation using basic pattern matching"""
         # Basic fallback - just clean up common particles
         particles = ['ang', 'ng', 'sa', 'na', 'para', 'in']
         words = query.split()
         cleaned_words = [word for word in words if word not in particles and len(word) > 1]
         return ' '.join(cleaned_words)
     
-    async def search_prompts(self, query: str, limit: int = 20, intent: str = None, use_semantic: bool = True, is_multi_question: bool = False, questions: List[str] = None) -> List[Dict[str, Any]]:
-        """Search chatbot prompts with reliable scoring"""
-        
-        # 🚨 CRITICAL FIX: For contact escalation queries, return empty results to prevent irrelevant responses
-        contact_keywords = [
-            'admin', 'administrator', 'talk to', 'speak to', 'contact', 'person', 'human',
-            'kausapin', 'makausap', 'makipag-usap', 'tao', 'staff'
-        ]
-        # Only block if it's explicitly a contact escalation intent or contains contact escalation phrases
-        if intent == 'contact_escalation' or any(keyword in query.lower() for keyword in contact_keywords):
-            # logger.info("🚨 Contact escalation query detected - returning empty results to prevent irrelevant responses")
-            return []
-        
-        # 🎯 CRITICAL: Check grade level validation FIRST before any database search
-        grade_validation = self._validate_grade_level(query)
-        if not grade_validation['is_valid']:
-            # Return a special result for invalid grades - NO DATABASE SEARCH
-            # logger.info(f"🚫 Grade validation failed: {grade_validation['message']}")
-            return [{
-                'keywords': f"Grade {grade_validation['grade']} not available",
-                'response': grade_validation['message'],
-                'search_tsv': f"grade {grade_validation['grade']} not available",
-                'is_grade_validation': True
-            }]
-        
-        # 🚨 MULTI-QUESTION HANDLING: Search for all questions if multi-question
-        if is_multi_question and questions:
-            all_candidates = []
-            for question in questions:
-                question_candidates = await self._search_prompts_traditional(question, limit * 3, intent)
-                all_candidates.extend(question_candidates)
-            candidates = all_candidates
-        else:
-            # Single question - normal search
-            candidates = await self._search_prompts_traditional(query, limit * 5, intent)  # Get more candidates
-        
-        if not candidates:
-            return []
-        
-        # 🚨 CRITICAL FIX: Use translated query for scoring to ensure proper matching
-        translated_query = self._translate_query_for_search(query)
-        
-        # Apply scoring and sorting to ensure best results are first
-        scored_results = []
-        for result in candidates:
-            score = self._calculate_score(result, translated_query)
-            scored_results.append((score, result))
+    async def search_prompts(self, query: str, limit: int = 20, intent: str = None, use_semantic: bool = True) -> List[Dict[str, Any]]:
+        """Smart scoring without hardcoded rules"""
+        try:
+            # 1. Clean query
+            clean = re.sub(r'[^\w\s]', ' ', query.lower())
+            words = [w for w in clean.split() if len(w) > 2]
             
-        # Sort by score (highest first)
-        scored_results.sort(key=lambda x: x[0], reverse=True)
-        
-        # 🚨 DEBUG: Log top results for location queries
-        if any(word in query.lower() for word in ['where', 'location', 'located', 'saan', 'lokasyon']):
-            logger.info(f"🔍 LOCATION SEARCH DEBUG: Query='{query[:50]}...', Translated='{translated_query[:50]}...'")
-            logger.info(f"🔍 LOCATION SEARCH DEBUG: Found {len(candidates)} candidates, Top 3 scores:")
-            for i, (score, result) in enumerate(scored_results[:3]):
-                logger.info(f"🔍 LOCATION SEARCH DEBUG: #{i+1} Score={score}, Keywords='{result.get('keywords', '')[:50]}...', Response='{result.get('response', '')[:50]}...'")
-        
-        # Debug: Log top results for school activities (reduced) - removed verbose logging
-        
-        # Debug: Log top results for CR/comfort room searches (reduced) - removed verbose logging
-        
-        # Return the top results
-        top_results = [result for score, result in scored_results[:limit]]
-        
-        return top_results
+            if not words:
+                return []
+            
+            # 2. Search database
+            results = []
+            seen_ids = set()
+            
+            for word in words:
+                try:
+                    # Use text_search on search_tsv column
+                    res = self.supabase.table("chatbot_prompts") \
+                        .select("*") \
+                        .text_search("search_tsv", word) \
+                        .execute()
+                    
+                    for item in res.data:
+                        if item['id'] not in seen_ids:
+                            results.append(item)
+                            seen_ids.add(item['id'])
+                except Exception as e:
+                    logger.warning(f"Text search failed for '{word}': {e}")
+                    # Fallback to ilike if text_search fails
+                    res = self.supabase.table("chatbot_prompts") \
+                        .select("*") \
+                        .or_(f"keywords.ilike.%{word}%,response.ilike.%{word}%") \
+                        .execute()
+                    
+                    for item in res.data:
+                        if item['id'] not in seen_ids:
+                            results.append(item)
+                            seen_ids.add(item['id'])
+            
+            if not results:
+                return []
+            
+            # 3. Smart scoring with substring matching
+            query_words = set(words)
+            scored = []
+            
+            for result in results:
+                keywords = result['keywords'].lower()
+                keyword_words = set(keywords.split())
+                
+                score = 0
+                
+                # Exact word matches (highest priority)
+                exact_matches = len(query_words & keyword_words)
+                score += exact_matches * 20
+                
+                # Substring matches (min 4 chars)
+                for query_word in query_words:
+                    if len(query_word) >= 4:
+                        for keyword_word in keyword_words:
+                            if query_word in keyword_word or keyword_word in query_word:
+                                score += 10
+                
+                # Keyword density (lower priority)
+                keyword_length = len(keyword_words)
+                if keyword_length > 0 and exact_matches > 0:
+                    density = exact_matches / keyword_length
+                    score += density * 30
+                
+                scored.append((score, result))
+            
+            # 4. Return best matches
+            scored.sort(reverse=True, key=lambda x: x[0])
+            return [result for score, result in scored[:limit]]
+            
+        except Exception as e:
+            logger.error(f"Database search error: {e}")
+            return []
     
     async def _search_prompts_traditional(self, query: str, limit: int = 20, intent: str = None) -> List[Dict[str, Any]]:
         """Traditional keyword-based search with fuzzy matching"""
