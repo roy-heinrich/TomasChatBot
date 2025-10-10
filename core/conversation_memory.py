@@ -44,6 +44,7 @@ class ConversationMemory:
             
             # Look for name patterns in recent messages
             # 🎯 FIX: Made name patterns much more specific to avoid false positives
+            # English name introduction patterns
             name_patterns = [
                 r"my name is (\w+)",
                 r"i'm (\w+)",
@@ -52,13 +53,25 @@ class ConversationMemory:
                 r"this is (\w+)",
                 # Only match if it's clearly a name introduction with proper context
                 r"hello,?\s+(\w+)\s+here",
-                r"hi,?\s+(\w+)\s+here"
+                r"hi,?\s+(\w+)\s+here",
+                # Add more patterns for simple name introductions
+                r"^(?:i'?m|im)\s+(\w+)$",  # Matches "im heinz" or "i'm heinz" as complete messages
+                r"^(\w+)\s+here$",  # Matches "heinz here"
+                
+                # Tagalog name introduction patterns
+                r"ako\s+(?:si|ay)\s+(\w+)",  # "Ako si Juan" or "Ako ay Juan"
+                r"ako\s+(\w+)",  # "Ako Juan"
+                r"si\s+(\w+)\s+(?:po|ito|ako)",  # "Si Juan po" or "Si Juan ito" or "Si Juan ako"
+                r"ang\s+pangalan\s+ko\s+(?:ay|eh|po|ay si)\s+(\w+)",  # "Ang pangalan ko ay Juan"
+                r"pangalan\s+ko\s+(?:ay|eh|po|ay si)\s+(\w+)",  # "Pangalan ko ay Juan"
+                r"tawag\s+(?:sa akin|sakin)\s+(?:ay|eh|po|ay si)\s+(\w+)",  # "Tawag sa akin ay Juan"
+                r"^(\w+)\s+(?:po|ako|ito)$"  # "Juan po" or "Juan ako" or "Juan ito"
             ]
             
             import re
             for message in reversed(conversation_history[-5:]):  # Check last 5 messages
                 if message.get("role") == "user":
-                    content = message.get("content", "")
+                    content = message.get("content", "").strip()
                     if content:
                         for pattern in name_patterns:
                             match = re.search(pattern, content, re.IGNORECASE)
@@ -82,7 +95,7 @@ class ConversationMemory:
                                     not name.lower().endswith('ed') and
                                     not name.lower().endswith('er') and
                                     not name.lower().endswith('ly')):
-                                    # logger.info(f"🎯 Extracted user name: {name}")
+                                    logger.info(f"🎯 Extracted user name: {name}")
                                     return name
             
             return None
@@ -137,6 +150,13 @@ class ConversationMemory:
         """Update user memory with new information, including multi-question support"""
         now = datetime.now()
         
+        # If no user_name provided but we have conversation history, try to extract it
+        if not user_name and conversation_history:
+            extracted_name = self.extract_user_name(conversation_history)
+            if extracted_name:
+                user_name = extracted_name
+                logger.info(f"🧠 Extracted user name during memory update: {user_name}")
+        
         # Get or create user memory
         if session_id not in self.user_memories:
             self.user_memories[session_id] = UserMemory(
@@ -152,7 +172,8 @@ class ConversationMemory:
         user_memory.total_messages += 1
         
         # Update name if provided
-        if user_name and user_name != user_memory.name:
+        if user_name and (not user_memory.name or user_name != user_memory.name):
+            logger.info(f"🧠 Updating user name in memory: '{user_memory.name}' -> '{user_name}'")
             user_memory.name = user_name
         
         # Check if this is a multi-question session

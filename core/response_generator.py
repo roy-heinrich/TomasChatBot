@@ -117,44 +117,42 @@ RULES:
             total_questions = nlu_info.get('total_questions', 1)
             
             if context and context not in ["General school information query", 
-                                           "No specific information available in database for this query"]:
+                                       "No specific information available in database for this query"]:
                 lang_code = "TL" if lang in ["tl", "akl"] else "EN"
                 
                 if lang in ["tl", "akl"]:
-                    return f"""DATABASE: {context}
+                    return f"""DB: {context}
 
-QUERY: {query}
-LANG: {lang_code}
-MULTI-QUESTION: Question {question_number} of {total_questions}
+Q: {query}
+MULTI-Q: {question_number}/{total_questions}
 
-Write a concise paragraph in proper Tagalog using ONLY the database info above. Be polite, professional, factual, and a little communicative. Use correct Tagalog grammar and natural expressions. Do not ask questions or add details not in the database. Do not make assumptions about the user's emotions or state of mind. If information is missing, state it briefly. Use 'punong-guro' for principal. Be warm but professional. For lists of activities or items, use bullet points to separate each item clearly. Avoid introductions."""
+Concise Tagalog. Use DB info only. Natural tone. Correct grammar. Be brief."""
                 else:
-                    return f"""DATABASE: {context}
+                    return f"""DB: {context}
 
-QUERY: {query}
-LANG: {lang_code}
-MULTI-QUESTION: Question {question_number} of {total_questions}
+Q: {query}
+MULTI-Q: {question_number}/{total_questions}
 
-Write a concise paragraph in English using ONLY the database info above. Be polite, professional, factual. Do not ask the user questions. Do not make assumptions. Provide the information directly and clearly. Avoid bullet points and introductions."""
+Concise English. Use DB info only. Natural tone. Be brief."""
             else:
                 if lang in ["tl", "akl"]:
-                    return f"QUERY: {query}\nMULTI-QUESTION: Question {question_number} of {total_questions}\nNo database info available. Provide helpful response in Tagalog. Answer concisely since this is part of multiple questions."
+                    return f"Q: {query}\nMULTI-Q: {question_number}/{total_questions}\nNo DB info. Brief Tagalog response."
                 else:
-                    return f"QUERY: {query}\nMULTI-QUESTION: Question {question_number} of {total_questions}\nNo database info available. Provide helpful response in English. Answer concisely since this is part of multiple questions."
+                    return f"Q: {query}\nMULTI-Q: {question_number}/{total_questions}\nNo DB info. Brief English response."
         
         # Handle special cases first
         if context == "User is introducing themselves with their name":
-            return f"User introduced themselves: {query}\nRespond with friendly greeting using their name."
+            return f"Name intro: {query}\nGreet using name."
         
         if context == "User is expressing their emotional state":
-            return f"User emotional: {query}\nAcknowledge briefly, redirect to school services."
+            return f"Emotional: {query}\nBrief acknowledge. Redirect to school."
         
         # Handle name requests - be direct and helpful
         if "pangalan" in query.lower() or "name" in query.lower():
             if lang in ["tl", "akl"]:
-                return f"QUERY: {query}\nUser asking for their name. Respond in Tagalog that you don't have their name but can help with school info."
+                return f"Q: {query}\nName request. Tagalog: No name but can help with school info."
             else:
-                return f"QUERY: {query}\nUser asking for their name. Respond in English that you don't have their name but can help with school info."
+                return f"Q: {query}\nName request. English: No name but can help with school info."
         
         # Database context - the priority case
         if context and context not in ["General school information query", 
@@ -162,32 +160,44 @@ Write a concise paragraph in English using ONLY the database info above. Be poli
             lang_code = "TL" if lang in ["tl", "akl"] else "EN"
             
             if lang in ["tl", "akl"]:
-                return f"""DATABASE: {context}
+                return f"""DB: {context}
 
-TANONG: {query}
+Q: {query}
 
-TAGALOG LANG. MAXIMUM 2 PANGUNGUSAP. Gamitin ang tamang gramatika sa Tagalog. Kung may listahan (activities, items, etc), isulat bawat item sa sariling linya na nagsisimula sa "•". Direkta lang.
+Tagalog. 2-3 SHORT sentences. Natural & conversational.
+- Answer using DB info only
+- Add relevant details
+- Offer help with other school topics naturally
+- Be unique - vary structure
+- Keep concise to avoid cutoffs
+- Grammar: "Walang..." not "Hindi may..."
 
-IMPORTANTE: Kung ang database ay nagsasabing "walang batas" o "no rules", gamitin ang tamang Tagalog:
-- "Walang batas na nangangailangan ng..." (There are no laws requiring...)
-- "Hindi kailangan ang..." (It is not required...)
-- "Walang patakaran tungkol sa..." (There are no policies about...)
+Example style (don't copy):
+"Ang adviser ng Grade 4 ay si Ms. Jessica Z. Go. Siya nag-aalaga sa Grade 4 students. May tanong pa ba tungkol sa ibang guro?"
 
-Sagot:"""
+Answer:"""
             else:
-                return f"""DATABASE: {context}
+                return f"""DB: {context}
 
-QUERY: {query}
+Q: {query}
 
-ENGLISH ONLY. MAXIMUM 2 SENTENCES. If there's a list (activities, items, etc), write each item on its own line starting with "•". Direct answer.
+English. 2-3 SHORT sentences. Natural & conversational.
+- Answer using DB info only
+- Add relevant details
+- Offer help with other school topics naturally
+- Be unique - vary structure
+- Keep concise to avoid cutoffs
+
+Example style (don't copy):
+"The Grade 4 adviser is Ms. Jessica Z. Go. She takes care of the Grade 4 students. Need info about other teachers?"
 
 Answer:"""
         
         # No context available
         if lang in ["tl", "akl"]:
-            return f"QUERY: {query}\nNo database info available. Provide helpful response in Tagalog. Offer to help with other school topics."
+            return f"Q: {query}\nNo DB info. Helpful Tagalog response. Offer help with school topics."
         else:
-            return f"QUERY: {query}\nNo database info available. Provide helpful response in {lang_code}. Offer to help with other school topics."
+            return f"Q: {query}\nNo DB info. Helpful English response. Offer help with school topics."
     
     async def generate_response(self, query: str, context: str, lang: str, 
                               conversation_history: List[Dict] = None, 

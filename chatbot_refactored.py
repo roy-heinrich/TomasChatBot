@@ -868,15 +868,39 @@ class ChatBot:
                 # logger.info(f"🧠 Memory verification - Stored name: '{stored_name}'")  # Commented out debug logs
             
             # Special case: Handle name-related queries directly
-            if any(phrase in query.lower() for phrase in ["what's my name", "what is my name", "my name", "who am i", "do you know my name"]):
+            # First, check for English name queries
+            english_name_phrases = ["what's my name", "what is my name", "my name", "who am i", "do you know my name", "who is my name"]
+            
+            # Tagalog name query phrases
+            tagalog_name_phrases = ["ano ang pangalan ko", "ano pangalan ko", "sino ako", 
+                                   "sinong pangalan ko", "alam mo ba pangalan ko", "ano'ng pangalan ko"]
+            
+            # Try to translate query for Tagalog detection
+            translated_query = query.lower()
+            if detected_lang in ["tl", "akl"]:
+                try:
+                    # Use context translator to translate to English
+                    translated_query, _ = self.context_translator.translate_with_context(
+                        query, "en", conversation_history, session_id
+                    )
+                    logger.info(f"🌐 Translated name query: '{query}' -> '{translated_query}'")
+                except Exception as e:
+                    logger.warning(f"Translation failed for name query: {e}")
+            
+            # Check if this is a name-related query in any language
+            is_name_query = (any(phrase in query.lower() for phrase in english_name_phrases) or
+                            any(phrase in query.lower() for phrase in tagalog_name_phrases) or
+                            any(phrase in translated_query.lower() for phrase in english_name_phrases))
+            
+            if is_name_query:
                 if user_name:
-                    # logger.info(f"👤 User asking about their name - we know it's: {user_name}")  # Commented out debug logs
+                    logger.info(f"👤 User asking about their name - we know it's: {user_name}")
                     # Skip database search and provide direct response
                     search_results = []
                     best_result = None
                     context = f"User is asking about their name. Their name is {user_name}. Provide a friendly response confirming their name."
                 else:
-                    # logger.info("👤 User asking about their name - we don't know it yet")  # Commented out debug logs
+                    logger.info("👤 User asking about their name - we don't know it yet")
                     # Skip database search and ask for their name
                     search_results = []
                     best_result = None

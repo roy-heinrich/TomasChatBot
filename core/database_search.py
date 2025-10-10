@@ -448,7 +448,8 @@ class DatabaseSearchEngine:
         # This will be handled in the search logic, not here
         
         # Clean up common words that don't help with matching
-        words_to_remove = ['ang', 'ng', 'sa', 'para', 'in', 'who', 'what', 'where', 'when', 'why', 'how', 'kayo', 'kayO']
+        # Include Aklanon particles: 'du' (the), 'it' (this), 'hay' (is)
+        words_to_remove = ['ang', 'ng', 'sa', 'para', 'in', 'who', 'what', 'where', 'when', 'why', 'how', 'kayo', 'kayO', 'du', 'it', 'hay']
         translated_words = translated_query.split()
         cleaned_words = [word for word in translated_words if word not in words_to_remove]
         translated_query = ' '.join(cleaned_words)
@@ -462,6 +463,23 @@ class DatabaseSearchEngine:
         if 'office hours' in translated_query or 'opisyal hours' in translated_query:
             # For office hours queries, search for "office hours"
             translated_query = 'office hours'
+            
+        # 🚨 ENHANCED: Special handling for grade teacher queries
+        grade_teacher_pattern = re.search(r'(teacher|adviser|advisor|guro|titser|maestra|maestro).*?(grade|grado|baitang)\s*(\d+)', query_lower)
+        if not grade_teacher_pattern:
+            grade_teacher_pattern = re.search(r'(grade|grado|baitang)\s*(\d+).*?(teacher|adviser|advisor|guro|titser|maestra|maestro)', query_lower)
+            
+        if grade_teacher_pattern:
+            grade_num = None
+            if grade_teacher_pattern.group(1).lower() in ['grade', 'grado', 'baitang']:
+                grade_num = grade_teacher_pattern.group(2)
+            else:
+                grade_num = grade_teacher_pattern.group(3)
+                
+            if grade_num:
+                # For grade teacher queries, create a standardized search pattern
+                translated_query = f"grade {grade_num} adviser"
+                # logger.info(f"🔧 GRADE TEACHER QUERY: '{query_lower}' -> '{translated_query}'")
         
         # Log the translation for debugging
         if translated_query != query_lower:
@@ -709,6 +727,30 @@ class DatabaseSearchEngine:
             if not words:
                 return []
             
+            # 1.1 Check for grade teacher query pattern
+            is_grade_teacher_query = False
+            grade_number = None
+            
+            grade_teacher_pattern = re.search(r'(teacher|adviser|advisor|guro|titser|maestra|maestro).*?(grade|grado|baitang)\s*(\d+)', query.lower())
+            if not grade_teacher_pattern:
+                grade_teacher_pattern = re.search(r'(grade|grado|baitang)\s*(\d+).*?(teacher|adviser|advisor|guro|titser|maestra|maestro)', query.lower())
+                
+            if grade_teacher_pattern:
+                is_grade_teacher_query = True
+                if grade_teacher_pattern.group(1).lower() in ['grade', 'grado', 'baitang']:
+                    grade_number = grade_teacher_pattern.group(2)
+                else:
+                    grade_number = grade_teacher_pattern.group(3)
+            
+            # 1.2 Translate query for better matching
+            translated_query = self._translate_query_for_search(query)
+            if translated_query != query.lower():
+                # Use translated words if available
+                clean_translated = re.sub(r'[^\w\s]', ' ', translated_query.lower())
+                translated_words = [w for w in clean_translated.split() if len(w) > 2]
+                if translated_words:
+                    words = translated_words
+            
             # 2. Search database
             results = []
             seen_ids = set()
@@ -738,9 +780,6 @@ class DatabaseSearchEngine:
                             results.append(item)
                             seen_ids.add(item['id'])
             
-            if not results:
-                return []
-            
             # 3. Smart scoring with substring matching
             query_words = set(words)
             scored = []
@@ -768,11 +807,44 @@ class DatabaseSearchEngine:
                     density = exact_matches / keyword_length
                     score += density * 30
                 
+                # Boost score for grade teacher queries if the grade number matches
+                if is_grade_teacher_query and grade_number:
+                    if f"grade {grade_number}" in keywords.lower() or f"grade{grade_number}" in keywords.lower():
+                        score += 50  # Significant boost for exact grade match
+                
                 scored.append((score, result))
             
             # 4. Return best matches
             scored.sort(reverse=True, key=lambda x: x[0])
-            return [result for score, result in scored[:limit]]
+            results = [result for score, result in scored[:limit]]
+            
+            # 5. Special handling for grade teacher queries
+            if is_grade_teacher_query and grade_number and results:
+                # Check if we found a specific entry for this grade
+                found_specific_grade = False
+                for result in results[:3]:  # Check top 3 results
+                    if f"grade {grade_number}" in result['keywords'].lower() or f"grade{grade_number}" in result['keywords'].lower():
+                        found_specific_grade = True
+                        break
+                
+                if not found_specific_grade:
+                    # Create a fallback response using general grade information
+                    # This is database-driven as it uses the grade validation logic
+                    grade_validation = self._validate_grade_level(f"grade {grade_number}")
+                    
+                    if grade_validation['is_valid']:
+                        # Valid grade but no specific teacher info
+                        fallback_response = {
+                            'keywords': f"Grade {grade_number} adviser, grade {grade_number} teacher",
+                            'response': f"Information about the specific teacher for Grade {grade_number} is not available in our database at this time.",
+                            'id': 999999,  # Use a special ID
+                            'is_grade_validation': True,
+                            'search_tsv': f"grade {grade_number} adviser teacher"
+                        }
+                        # Add this as the top result
+                        results.insert(0, fallback_response)
+            
+            return results
             
         except Exception as e:
             logger.error(f"Database search error: {e}")

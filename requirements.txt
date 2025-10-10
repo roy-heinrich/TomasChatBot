@@ -13,6 +13,7 @@ pydantic>=2.0.0
 aiohttp>=3.8.0
 psutil>=5.9.0
 gunicorn>=21.2.0
+deep_translator
 
 # NLP dependencies (lightweight)
 nltk>=3.8.1
