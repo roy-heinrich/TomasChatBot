@@ -48,7 +48,7 @@ class ResponseGenerator:
         }
         
         
-        self._messenger_button = '<a href="https://m.me/114901Tomas" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Messenger</a>'
+        self._messenger_button = '<a href="https://m.me/114901Tomas" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">💬Messenger</a>'
 
     def get_system_prompt(self, lang: str, user_name: str = "", nlu_info: Dict = None, 
                          entities: List = None, confidence: float = 0.0) -> str:
@@ -66,15 +66,23 @@ RULES:
 4. For lists: Use numbered format (1. Item 2. Item 3. Item) - but NOT for years like 1960
 5. Complete numbered lists - never cut off mid-sentence
 6. NO HALLUCINATIONS: Only use information provided in database context
-7. TONE: Be polite, professional, factual, and communicative - vary your responses naturally, use different sentence structures and openings, and offer additional help when appropriate
-8. NO EXCESSIVE INTRODUCTIONS: Don't introduce yourself in every response
-9. FORMAT NUMBERS PROPERLY: Write years like "1960" not "1 9 6 0" - keep numbers together
-10. NO LINE BREAKS IN NUMBERS: Never put line breaks between digits in years or numbers
-11. TAGALOG GRAMMAR: Use correct Tagalog grammar for negative statements:
+7. NEVER INVENT NAMES: Do not create fictional staff members, administrators, or contact persons
+8. NEVER INVENT CONTACT INFO: Do not create phone numbers, emails, or messenger links
+9. TONE: Be polite, professional, factual, and communicative - vary your responses naturally, use different sentence structures and openings, and offer additional help when appropriate
+10. NO EXCESSIVE INTRODUCTIONS: Don't introduce yourself in every response
+11. FORMAT NUMBERS PROPERLY: Write years like "1960" not "1 9 6 0" - keep numbers together
+12. NO LINE BREAKS IN NUMBERS: Never put line breaks between digits in years or numbers
+13. TAGALOG GRAMMAR: Use correct Tagalog grammar:
+    - "Maaari mong kausapin" (You can talk to) - NOT "Maaari kang kausapin"
     - "Walang batas na nangangailangan ng..." (There are no laws requiring...)
     - "Hindi kailangan ang..." (It is not required...)
     - "Walang patakaran tungkol sa..." (There are no policies about...)
-    - "Hindi may batas" is INCORRECT - use "Walang batas" instead"""
+    - "Hindi may batas" is INCORRECT - use "Walang batas" instead
+14. HTML PRESERVATION: Never translate or modify HTML code. Keep HTML tags exactly as provided.
+15. MESSENGER BUTTON: When providing messenger links, use the exact HTML button format provided. Do not translate HTML attributes like "target", "style", "href", etc.
+16. ADMIN RESPONSES: For admin/contact queries, keep responses brief and focused. Do not mention websites, iframes, or other irrelevant links. Only provide the messenger button in a separate bubble.
+17. NO LINKS: Never include any links except the official messenger link. Do not create WhatsApp links, Facebook links, website links, or any other URLs. Only mention contacting the school office or using the official messenger.
+18. MESSENGER INTRO: Never add intro text like "tungo sa sumusunod na link" or "here's the messenger link" before messenger buttons. Just provide the messenger button directly."""
         
         # Language-specific additions (keep minimal)
         lang_rules = self._get_lang_rules(lang)
@@ -153,6 +161,13 @@ Concise English. Use DB info only. Natural tone. Be brief."""
                 return f"Q: {query}\nName request. Tagalog: No name but can help with school info."
             else:
                 return f"Q: {query}\nName request. English: No name but can help with school info."
+        
+        # Handle admin/contact requests - hardcoded response to prevent hallucinations
+        if any(word in query.lower() for word in ["admin", "administrator", "contact", "messenger", "link"]):
+            if lang in ["tl", "akl"]:
+                return "HARDCODED_ADMIN_TAGALOG"
+            else:
+                return "HARDCODED_ADMIN_ENGLISH"
         
         # Database context - the priority case
         if context and context not in ["General school information query", 
@@ -263,24 +278,69 @@ Answer:"""
         # 🚨 DEBUG: Log the context to see what's being passed
         # logger.info(f"🔍 MESSENGER LINK DEBUG: context='{context_lower[:100]}...'")
         
-        # ONLY add messenger link if context specifically indicates persistent escalation
-        # This ensures we're helpful first, then provide contact as last resort
+        # Add messenger link for admin/contact requests or persistent escalation
+        query_lower = query.lower() if query else ""
+        
+        # Check for persistent escalation context (hardcoded admin responses)
         persistent_escalation_context = any(phrase in context_lower for phrase in [
-            'contact link immediately', 'persistent about wanting to talk to a live person/admin',
-            'user has been persistent about wanting to talk to a live person/admin',  # Add the actual context phrase
-            'user wants to talk to someone from the school'  # Add this pattern too
+            'hardcoded_admin_tagalog', 'hardcoded_admin_english'
         ])
+        
+        should_add_link = persistent_escalation_context
         
         # logger.info(f"🔍 MESSENGER LINK DEBUG: persistent_escalation_context={persistent_escalation_context}")
         
-        # Only add messenger link for persistent escalation, not for first-time requests
-        if persistent_escalation_context:
+        # Add messenger link for admin/contact requests or persistent escalation
+        if should_add_link:
             # logger.info("🔍 MESSENGER LINK DEBUG: Adding messenger link!")
-            # Return as separate bubbles: main response + messenger link with intro text
-            messenger_intro = "If none, here's the messenger link:"
-            return [response, f"{messenger_intro}\n\n{self._messenger_button}"]
+            # Return as separate bubbles: main response + messenger button only
+            return [response, self._messenger_button]
         
         # logger.info("🔍 MESSENGER LINK DEBUG: Not adding messenger link")
+        return response
+    
+    def remove_unwanted_links(self, response: str) -> str:
+        """Remove all links except the official messenger link"""
+        if not response:
+            return response
+        
+        # Remove WhatsApp links
+        response = re.sub(r'<a[^>]*href="[^"]*whatsapp[^"]*"[^>]*>.*?</a>', '', response, flags=re.IGNORECASE)
+        response = re.sub(r'<a[^>]*href="[^"]*wa\.me[^"]*"[^>]*>.*?</a>', '', response, flags=re.IGNORECASE)
+        
+        # Remove Facebook links (except official messenger)
+        response = re.sub(r'<a[^>]*href="[^"]*facebook[^"]*"[^>]*>.*?</a>', '', response, flags=re.IGNORECASE)
+        response = re.sub(r'<a[^>]*href="[^"]*fb\.com[^"]*"[^>]*>.*?</a>', '', response, flags=re.IGNORECASE)
+        
+        # Remove unofficial messenger links (keep only https://m.me/114901Tomas)
+        response = re.sub(r'<a[^>]*href="[^"]*m\.me/[^"]*"[^>]*>.*?</a>', '', response, flags=re.IGNORECASE)
+        response = re.sub(r'\[([^\]]+)\]\([^)]*m\.me/[^)]*\)', r'\1', response, flags=re.IGNORECASE)
+        
+        # Remove generic website links
+        response = re.sub(r'<a[^>]*href="[^"]*example\.com[^"]*"[^>]*>.*?</a>', '', response, flags=re.IGNORECASE)
+        response = re.sub(r'<a[^>]*href="[^"]*http[^"]*"[^>]*>.*?</a>', '', response, flags=re.IGNORECASE)
+        
+        # Remove phone number links
+        response = re.sub(r'<a[^>]*href="[^"]*tel:[^"]*"[^>]*>.*?</a>', '', response, flags=re.IGNORECASE)
+        
+        # Remove button tags with unwanted links
+        response = re.sub(r'<button[^>]*onclick="[^"]*window\.open[^"]*"[^>]*>.*?</button>', '', response, flags=re.IGNORECASE)
+        
+        # Remove markdown-style links
+        response = re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', response)
+        
+        # Remove messenger intro text
+        response = re.sub(r'tungo sa sumusunod na link[:\s]*', '', response, flags=re.IGNORECASE)
+        response = re.sub(r'sa pamamagitan ng sumusunod na link[:\s]*', '', response, flags=re.IGNORECASE)
+        response = re.sub(r'here\'s the messenger link[:\s]*', '', response, flags=re.IGNORECASE)
+        response = re.sub(r'narito ang messenger link[:\s]*', '', response, flags=re.IGNORECASE)
+        response = re.sub(r'messenger link[:\s]*', '', response, flags=re.IGNORECASE)
+        response = re.sub(r'sumusunod na link[:\s]*', '', response, flags=re.IGNORECASE)
+        
+        # Clean up extra whitespace
+        response = re.sub(r'\s+', ' ', response)
+        response = response.strip()
+        
         return response
     
     def split_long_response(self, response: str, max_length: int = 400) -> List[str]:
@@ -506,6 +566,9 @@ Answer:"""
         response = re.sub(r'(\d)\s*\n\s*(\d)\s*\n\s*(\d)\s*\n\s*(\d)', r'\1\2\3\4', response)
         response = re.sub(r'(\d)\s*\n\s*(\d)\s*\n\s*(\d)', r'\1\2\3', response)
         response = re.sub(r'(\d)\s*\n\s*(\d)', r'\1\2', response)
+        
+        # Remove unwanted links (except messenger)
+        response = self.remove_unwanted_links(response)
         
         # Clean up extra whitespace
         response = re.sub(r'\s+', ' ', response).strip()

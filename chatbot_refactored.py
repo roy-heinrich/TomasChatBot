@@ -192,9 +192,9 @@ class ChatBot:
             if any(pattern in content for pattern in escalation_patterns):
                 escalation_count += 1
         
-        # 🚨 ADJUSTED: Lower threshold for persistence - if user mentions admin/contact 1+ times, consider it persistent
-        # This ensures users get the messenger link when they specifically ask for admin contact
-        is_persistent = escalation_count >= 1
+        # 🚨 ADJUSTED: Require 2+ mentions for persistence - first request gets helpful response, second gets escalation
+        # This ensures users get helpful response first, then escalation on repeat requests
+        is_persistent = escalation_count >= 2
         # logger.info(f"🔍 PERSISTENCE CHECK: Found {escalation_count} escalation patterns, persistent: {is_persistent}")
         return is_persistent
     
@@ -755,6 +755,10 @@ class ChatBot:
             response_lang = self._map_to_response_language(detected_lang)
             # logger.info(f"🌍 Language mapping: {detected_lang} → {response_lang}")  # Reduced for Railway
             
+            # Get conversation history from memory if session_id is provided
+            if session_id and not conversation_history:
+                conversation_history = self.conversation_memory.get_conversation_history(session_id)
+            
             # Check for mixed-language input
             if confidence < 0.7:
                 # logger.info("🔍 Low confidence language detection - may be mixed language")  # Commented out debug logs
@@ -1168,6 +1172,7 @@ class ChatBot:
             # 🚨 CRITICAL FIX: Removed ML-based gibberish detection since we stripped ML dependencies
             # Let the Context-Aware NLU and database search handle everything
             
+            
             # 🚨 FIX: Handle name introductions and greeting with name even without database context
             # BUT ONLY if we don't have database context already
             if not best_result:
@@ -1192,9 +1197,18 @@ class ChatBot:
                     # For medical emergencies, provide immediate emergency response
                     context = "MEDICAL EMERGENCY DETECTED - User is experiencing a medical emergency requiring immediate attention"
                 elif nlu_result and nlu_result.intent.value == 'contact_escalation':
-                    # logger.info(f"👥 {nlu_result.intent.value} detected - using helpful approach first")  # Commented out debug logs
-                    # For contact escalation, use helpful approach: ask about other school topics first
-                    context = "User wants to talk to someone from the school - use helpful approach to suggest other school topics first before offering contact escalation"
+                    # For contact escalation, check if user has been persistent
+                    persistent_escalation = self._check_persistent_escalation(conversation_history)
+                    
+                    if persistent_escalation:
+                        # Persistent escalation - provide hardcoded admin response with messenger
+                        if response_lang in ["tl", "akl"]:
+                            context = "HARDCODED_ADMIN_TAGALOG"
+                        else:
+                            context = "HARDCODED_ADMIN_ENGLISH"
+                    else:
+                        # First escalation request - be helpful first
+                        context = "User wants to talk to someone from the school - be helpful first by offering assistance with school topics, enrollment, schedules, or other school information. Only mention contact options if they specifically ask again after being helpful."
                 # Remove the old fallback logic - let Groq handle all cases intelligently
             
             # Generate response with Groq (professional, factual, humane, jolly, no roleplay)
@@ -1209,15 +1223,29 @@ class ChatBot:
                     final_user_name = stored_name
                     logger.info(f"🧠 Using name from memory for response generation: {final_user_name}")
             
-            response_text = await self.response_generator.generate_response(
-                query, context, response_lang, conversation_history, nlu_info_dict, final_user_name, entities, float(confidence), None
-            )
-            
-            # Add Messenger link for contact escalation requests
-            if nlu_result and nlu_result.intent.value == 'contact_escalation':
+            # Check for hardcoded admin responses
+            if context == "HARDCODED_ADMIN_TAGALOG":
+                response_text = "Maaari mong kausapin ang admin ng Tomas SM. Bautista Elementary School sa loob ng opisina ng paaralan. Pumunta sa kanilang tanggapan upang makausap ang mga opisyal. Para sa karagdagang impormasyon, kayo ay maaari kang mag message sa kanilang Messenger:"
+                # Add messenger link for hardcoded admin response
                 response_text = self.response_generator.add_messenger_link_if_needed(
                     response_text, query, context, response_lang
                 )
+            elif context == "HARDCODED_ADMIN_ENGLISH":
+                response_text = "You can contact the admin of Tomas SM. Bautista Elementary School at the school office. Go to their office to speak with the officials. For additional information, you can message them on Messenger:"
+                # Add messenger link for hardcoded admin response
+                response_text = self.response_generator.add_messenger_link_if_needed(
+                    response_text, query, context, response_lang
+                )
+            else:
+                response_text = await self.response_generator.generate_response(
+                    query, context, response_lang, conversation_history, nlu_info_dict, final_user_name, entities, float(confidence), None
+                )
+                
+                # Add Messenger link for contact escalation requests (only for non-hardcoded responses)
+                if nlu_result and nlu_result.intent.value == 'contact_escalation':
+                    response_text = self.response_generator.add_messenger_link_if_needed(
+                        response_text, query, context, response_lang
+                    )
                 # Ensure response_text is properly flattened if it's a nested list
                 if isinstance(response_text, list) and len(response_text) > 0 and isinstance(response_text[0], list):
                     # Flatten nested lists
@@ -1306,6 +1334,24 @@ class ChatBot:
                     if translation_confidence > 0.7:
                         response_text = translated_response
                     # logger.info(f"🌐 Context-aware translation applied (confidence: {translation_confidence:.2f})  # Commented out debug logs")
+            
+            # Post-process to fix HTML button if it was translated (AFTER translation)
+            if isinstance(response_text, list) and len(response_text) > 1:
+                # Check if the second message contains a translated HTML button
+                second_message = response_text[1]
+                # Check for various patterns of translated HTML
+                has_translated_html = (
+                    ("messenger" in second_message.lower()) and 
+                    ("href=" in second_message or "<a href" in second_message) and
+                    ("blangko" in second_message or "kulay" in second_message or "wala" in second_message)
+                )
+                
+                if has_translated_html:
+                    # Replace with correct HTML button
+                    correct_button = '<a href="https://m.me/114901Tomas" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">📱 Messenger</a>'
+                    # Extract the intro text and replace the button
+                    intro_match = second_message.split('\n\n')[0] if '\n\n' in second_message else second_message.split('\n')[0]
+                    response_text[1] = f"{intro_match}\n\n{correct_button}"
             
             # 6. Response is already split by generate_response
             split_messages = response_text if isinstance(response_text, list) else [response_text]

@@ -172,6 +172,16 @@ class ConversationMemory:
         user_memory.last_interaction = now
         user_memory.total_messages += 1
         
+        # Store the current user message
+        if not hasattr(user_memory, 'conversation_messages'):
+            user_memory.conversation_messages = []
+        
+        user_memory.conversation_messages.append({
+            "role": "user", 
+            "content": query, 
+            "timestamp": now
+        })
+        
         # Update name if provided
         if user_name and (not user_memory.name or user_name != user_memory.name):
             logger.info(f"🧠 Updating user name in memory: '{user_memory.name}' -> '{user_name}'")
@@ -353,6 +363,38 @@ class ConversationMemory:
         if sessions_to_remove:
             # logger.info(f"Cleaned up {len(sessions_to_remove)} old user memories")
             pass
+    
+    def get_conversation_history(self, session_id: str) -> List[Dict]:
+        """Get conversation history for a session"""
+        try:
+            if session_id not in self.user_memories:
+                return []
+            
+            user_memory = self.user_memories[session_id]
+            
+            # Return stored conversation messages if available
+            if hasattr(user_memory, 'conversation_messages'):
+                return user_memory.conversation_messages
+            
+            # Fallback: Convert topic-based history to the expected format
+            history = []
+            for topic, topic_info in user_memory.topics.items():
+                # Add user messages
+                if topic_info.user_messages:
+                    for msg in topic_info.user_messages:
+                        history.append({"role": "user", "content": msg})
+                # Add assistant messages
+                if topic_info.assistant_messages:
+                    for msg in topic_info.assistant_messages:
+                        history.append({"role": "assistant", "content": msg})
+            
+            # Sort by timestamp if available
+            history.sort(key=lambda x: getattr(x, 'timestamp', 0))
+            return history
+            
+        except Exception as e:
+            logger.error(f"Failed to get conversation history: {e}")
+            return []
     
     def clear_all_memories(self):
         """Clear all conversation memories (used when user explicitly clears context)"""
