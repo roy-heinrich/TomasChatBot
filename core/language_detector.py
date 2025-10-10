@@ -154,7 +154,8 @@ class LanguageDetector:
             r'^(maayong|salamat|gid|damo|huo|indi|sige|tama|mali)$', # Aklanon common words
             r'^(diin|siin|ngaa|wara|mayo|ro|eon|aton|inyo|ila)$',  # Aklanon question words
             r'^(sayud|kung|du|cr|comfort|room|banyo|palikuran)$',  # Aklanon/English mixed words
-            r'^(mo|ko|niya|namin|ninyo|nila|naton|inyo|ila)$'  # Aklanon pronouns
+            r'^(mo|ko|niya|namin|ninyo|nila|naton|inyo|ila)$',  # Aklanon pronouns
+            r'^(sino|du|it|hay)$'  # Aklanon question words and particles
         ]
         
         return any(re.match(pattern, word) for pattern in aklanon_patterns)
@@ -185,6 +186,16 @@ class LanguageDetector:
             
             # Get best language
             best_lang = max(language_scores.items(), key=lambda x: x[1])
+            max_score = best_lang[1]
+            
+            # Check for ties and prefer Tagalog/Aklanon
+            tied_languages = [lang for lang, score in language_scores.items() if score == max_score]
+            if len(tied_languages) > 1:
+                if "tl" in tied_languages:
+                    return "tl", max_score
+                elif "akl" in tied_languages:
+                    return "akl", max_score
+            
             return best_lang[0], best_lang[1]
             
         except Exception as e:
@@ -212,7 +223,18 @@ class LanguageDetector:
                 for lang in pattern_counts:
                     pattern_counts[lang] = pattern_counts[lang] / total_words
                 
+                # If there's a tie, prefer Tagalog/Aklanon over English for mixed queries
                 best_lang = max(pattern_counts.items(), key=lambda x: x[1])
+                max_score = best_lang[1]
+                
+                # Check for ties and prefer Tagalog/Aklanon
+                tied_languages = [lang for lang, score in pattern_counts.items() if score == max_score]
+                if len(tied_languages) > 1:
+                    if "tl" in tied_languages:
+                        return "tl", max_score
+                    elif "akl" in tied_languages:
+                        return "akl", max_score
+                
                 return best_lang[0], best_lang[1]
             else:
                 return "en", 0.3
