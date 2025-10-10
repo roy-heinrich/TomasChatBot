@@ -65,6 +65,7 @@ class ImprovedScorer:
         score += keyword_overlap * self.weights['word_overlap']
         score += response_overlap * self.weights['response_match']
         
+        
         # 3.5. Enhanced word matching for activities
         if 'activ' in query_lower:
             # Check for activity-related words in keywords and response
@@ -717,11 +718,61 @@ class DatabaseSearchEngine:
         cleaned_words = [word for word in words if word not in particles and len(word) > 1]
         return ' '.join(cleaned_words)
     
-    async def search_prompts(self, query: str, limit: int = 20, intent: str = None, use_semantic: bool = True) -> List[Dict[str, Any]]:
-        """Smart scoring without hardcoded rules"""
+    def _enhance_query_with_context(self, query: str, conversation_history: List[Dict] = None) -> str:
+        """Enhance query with conversation context to understand references"""
+        if not conversation_history:
+            return query
+        
+        # Look at the MOST RECENT user message for context (not all recent messages)
+        # This ensures we use the latest topic, not accumulate all topics
+        recent_user_messages = [msg for msg in conversation_history if msg.get("role") == "user"]
+        
+        if not recent_user_messages:
+            return query
+        
+        # Get the most recent user message (excluding the current query)
+        most_recent_message = recent_user_messages[-1] if recent_user_messages else None
+        if not most_recent_message:
+            return query
+            
+        content = most_recent_message.get("content", "").lower()
+        
+        # Extract context from the most recent message only
+        context_words = []
+        
+        # Look for grade references in the most recent message
+        grade_match = re.search(r'grade\s*(\d+)', content)
+        if grade_match:
+            grade_num = grade_match.group(1)
+            context_words.append(f"grade {grade_num}")
+        
+        # Look for teacher/adviser references in the most recent message
+        if any(word in content for word in ['adviser', 'advisor', 'teacher', 'guro']):
+            context_words.append('adviser')
+        
+        # Look for specific names mentioned in the most recent message
+        name_match = re.search(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b', content)
+        if name_match:
+            name = name_match.group(1)
+            if len(name.split()) <= 3:  # Reasonable name length
+                context_words.append(name.lower())
+        
+        # Enhance the query with context from the most recent message
+        if context_words:
+            enhanced_query = f"{query} {' '.join(context_words)}"
+            return enhanced_query
+        
+        return query
+    
+    async def search_prompts(self, query: str, limit: int = 20, intent: str = None, use_semantic: bool = True, conversation_history: List[Dict] = None) -> List[Dict[str, Any]]:
+        """Smart scoring with conversation context awareness"""
         try:
-            # 1. Clean query
-            clean = re.sub(r'[^\w\s]', ' ', query.lower())
+            # 1. Enhance query with conversation context
+            enhanced_query = self._enhance_query_with_context(query, conversation_history)
+            # logger.info(f"🔍 Enhanced query: '{query}' -> '{enhanced_query}'")
+            
+            # 2. Clean query
+            clean = re.sub(r'[^\w\s]', ' ', enhanced_query.lower())
             words = [w for w in clean.split() if len(w) > 2]
             
             if not words:
@@ -785,33 +836,8 @@ class DatabaseSearchEngine:
             scored = []
             
             for result in results:
-                keywords = result['keywords'].lower()
-                keyword_words = set(keywords.split())
-                
-                score = 0
-                
-                # Exact word matches (highest priority)
-                exact_matches = len(query_words & keyword_words)
-                score += exact_matches * 20
-                
-                # Substring matches (min 4 chars)
-                for query_word in query_words:
-                    if len(query_word) >= 4:
-                        for keyword_word in keyword_words:
-                            if query_word in keyword_word or keyword_word in query_word:
-                                score += 10
-                
-                # Keyword density (lower priority)
-                keyword_length = len(keyword_words)
-                if keyword_length > 0 and exact_matches > 0:
-                    density = exact_matches / keyword_length
-                    score += density * 30
-                
-                # Boost score for grade teacher queries if the grade number matches
-                if is_grade_teacher_query and grade_number:
-                    if f"grade {grade_number}" in keywords.lower() or f"grade{grade_number}" in keywords.lower():
-                        score += 50  # Significant boost for exact grade match
-                
+                # Use the improved scorer for proper scoring
+                score = self._calculate_score(result, enhanced_query)
                 scored.append((score, result))
             
             # 4. Return best matches

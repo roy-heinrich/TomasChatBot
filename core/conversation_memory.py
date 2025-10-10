@@ -56,6 +56,7 @@ class ConversationMemory:
                 r"hi,?\s+(\w+)\s+here",
                 # Add more patterns for simple name introductions
                 r"^(?:i'?m|im)\s+(\w+)$",  # Matches "im heinz" or "i'm heinz" as complete messages
+                r"(?:hi|hello|hey)\s+(?:i'?m|im)\s+(\w+)",  # Matches "hi im heinz" or "hello i'm heinz"
                 r"^(\w+)\s+here$",  # Matches "heinz here"
                 
                 # Tagalog name introduction patterns
@@ -95,7 +96,7 @@ class ConversationMemory:
                                     not name.lower().endswith('ed') and
                                     not name.lower().endswith('er') and
                                     not name.lower().endswith('ly')):
-                                    logger.info(f"🎯 Extracted user name: {name}")
+                                    # logger.info(f"🎯 Extracted user name: {name}")
                                     return name
             
             return None
@@ -155,7 +156,7 @@ class ConversationMemory:
             extracted_name = self.extract_user_name(conversation_history)
             if extracted_name:
                 user_name = extracted_name
-                logger.info(f"🧠 Extracted user name during memory update: {user_name}")
+                # logger.info(f"🧠 Extracted user name during memory update: {user_name}")
         
         # Get or create user memory
         if session_id not in self.user_memories:

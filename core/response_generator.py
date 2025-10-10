@@ -117,7 +117,7 @@ RULES:
             total_questions = nlu_info.get('total_questions', 1)
             
             if context and context not in ["General school information query", 
-                                       "No specific information available in database for this query"]:
+                                           "No specific information available in database for this query"]:
                 lang_code = "TL" if lang in ["tl", "akl"] else "EN"
                 
                 if lang in ["tl", "akl"]:
