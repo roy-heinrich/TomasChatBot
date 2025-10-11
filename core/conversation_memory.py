@@ -33,8 +33,10 @@ class ConversationMemory:
     """Enhanced conversation memory with topic tracking"""
     
     def __init__(self):
+        import threading
         self.user_memories: Dict[str, UserMemory] = {}
         self.session_topics: Dict[str, List[str]] = {}  # session_id -> topics
+        self._lock = threading.Lock()  # Thread safety for concurrent access
         
     def extract_user_name(self, conversation_history: List[Dict]) -> Optional[str]:
         """Enhanced user name extraction from conversation history"""
@@ -107,9 +109,10 @@ class ConversationMemory:
     
     def get_user_name(self, session_id: str = None) -> Optional[str]:
         """Get user name from memory for a specific session"""
-        if session_id and session_id in self.user_memories:
-            return self.user_memories[session_id].name
-        return None
+        with self._lock:
+            if session_id and session_id in self.user_memories:
+                return self.user_memories[session_id].name
+            return None
     
     def extract_topics_from_query(self, query: str) -> List[str]:
         """Extract topics from user query using NLP"""
@@ -158,34 +161,36 @@ class ConversationMemory:
                 user_name = extracted_name
                 # logger.info(f"🧠 Extracted user name during memory update: {user_name}")
         
-        # Get or create user memory
-        if session_id not in self.user_memories:
-            self.user_memories[session_id] = UserMemory(
-                name=user_name,
-                first_interaction=now,
-                last_interaction=now,
-                topics={},
-                total_messages=0
-            )
-        
-        user_memory = self.user_memories[session_id]
-        user_memory.last_interaction = now
-        user_memory.total_messages += 1
-        
-        # Store the current user message
-        if not hasattr(user_memory, 'conversation_messages'):
-            user_memory.conversation_messages = []
-        
-        user_memory.conversation_messages.append({
-            "role": "user", 
-            "content": query, 
-            "timestamp": now
-        })
-        
-        # Update name if provided
-        if user_name and (not user_memory.name or user_name != user_memory.name):
-            logger.info(f"🧠 Updating user name in memory: '{user_memory.name}' -> '{user_name}'")
-            user_memory.name = user_name
+        # Thread-safe memory update
+        with self._lock:
+            # Get or create user memory
+            if session_id not in self.user_memories:
+                self.user_memories[session_id] = UserMemory(
+                    name=user_name,
+                    first_interaction=now,
+                    last_interaction=now,
+                    topics={},
+                    total_messages=0
+                )
+            
+            user_memory = self.user_memories[session_id]
+            user_memory.last_interaction = now
+            user_memory.total_messages += 1
+            
+            # Store the current user message
+            if not hasattr(user_memory, 'conversation_messages'):
+                user_memory.conversation_messages = []
+            
+            user_memory.conversation_messages.append({
+                "role": "user", 
+                "content": query, 
+                "timestamp": now.isoformat()  # Convert datetime to string
+            })
+            
+            # Update name if provided
+            if user_name and (not user_memory.name or user_name != user_memory.name):
+                logger.info(f"🧠 Updating user name in memory: '{user_memory.name}' -> '{user_name}'")
+                user_memory.name = user_name
         
         # Check if this is a multi-question session
         is_multi_question = "Multi-question session:" in query

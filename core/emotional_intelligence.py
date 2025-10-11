@@ -324,6 +324,8 @@ class EmotionalIntelligence:
         score = 0.0
         text_lower = text.lower()
         
+        # Debug removed
+        
         for word in emotion_words:
             # Check for exact match first
             if word in text_lower:
@@ -355,13 +357,16 @@ class EmotionalIntelligence:
                         # Dynamic threshold based on word characteristics
                         # Shorter words need higher similarity, longer words can be more flexible
                         if len(word) <= 4:
-                            threshold = 0.8  # Higher threshold for short words
+                            threshold = 0.9  # Much higher threshold for short words to prevent false positives
+                        elif len(word) <= 6:
+                            threshold = 0.8  # Higher threshold for medium-short words to prevent false positives
                         elif len(word) <= 8:
                             threshold = 0.7  # Medium threshold for medium words
                         else:
                             threshold = 0.6  # Lower threshold for long words
                         
-                        if similarity > best_similarity and similarity > threshold:
+                        # Debug removed
+                        if similarity > threshold and similarity > best_similarity:
                             best_similarity = similarity
                             best_match = text_word
                 
@@ -369,6 +374,7 @@ class EmotionalIntelligence:
                     # Score based on similarity strength
                     fuzzy_score = 0.25 * best_similarity  # Slightly higher base score for fuzzy matches
                     score += fuzzy_score
+                    # Debug removed
                     
                     # Boost for word frequency
                     word_count = text_lower.count(best_match)

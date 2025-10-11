@@ -8,12 +8,14 @@ import asyncio
 from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import dataclass
 from dotenv import load_dotenv
+from supabase import create_client
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Import our clean modules
 from core.database_search import DatabaseSearchEngine
+from core.cached_database_search import CachedDatabaseSearch
 # PgVector semantic search removed for lightweight version
 from core.language_detector import LanguageDetector
 from core.response_generator import ResponseGenerator
@@ -24,6 +26,7 @@ from core.conversation_memory import ConversationMemory
 
 # Import existing modules
 from nlu_engine import NLUEngine, Intent, NLUResult
+from core.optimized_nlu_engine import OptimizedNLUEngine
 from entity_extractor import AdvancedEntityExtractor, ExtractedEntity
 from core.security import sql_protector
 
@@ -54,18 +57,28 @@ class ChatBot:
         self.response_generator = ResponseGenerator(groq_key)
         self.keyword_matcher = KeywordMatcher()
         
-        # Initialize database search
+        # Initialize Supabase client
         supabase_url = os.environ.get("SUPABASE_URL")
         supabase_key = os.environ.get("SUPABASE_KEY")
         if not supabase_url or not supabase_key:
             raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set")
         
-        self.database_search = DatabaseSearchEngine(supabase_url, supabase_key)
+        self.supabase = create_client(supabase_url, supabase_key)
+        
+        # Initialize database search with Redis caching
+        self.database_search = CachedDatabaseSearch(
+            supabase_client=self.supabase,
+            redis_url=os.environ.get('REDIS_URL')
+        )
         
         # PgVector semantic search removed for lightweight version
         
         # Initialize NLP components
-        self.nlu_engine = NLUEngine()
+        # Initialize optimized NLU engine with Redis caching
+        redis_client = None
+        if hasattr(self.database_search, 'redis') and self.database_search.redis_available:
+            redis_client = self.database_search.redis
+        self.nlu_engine = OptimizedNLUEngine(redis_client=redis_client)
         self.entity_extractor = AdvancedEntityExtractor()
         
         # Initialize conversation memory
@@ -166,6 +179,57 @@ class ChatBot:
             logger.error(f"Context language detection failed: {e}")
             return "en", 0.5
     
+    def _fix_translated_html(self, text: str) -> str:
+        """Fix HTML attributes that may have been translated and restore HTML elements"""
+        if not isinstance(text, str):
+            return text
+            
+        # First, restore HTML elements from placeholders
+        result = self._restore_html_from_placeholders(text)
+        
+        # Then fix common HTML attribute translations
+        fixes = {
+            'target="_blangko"': 'target="_blank"',
+            'target="_blanko"': 'target="_blank"',
+            'kulay: puti': 'color: white',
+            'kulay:puti': 'color: white',
+            'kulay:puti;': 'color: white;',
+            'kulay: puti;': 'color: white;',
+            'wala': 'none',
+            'wala;': 'none;',
+            'blangko': 'blank',
+            'kulay': 'color',
+            'display: inline-block;': 'display: inline-block;',
+            'background-color: #0084ff;': 'background-color: #0084ff;',
+            'padding: 12px 24px;': 'padding: 12px 24px;',
+            'text-decoration: wala;': 'text-decoration: none;',
+            'text-decoration:wala;': 'text-decoration: none;',
+            'border-radius: 8px;': 'border-radius: 8px;',
+            'font-weight: bold;': 'font-weight: bold;',
+            'margin: 10px 0;': 'margin: 10px 0;',
+        }
+        
+        for translated, correct in fixes.items():
+            result = result.replace(translated, correct)
+        
+        return result
+    
+    def _restore_html_from_placeholders(self, text: str) -> str:
+        """Restore HTML elements from AI model placeholders"""
+        import re
+        
+        # Check if this looks like a messenger button with placeholders
+        if '__html_element_' in text.lower() and 'messenger' in text.lower():
+            # Replace with the correct messenger button HTML
+            messenger_button = '<a href="https://m.me/114901Tomas" target="_blank" style="display: inline-block; background-color: #0084ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">💬Messenger</a>'
+            
+            # Replace the placeholder pattern with the actual HTML
+            result = re.sub(r'__[Hh]tml_element_\d+__', '', text)
+            result = re.sub(r'💬messenger', messenger_button, result)
+            return result
+        
+        return text
+
     def _check_persistent_escalation(self, conversation_history: List[Dict]) -> bool:
         """Check if user has been persistent about wanting to talk to someone"""
         if not conversation_history:
@@ -178,6 +242,7 @@ class ChatBot:
         escalation_patterns = [
             "talk to", "speak to", "contact", "live person", "human", "admin", "staff", 
             "principal", "teacher", "guidance", "counselor", "someone", "anyone",
+            "school office", "office", "where can", "how can",
             "makausap", "makipag-usap", "magistryo", "tao", "staff", "principal",
             "kausapin", "gusto ko kausapin", "admin lang", "wala, admin lang"
         ]
@@ -194,8 +259,7 @@ class ChatBot:
         
         # 🚨 ADJUSTED: Require 2+ mentions for persistence - first request gets helpful response, second gets escalation
         # This ensures users get helpful response first, then escalation on repeat requests
-        is_persistent = escalation_count >= 2
-        # logger.info(f"🔍 PERSISTENCE CHECK: Found {escalation_count} escalation patterns, persistent: {is_persistent}")
+        is_persistent = escalation_count >= 1
         return is_persistent
     
     def _map_to_response_language(self, detected_lang: str) -> str:
@@ -577,9 +641,21 @@ class ChatBot:
                 'total_questions': total_questions
             }
             
-            response_text = await self.response_generator.generate_response(
-                question, context, response_lang, conversation_history, nlu_info, user_name, entities, float(confidence), context_analysis
-            )
+            # CRITICAL: Check if we have sufficient database context to prevent hallucinations
+            # But only for information queries - greetings, emergencies, etc. don't need database context
+            intent_requires_db = nlu_result and nlu_result.intent.value in [
+                'staff_inquiry', 'general_inquiry', 'grade_inquiry', 'activity_inquiry', 
+                'schedule_inquiry', 'facility_inquiry', 'unknown'
+            ]
+            
+            if intent_requires_db and (not context or len(context.strip()) < 50):  # Insufficient context for info queries
+                logger.warning(f"⚠️ Insufficient database context for query: '{question[:50]}...'")
+                # Return a safe response that doesn't hallucinate
+                response_text = f"I don't have specific information about that in my database. Please contact the school office for more details."
+            else:
+                response_text = await self.response_generator.generate_response(
+                    question, context, response_lang, conversation_history, nlu_info, user_name, entities, float(confidence), context_analysis
+                )
             
             # Split response if needed
             split_messages = response_text if isinstance(response_text, list) else [response_text]
@@ -673,7 +749,11 @@ class ChatBot:
             'event', 'events', 'celebration', 'month', 'year', 'semester',
             'curriculum', 'academic', 'extracurricular', 'sports', 'music',
             'art', 'science', 'mathematics', 'english', 'filipino', 'history',
-            'social', 'studies', 'physical', 'education', 'computer', 'technology'
+            'social', 'studies', 'physical', 'education', 'computer', 'technology',
+            'support', 'aide', 'learning', 'assistance', 'help',
+            # Emergency keywords to prevent correction
+            'heart', 'attack', 'stroke', 'emergency', 'medical', 'ambulance',
+            'bleeding', 'unconscious', 'dying', 'pain', 'injury', 'accident'
         ]
         
         words = query.split()
@@ -718,15 +798,16 @@ class ChatBot:
                    user_timezone: str = None, session_id: str = None) -> ChatResponse:
         """Main chat method - Groq-first approach for natural responses with multi-question support"""
         try:
+            # Debug removed
             # 0. Input validation - reject empty or whitespace-only queries
             if not query or not query.strip():
                 raise ValueError("Empty or whitespace-only query is not allowed")
             
-            # Emergency detection is now handled by NLU engine with context awareness
-                
+            # Emergency detection is handled by NLU engine
             # 0.1. Typo correction
             original_query = query
             query = self._correct_common_typos(query)
+            
             
             # 0.1. Multi-question detection and processing
             is_multi_question, questions = self._detect_multiple_questions(query)
@@ -772,7 +853,7 @@ class ChatBot:
                         # logger.info(f"🌍 Context-based language detection: {detected_lang} → {response_lang} (confidence: {confidence:.2f})")  # Commented out debug logs
             
             # 2. Get NLU analysis for intent
-            nlu_result = await self.nlu_engine.analyze_intent(query)
+            nlu_result = await self.nlu_engine.analyze_intent(query, {"conversation_history": conversation_history})
             
             # Emergency detection is now handled by NLU engine with context awareness
             
@@ -783,7 +864,7 @@ class ChatBot:
             # Use the NLU engine's intent classification
             if nlu_result and hasattr(nlu_result, 'intent') and hasattr(nlu_result.intent, 'value'):
                 intent_value = nlu_result.intent.value
-                # logger.info(f"🎯 Checking emergency intent: {intent_value}")
+                logger.info(f"🎯 Checking emergency intent: {intent_value}")
                 
                 if intent_value == "emergency" or intent_value == "medical_emergency":
                     logger.warning(f"🚨 EMERGENCY DETECTED via NLU: {query}")
@@ -908,6 +989,8 @@ class ChatBot:
                             any(phrase in query.lower() for phrase in tagalog_name_phrases) or
                             any(phrase in translated_query.lower() for phrase in english_name_phrases))
             
+            # Debug removed
+            
             if is_name_query:
                 # CRITICAL FIX: Get user name directly from conversation memory
                 stored_name = None
@@ -949,17 +1032,22 @@ class ChatBot:
                 # 🚨 CRITICAL: Check for special intents FIRST before database search
                 # These intents should skip database search entirely
                 if nlu_result and nlu_result.intent.value == 'contact_escalation':
-                    # logger.info("👥 Contact escalation requested - checking conversation history for persistence")
+                    logger.info("👥 Contact escalation requested - checking conversation history for persistence")
                     
                     # Check if user has been persistent about wanting to talk to someone
                     persistent_escalation = self._check_persistent_escalation(conversation_history)
+                    logger.info(f"👥 Persistent escalation: {persistent_escalation}")
                     
                     if persistent_escalation:
-                        # logger.info("👥 Persistent escalation detected - providing direct contact option")
+                        logger.info("👥 Persistent escalation detected - providing direct contact option")
                         # Provide direct escalation response
                         search_results = []
                         best_result = None
-                        context = "User has been persistent about wanting to talk to a live person/admin. Provide the Facebook Messenger contact link immediately."
+                        if response_lang in ["tl", "akl"]:
+                            context = "HARDCODED_ADMIN_TAGALOG"
+                        else:
+                            context = "HARDCODED_ADMIN_ENGLISH"
+                        logger.info(f"👥 Context set to: {context}")
                     else:
                         # logger.info("👥 First escalation request - using helpful approach first")
                         # Use helpful approach for first request
@@ -971,6 +1059,7 @@ class ChatBot:
                     intent_name = nlu_result.intent.name.lower() if nlu_result and nlu_result.intent else None
                     
                     # Enhance search with emotional context
+                    # Note: Translation is handled inside search_prompts method
                     search_query = query
                     if emotional_analysis and emotional_analysis.primary_emotion != 'neutral':
                         # Add emotional context to search for better results
@@ -986,19 +1075,24 @@ class ChatBot:
                                 search_query = f"{query} help guidance support"
                         # logger.info(f"💭 Enhanced search query: '{search_query}' (emotion: {emotional_analysis.primary_emotion})")
                     
-                    search_results = await self.database_search.search_prompts(search_query, limit=10, intent=intent_name, conversation_history=conversation_history)
+                    search_results = await self.database_search.search_prompts(search_query, limit=10, intent=intent_name, conversation_history=conversation_history, nlu_result=nlu_result)
                     
                     # 4. Simple logic: Use top database result if available
                     best_result = None
                     if search_results:
                         # Skip contact escalation queries - don't use irrelevant database results
                         if nlu_result and nlu_result.intent.value == 'contact_escalation':
-                            # logger.info("🚨 Contact escalation detected - not using database results")
+                            logger.info("🚨 Contact escalation detected - not using database results")
                             pass
                         else:
                             # Use the top-ranked result (scoring algorithm already ranked by relevance)
                             best_result = search_results[0]
-                            # logger.info(f"🏆 Using top-ranked result: {best_result.get('keywords', 'No keywords')}")
+                            logger.info(f"🏆 Using top-ranked result: {best_result.get('keywords', 'No keywords')}")
+                            logger.info(f"🏆 Best result response: {best_result.get('response', 'No response')[:100]}...")
+                    
+                    # 4.5. Fallback: If no best_result but we have search results and unknown intent, use them
+                    if not best_result and search_results and (not nlu_result or nlu_result.intent.value == 'unknown'):
+                        best_result = search_results[0]
                 
                 # 🎯 CRITICAL: Check for invalid grades BEFORE database search
                 if 'grade' in query.lower():
@@ -1028,42 +1122,9 @@ class ChatBot:
                                     message_count=1,
                                     intent=nlu_result.intent.value if nlu_result and nlu_result.intent else 'unknown'
                                 )
-                    
-                    # 3. Perform traditional database search to get context for Groq
-                    intent_name = nlu_result.intent.name.lower() if nlu_result and nlu_result.intent else None
-                    
-                    # Enhance search with emotional context
-                    search_query = query
-                    if emotional_analysis and emotional_analysis.primary_emotion != 'neutral':
-                        # Add emotional context to search for better results
-                        if emotional_analysis.primary_emotion == 'sad':
-                            search_query = f"{query} emotional support help support aide"
-                        elif emotional_analysis.primary_emotion == 'worried':
-                            search_query = f"{query} support help guidance"
-                        elif emotional_analysis.primary_emotion == 'confused':
-                            # Special handling for guidance office queries - don't enhance them
-                            if 'guidance office' in query.lower() or 'guidance' in query.lower():
-                                search_query = query  # Keep original query for guidance office
-                            else:
-                                search_query = f"{query} help guidance support"
-                        # logger.info(f"💭 Enhanced search query: '{search_query}' (emotion: {emotional_analysis.primary_emotion})")
-                    
-                    search_results = await self.database_search.search_prompts(search_query, limit=10, intent=intent_name, conversation_history=conversation_history)
-                    # logger.info(f"🔍 Traditional search found {len(search_results)  # Commented out debug logs} results")
-                    
-                    # 4. Simple logic: Use top database result if available
-                    best_result = None
-                    if search_results:
-                        # Skip contact escalation queries - don't use irrelevant database results
-                        if nlu_result and nlu_result.intent.value == 'contact_escalation':
-                            # logger.info("🚨 Contact escalation detected - not using database results")
-                            pass
-                        else:
-                            # Use the top-ranked result (scoring algorithm already ranked by relevance)
-                            best_result = search_results[0]
-                            # logger.info(f"🏆 Using top-ranked result: {best_result.get('keywords', 'No keywords')}")
             
             # 5. Generate response using Groq with context-aware analysis
+            # Debug removed
             if best_result:
                 # logger.info("📚 Using database context for response generation")
                 # Provide complete database information as context
@@ -1071,9 +1132,7 @@ class ChatBot:
                     keywords = best_result.get('keywords', '')
                     response = best_result.get('response', '')
                     context = f"Database Information: {keywords} - {response}"
-                    # logger.info(f"📚 DEBUG: Context built: {context[:200]}...")
-                    # logger.info(f"📚 DEBUG: Keywords: '{keywords}'")
-                    # logger.info(f"📚 DEBUG: Response: '{response[:100]}...'")
+                    # Debug removed
                 else:
                     logger.warning(f"⚠️ Best result is not a dict: {type(best_result)} - {best_result}")
                     context = f"Database Information: {best_result}"
@@ -1082,20 +1141,8 @@ class ChatBot:
                 if 'grade' in query.lower() and 'grade level' in context.lower():
                     context += "\n\nIMPORTANT: If the database says 'kindergarten through grade 6', this means Grade 7 and above are NOT offered."
                 
-                # 🎯 NEW: Handle grade validation responses
-                if isinstance(best_result, dict) and best_result.get('is_grade_validation'):
-                    # This is a grade validation response - use it directly
-                    response_text = best_result.get('response', '')
-                    # logger.info(f"🎯 Grade validation response: {response_text}")
-                    return ChatResponse(
-                        response=[response_text],
-                        entities=entities,
-                        detected_language=response_lang,
-                        language_confidence=confidence,
-                        is_split=False,
-                        message_count=1,
-                        intent=nlu_result.intent.value if nlu_result and nlu_result.intent else 'unknown'
-                    )
+                # 🎯 REMOVED: Grade validation bypass - let all responses go through natural response generator
+                # This ensures grade responses are natural and conversational, not robotic
                 
                 # 🎯 FIX: Enhance context for Tagalog queries
                 if detected_lang in ['tl', 'akl']:
@@ -1112,7 +1159,7 @@ class ChatBot:
                 # logger.info(f"🔍 DEBUG: No best_result, context set to: {context}")
             
             # Debug: Log the final context before sending to AI
-            # logger.info(f"🔍 FINAL CONTEXT: {context[:200]}...")  # Reduced for Railway
+            # Debug removed
             
             # Add personalized memory context
             if session_id:
@@ -1196,6 +1243,19 @@ class ChatBot:
                     # logger.info(f"🚨 {nlu_result.intent.value} detected - handling medical emergency")  # Commented out debug logs
                     # For medical emergencies, provide immediate emergency response
                     context = "MEDICAL EMERGENCY DETECTED - User is experiencing a medical emergency requiring immediate attention"
+                elif nlu_result and nlu_result.intent.value == 'unknown':
+                    # For unknown intents, try to use database results if available
+                    if conversation_history:
+                        # Try to enhance the query with context and search
+                        enhanced_query = self.database_search._enhance_query_with_context(query, conversation_history)
+                        search_results = await self.database_search.search_prompts(enhanced_query, limit=5, conversation_history=conversation_history)
+                        if search_results:
+                            best_result = search_results[0]
+                            context = f"Database Information: {best_result.get('keywords', '')} - {best_result.get('response', '')}"
+                        else:
+                            context = "User query is unclear or unknown. Provide helpful general assistance."
+                    else:
+                        context = "User query is unclear or unknown. Provide helpful general assistance."
                 elif nlu_result and nlu_result.intent.value == 'contact_escalation':
                     # For contact escalation, check if user has been persistent
                     persistent_escalation = self._check_persistent_escalation(conversation_history)
@@ -1236,16 +1296,41 @@ class ChatBot:
                 response_text = self.response_generator.add_messenger_link_if_needed(
                     response_text, query, context, response_lang
                 )
+                # Fix HTML attributes that may have been translated
+                if isinstance(response_text, list):
+                    response_text = [self._fix_translated_html(item) for item in response_text]
+                else:
+                    response_text = self._fix_translated_html(response_text)
             else:
-                response_text = await self.response_generator.generate_response(
-                    query, context, response_lang, conversation_history, nlu_info_dict, final_user_name, entities, float(confidence), None
-                )
+                # CRITICAL: Check if we have sufficient database context to prevent hallucinations
+                # But only for information queries - greetings, emergencies, etc. don't need database context
+                intent_requires_db = nlu_result and nlu_result.intent.value in [
+                    'staff_inquiry', 'general_inquiry', 'grade_inquiry', 'activity_inquiry', 
+                    'schedule_inquiry', 'facility_inquiry', 'unknown'
+                ]
+                
+                if intent_requires_db and (not context or len(context.strip()) < 50):  # Insufficient context for info queries
+                    logger.warning(f"⚠️ Insufficient database context for query: '{query[:50]}...'")
+                    # Return a safe response that doesn't hallucinate
+                    response_text = f"I don't have specific information about that in my database. Please contact the school office for more details."
+                else:
+                    response_text = await self.response_generator.generate_response(
+                        query, context, response_lang, conversation_history, nlu_info_dict, final_user_name, entities, float(confidence), None
+                    )
                 
                 # Add Messenger link for contact escalation requests (only for non-hardcoded responses)
                 if nlu_result and nlu_result.intent.value == 'contact_escalation':
                     response_text = self.response_generator.add_messenger_link_if_needed(
                         response_text, query, context, response_lang
                     )
+                
+                # Fix HTML attributes that may have been translated
+                logger.info(f"🔧 Before AI HTML fix: {response_text}")
+                if isinstance(response_text, list):
+                    response_text = [self._fix_translated_html(item) for item in response_text]
+                else:
+                    response_text = self._fix_translated_html(response_text)
+                logger.info(f"🔧 After AI HTML fix: {response_text}")
                 # Ensure response_text is properly flattened if it's a nested list
                 if isinstance(response_text, list) and len(response_text) > 0 and isinstance(response_text[0], list):
                     # Flatten nested lists
@@ -1334,6 +1419,12 @@ class ChatBot:
                     if translation_confidence > 0.7:
                         response_text = translated_response
                     # logger.info(f"🌐 Context-aware translation applied (confidence: {translation_confidence:.2f})  # Commented out debug logs")
+                
+                # Fix HTML attributes that may have been translated (AFTER translation)
+                if isinstance(response_text, list):
+                    response_text = [self._fix_translated_html(item) for item in response_text]
+                else:
+                    response_text = self._fix_translated_html(response_text)
             
             # Post-process to fix HTML button if it was translated (AFTER translation)
             if isinstance(response_text, list) and len(response_text) > 1:

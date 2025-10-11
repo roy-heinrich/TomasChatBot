@@ -686,12 +686,17 @@ class NLUEngine:
         # Context words that indicate figurative usage (not real emergencies)
         figurative_contexts = [
             'to know', 'laughing', 'waiting to happen', 'killing me', 'skipped a beat',
-            'dying to', 'dying of', 'dying from', 'feels like', 'like a', 'as if'
+            'dying to', 'dying of', 'dying from', 'feels like', 'like a', 'as if',
+            'almost', 'nearly', 'thought', 'thinking', 'gonna', 'going to', 
+            'you made me', 'you gave me', 'you almost', 'you nearly', 'close call',
+            'was thinking', 'was worried', 'was scared', 'haha', 'hehe', 'lol',
+            'joke', 'joking', 'kidding', 'just kidding', 'not serious', 'not really'
         ]
         
-        # Special case for "dying to know" which is a common figurative expression
-        if "dying to know" in user_lower or ("dying" in user_lower and "to know" in user_lower):
-            logger.info(f"🎭 NLU: Figurative 'dying to know' expression detected in: '{user_input}'")
+        # Special cases for common figurative expressions
+        if ("dying to know" in user_lower or ("dying" in user_lower and "to know" in user_lower) or
+            "dying laughing" in user_lower or ("dying" in user_lower and "laughing" in user_lower)):
+            logger.info(f"🎭 NLU: Figurative 'dying' expression detected in: '{user_input}'")
             # Skip emergency detection for this query
         else:
             # Check for direct critical emergency phrases first
@@ -874,11 +879,14 @@ class NLUEngine:
         
         # 🚨 REMOVED: Old emergency detection code replaced by context-aware detection above
         
-        # Enhanced emotional expression detection for Tagalog/Aklanon
+        # Enhanced emotional expression detection for Tagalog/Aklanon and English
         emotional_patterns = [
             "malungkot ako", "masaya ako", "nag-aalala ako", "natutuwa ako", 
             "pagod ako", "galit ako", "nervous ako", "takot ako", "nalilito ako", 
-            "naiinis ako", "nag-aalala ako", "nalulungkot ako"
+            "naiinis ako", "nag-aalala ako", "nalulungkot ako",
+            # English emotional expressions
+            "dying laughing", "laughing so hard", "can't stop laughing", "rolling on the floor",
+            "this is killing me", "i'm cracking up", "bursting with laughter"
         ]
         
         for pattern in emotional_patterns:
@@ -901,11 +909,13 @@ class NLUEngine:
         contact_escalation_patterns = [
             # English patterns
             "talk to someone", "speak to someone", "contact someone", "live person", "human",
-            "staff member", "teacher", "principal", "want to speak", "need to talk", "talk to a live",
+            "staff member", "want to speak", "need to talk", "talk to a live",
             "speak to a live", "contact a live", "talk to staff", "speak to staff", "contact staff",
             "talk to teacher", "speak to teacher", "contact teacher", "talk to principal", "speak to principal",
             "contact principal", "talk to guidance", "speak to guidance", "contact guidance",
             "talk to counselor", "speak to counselor", "contact counselor",
+            "where can i contact", "how can i contact", "contact the admin", "talk to admin",
+            "where is the messenger", "messenger link", "messenger button", "contact link",
             # More specific patterns for better matching
             "want to talk to", "want to speak to", "need to talk to", "need to speak to",
             "talk to a live person", "speak to a live person", "contact a live person",
@@ -948,7 +958,7 @@ class NLUEngine:
         # Priority 3: Name introductions - HIGH PRIORITY for greetings + names
         # This catches "hi i am john" as name_introduction rather than greeting_with_name
         name_intro_patterns = [
-            "my name is", "i am", "i'm", "im ", "ako si", "ako ay", "called",
+            "my name is", "i am called", "i'm called", "im called", "ako si", "ako ay", "called",
             "ngaean ko si", "ngaean ko", "ngaean", "ngaean si"  # Aklanon patterns
         ]
         
@@ -996,20 +1006,23 @@ class NLUEngine:
         if "may prinsipal" in user_lower or "may principal" in user_lower:
             return NLUResult(Intent.STAFF_INQUIRY, 0.9, [])
         
-        staff_words = ["teacher", "teachers", "staff", "principal", "prinsipal", "head teacher", "school head", "head", "director", "administrator", "guro", "maestro", "faculty", "guidance", "counselor", "adviser", "advisor", "advisers", "advisors"]
+        staff_words = ["teacher", "teachers", "staff", "principal", "prinsipal", "head teacher", "school head", "head", "director", "administrator", "guro", "maestro", "faculty", "guidance", "counselor", "adviser", "advisor", "advisers", "advisors", "support aide", "learning support aide", "aide"]
         if any(word in user_lower for word in staff_words):
             return NLUResult(Intent.STAFF_INQUIRY, 0.7, [])
         
         # Priority 3: Enhanced greeting classification with mood/style detection
-        greeting_keywords = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", "good afternoon", "good evening", "magandang umaga", "magandang hapon", "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", "evening", "greetings", "hiya", "wassup", "howdy", "sup", "yo"]
+        greeting_keywords = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", "good afternoon", "good evening", "magandang umaga", "magandang hapon", "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", "evening", "greetings", "hiya", "wassup", "howdy"]
         
-        if any(greet in user_lower for greet in greeting_keywords):
+        # Use word boundary matching to prevent substring matches
+        import re
+        greeting_pattern = r'\b(' + '|'.join(re.escape(greet) for greet in greeting_keywords) + r')\b'
+        if re.search(greeting_pattern, user_lower):
             # Detect greeting style/mood for dynamic personalization
             if any(word in user_lower for word in ["awesome", "great", "fantastic", "wonderful", "amazing", "excited", "!!!", "super", "really good"]):
                 return NLUResult(Intent.GREETING_EXCITED, 0.9, [])
             elif any(word in user_lower for word in ["sir", "ma'am", "please", "good day", "greetings", "salutations", "formal"]):
                 return NLUResult(Intent.GREETING_FORMAL, 0.9, [])
-            elif any(word in user_lower for word in ["sup", "yo", "hiya", "wassup", "howdy", "hey there", "casual"]):
+            elif any(word in user_lower for word in ["sup", "hiya", "wassup", "howdy", "hey there", "casual"]):
                 return NLUResult(Intent.GREETING_CASUAL, 0.9, [])
             elif any(word in user_lower for word in ["back", "again", "return", "here again", "returning"]):
                 return NLUResult(Intent.GREETING_RETURNING_USER, 0.9, [])
@@ -1330,13 +1343,16 @@ class NLUEngine:
         greeting_keywords = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", 
                            "good afternoon", "good evening", "magandang umaga", "magandang hapon", 
                            "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", 
-                           "evening", "greetings", "hiya", "wassup", "howdy", "sup", "yo"]
+                           "evening", "greetings", "hiya", "wassup", "howdy"]
         
-        if any(greet in user_lower for greet in greeting_keywords):
+        # Use word boundary matching to prevent substring matches
+        import re
+        greeting_pattern = r'\b(' + '|'.join(re.escape(greet) for greet in greeting_keywords) + r')\b'
+        if re.search(greeting_pattern, user_lower):
             confidence = 0.8  # Base confidence for greeting detection
             
-            # Check for name introduction first
-            if any(pattern in user_lower for pattern in ["my name is", "i am", "i'm", "im ", "ako si", "ngaean ko si", "ngaean ko"]):
+            # Check for name introduction first (more specific patterns)
+            if any(pattern in user_lower for pattern in ["my name is", "i am called", "i'm called", "im called", "ako si", "ngaean ko si", "ngaean ko"]):
                 intent = Intent.GREETING_WITH_NAME
                 confidence = 0.95
             
@@ -1347,7 +1363,7 @@ class NLUEngine:
             elif any(word in user_lower for word in ["sir", "ma'am", "please", "good day", "greetings", "salutations", "formal"]):
                 intent = Intent.GREETING_FORMAL
                 confidence = 0.9
-            elif any(word in user_lower for word in ["sup", "yo", "hiya", "wassup", "howdy", "hey there", "casual"]):
+            elif any(word in user_lower for word in ["hiya", "wassup", "howdy", "hey there", "casual"]):
                 intent = Intent.GREETING_CASUAL
                 confidence = 0.9
             elif any(word in user_lower for word in ["back", "again", "return", "here again", "returning"]):

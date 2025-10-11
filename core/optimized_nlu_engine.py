@@ -1,0 +1,273 @@
+"""
+Optimized NLU Engine with Caching
+High-performance Natural Language Understanding with Redis caching
+"""
+import logging
+import json
+import hashlib
+import asyncio
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+from nlu_engine import NLUEngine, NLUResult
+
+logger = logging.getLogger(__name__)
+
+class OptimizedNLUEngine(NLUEngine):
+    """NLU Engine with Redis caching and performance optimizations"""
+    
+    def __init__(self, redis_client=None):
+        super().__init__()
+        self.redis = redis_client
+        self.cache_ttl = 1800  # 30 minutes cache for NLU results
+        self.redis_available = False
+        
+        # Initialize Redis connection
+        self._initialize_redis()
+        
+        # Pre-compile regex patterns for better performance
+        self._compile_patterns()
+    
+    def _initialize_redis(self):
+        """Initialize Redis connection for NLU caching"""
+        if not self.redis:
+            try:
+                import redis
+                import os
+                
+                if os.environ.get('REDIS_URL'):
+                    self.redis = redis.from_url(os.environ.get('REDIS_URL'), decode_responses=True)
+                    self.redis.ping()
+                    self.redis_available = True
+                    logger.info("✅ NLU Redis cache initialized")
+                else:
+                    logger.info("⚠️ No Redis URL - NLU caching disabled")
+            except Exception as e:
+                logger.warning(f"⚠️ NLU Redis not available: {e}")
+                self.redis_available = False
+    
+    def _compile_patterns(self):
+        """Pre-compile regex patterns for better performance"""
+        import re
+        
+        # Pre-compile commonly used patterns
+        self.compiled_patterns = {
+            'emergency_keywords': re.compile(r'\b(?:heart attack|stroke|bleeding|unconscious|dying|emergency|ambulance|911|urgent)\b', re.IGNORECASE),
+            'greeting_patterns': re.compile(r'\b(?:hi+|hello+|hey+|good morning|good afternoon|good evening|greetings|kumusta|kamusta)\b', re.IGNORECASE),
+            'question_patterns': re.compile(r'\b(?:what|who|when|where|why|how|which|can|could|would|should|is|are|do|does|did)\b', re.IGNORECASE),
+            'name_patterns': re.compile(r'\b(?:i\'m|im|i am|my name is|call me)\s+(\w+)\b', re.IGNORECASE),
+            'grade_patterns': re.compile(r'\b(?:grade|g)\s*(\d+)\b', re.IGNORECASE),
+            'contact_patterns': re.compile(r'\b(?:contact|speak|talk|call|message|admin|office)\b', re.IGNORECASE)
+        }
+    
+    def _create_nlu_cache_key(self, user_input: str, context: Dict = None) -> str:
+        """Create cache key for NLU results"""
+        # Normalize input for consistent caching
+        normalized_input = user_input.lower().strip()
+        
+        # Include context if provided (skip datetime objects)
+        context_str = ""
+        if context:
+            # Clean context of datetime objects before serializing
+            clean_context = self._clean_context_for_caching(context)
+            context_str = json.dumps(clean_context, sort_keys=True)
+        
+        # Create hash
+        key_string = f"{normalized_input}:{context_str}"
+        query_hash = hashlib.md5(key_string.encode()).hexdigest()
+        return f"nlu:{query_hash}"
+    
+    def _clean_context_for_caching(self, context: Dict) -> Dict:
+        """Clean context by converting datetime objects to strings"""
+        clean_context = {}
+        for key, value in context.items():
+            if isinstance(value, datetime):
+                clean_context[key] = value.isoformat()
+            elif isinstance(value, dict):
+                clean_context[key] = self._clean_context_for_caching(value)
+            elif isinstance(value, list):
+                clean_context[key] = [
+                    item.isoformat() if isinstance(item, datetime) else item
+                    for item in value
+                ]
+            else:
+                clean_context[key] = value
+        return clean_context
+    
+    def _get_nlu_from_cache(self, cache_key: str) -> Optional[NLUResult]:
+        """Get NLU result from cache"""
+        if not self.redis_available:
+            return None
+        
+        try:
+            cached_data = self.redis.get(cache_key)
+            if cached_data:
+                logger.info(f"🚀 NLU Cache HIT for: {cache_key[:20]}...")
+                data = json.loads(cached_data)
+                # Reconstruct NLUResult from cached data
+                from nlu_engine import Intent
+                from entity_extractor import ExtractedEntity
+                
+                intent = Intent(data['intent']) if data['intent'] else None
+                entities = [ExtractedEntity(entity_type=e['type'], value=e['value'], confidence=e.get('confidence', 0.8)) for e in data['entities']] if data['entities'] else []
+                
+                result = NLUResult(
+                    intent=intent,
+                    confidence=data['confidence'],
+                    entities=entities,
+                    is_multi_question=data.get('is_multi_question', False),
+                    questions=data.get('questions', None)
+                )
+                return result
+        except Exception as e:
+            logger.warning(f"NLU cache get error: {e}")
+        
+        return None
+    
+    def _store_nlu_in_cache(self, cache_key: str, result: NLUResult) -> bool:
+        """Store NLU result in cache"""
+        if not self.redis_available:
+            return False
+        
+        try:
+            # Convert NLUResult to dict for caching
+            data = {
+                'intent': result.intent.value if result.intent else None,
+                'confidence': result.confidence,
+                'entities': [{'type': e.type, 'value': e.value} for e in result.entities] if result.entities else [],
+                'is_emergency': getattr(result, 'is_emergency', False),
+                'is_multi_question': result.is_multi_question,
+                'questions': result.questions,
+                'language': getattr(result, 'language', 'en')
+            }
+            
+            self.redis.setex(cache_key, self.cache_ttl, json.dumps(data))
+            logger.info(f"💾 NLU Cached result for: {cache_key[:20]}...")
+            return True
+        except Exception as e:
+            logger.warning(f"NLU cache store error: {e}")
+            return False
+    
+    async def analyze_intent(self, user_input: str, context: Dict = None) -> NLUResult:
+        """Optimized intent analysis with caching"""
+        # Create cache key
+        cache_key = self._create_nlu_cache_key(user_input, context)
+        
+        # Try to get from cache first
+        cached_result = self._get_nlu_from_cache(cache_key)
+        if cached_result:
+            return cached_result
+        
+        # Cache miss - perform analysis
+        logger.info(f"💾 NLU Cache MISS for: {user_input[:50]}...")
+        
+        # Use optimized analysis
+        result = await self._analyze_intent_optimized(user_input, context)
+        
+        # Store in cache
+        self._store_nlu_in_cache(cache_key, result)
+        
+        return result
+    
+    async def _analyze_intent_optimized(self, user_input: str, context: Dict = None) -> NLUResult:
+        """Optimized intent analysis with pre-compiled patterns"""
+        # Use pre-compiled patterns for faster matching
+        user_lower = user_input.lower()
+        
+        # Quick emergency check using compiled pattern
+        if self.compiled_patterns['emergency_keywords'].search(user_lower):
+            return await self._quick_emergency_detection(user_input, context)
+        
+        # Quick greeting check
+        if self.compiled_patterns['greeting_patterns'].search(user_lower):
+            return await self._quick_greeting_detection(user_input, context)
+        
+        # Quick contact escalation check
+        if self.compiled_patterns['contact_patterns'].search(user_lower):
+            return await self._quick_contact_detection(user_input, context)
+        
+        # Fall back to full analysis for complex cases
+        return await super()._analyze_single_intent(user_input, context)
+    
+    async def _quick_emergency_detection(self, user_input: str, context: Dict = None) -> NLUResult:
+        """Fast emergency detection using compiled patterns"""
+        from nlu_engine import Intent
+        
+        # Use compiled pattern for faster matching
+        emergency_match = self.compiled_patterns['emergency_keywords'].search(user_input.lower())
+        
+        if emergency_match:
+            return NLUResult(
+                intent=Intent.EMERGENCY,
+                confidence=0.95,
+                entities=[]
+            )
+        
+        # Fall back to full analysis
+        return await super()._analyze_single_intent(user_input, context)
+    
+    async def _quick_greeting_detection(self, user_input: str, context: Dict = None) -> NLUResult:
+        """Fast greeting detection using compiled patterns"""
+        from nlu_engine import Intent
+        
+        # Check for name introduction
+        name_match = self.compiled_patterns['name_patterns'].search(user_input.lower())
+        
+        if name_match:
+            from entity_extractor import ExtractedEntity
+            return NLUResult(
+                intent=Intent.GREETING_WITH_NAME,
+                confidence=0.90,
+                entities=[ExtractedEntity(entity_type="name", value=name_match.group(1), confidence=0.9)]
+            )
+        
+        return NLUResult(
+            intent=Intent.GREETING_SIMPLE,
+            confidence=0.85,
+            entities=[]
+        )
+    
+    async def _quick_contact_detection(self, user_input: str, context: Dict = None) -> NLUResult:
+        """Fast contact escalation detection"""
+        from nlu_engine import Intent
+        
+        return NLUResult(
+            intent=Intent.CONTACT_ESCALATION,
+            confidence=0.80,
+            entities=[]
+        )
+    
+    def clear_nlu_cache(self, pattern: str = None) -> bool:
+        """Clear NLU cache entries"""
+        if not self.redis_available:
+            return False
+        
+        try:
+            if pattern:
+                keys = self.redis.keys(f"nlu:{pattern}")
+                if keys:
+                    self.redis.delete(*keys)
+                    logger.info(f"🗑️ Cleared {len(keys)} NLU cache entries")
+            else:
+                keys = self.redis.keys("nlu:*")
+                if keys:
+                    self.redis.delete(*keys)
+                    logger.info(f"🗑️ Cleared all NLU cache entries")
+            return True
+        except Exception as e:
+            logger.error(f"NLU cache clear error: {e}")
+            return False
+    
+    def get_nlu_cache_stats(self) -> Dict[str, Any]:
+        """Get NLU cache statistics"""
+        if not self.redis_available:
+            return {"nlu_cache_available": False}
+        
+        try:
+            keys = self.redis.keys("nlu:*")
+            return {
+                "nlu_cache_available": True,
+                "cached_intents": len(keys),
+                "cache_ttl": self.cache_ttl
+            }
+        except Exception as e:
+            return {"nlu_cache_available": False, "error": str(e)}

@@ -124,7 +124,8 @@ class LanguageDetector:
             r'^[a-z]+(ing|ed|er|est|ly|tion|sion|ness|ment)$',  # English suffixes
             r'^(the|and|or|but|in|on|at|to|for|of|with|by)$',   # English articles/prepositions
             r'^(what|where|when|why|how|who|which)$',           # English question words
-            r'^(is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|can|could|should|may|might)$'  # English verbs
+            r'^(is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|can|could|should|may|might)$',  # English verbs
+            r'^(support|aide|teacher|student|school|principal|admin|staff|learning|education|sports|activities)$'  # Common English school terms
         ]
         
         return any(re.match(pattern, word) for pattern in english_patterns)
@@ -205,6 +206,23 @@ class LanguageDetector:
     def _detect_with_patterns(self, text_lower: str) -> Tuple[str, float]:
         """Detect language using pattern matching"""
         try:
+            # Check for greeting patterns first (more specific)
+            english_greetings = ["good morning", "good afternoon", "good evening", "good day", "hello", "hi there", "hey there"]
+            tagalog_greetings = ["kumusta", "kamusta", "magandang umaga", "magandang hapon", "magandang gabi"]
+            
+            if any(greeting in text_lower for greeting in english_greetings):
+                return "en", 0.9
+            elif any(greeting in text_lower for greeting in tagalog_greetings):
+                return "tl", 0.9
+            
+            # Check for mixed-language indicators first
+            mixed_tagalog_indicators = ["po", "ng", "sa", "ang", "ay", "si", "mga"]
+            has_mixed_tagalog = any(indicator in text_lower for indicator in mixed_tagalog_indicators)
+            
+            if has_mixed_tagalog:
+                # If mixed Tagalog indicators are present, prefer Tagalog
+                return "tl", 0.8
+            
             # Count language-specific patterns
             pattern_counts = {"en": 0, "tl": 0, "akl": 0}
             

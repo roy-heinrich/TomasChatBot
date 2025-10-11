@@ -212,27 +212,27 @@ class LocalAIProvider:
         
         # Greetings
         if any(word in prompt_lower for word in ["hello", "hi", "hey", "kumusta", "kamusta"]):
-            return "Hello! I'm TOMAS, your digital assistant for Tomas SM. Bautista Elementary School. How can I help you with school-related questions today?"
+            return "Hi! I'm TOMAS, and I'm here to help with questions about Tomas SM. Bautista Elementary School. What can I help you with today?"
         
         # Gratitude
         elif any(word in prompt_lower for word in ["thank", "thanks", "salamat"]):
-            return "You're welcome! I'm glad I could help. Is there anything else about our school that you'd like to know?"
+            return "You're very welcome! I'm glad I could help. Feel free to ask if you have any other questions about the school."
         
         # Enrollment queries
         elif any(word in prompt_lower for word in ["enrollment", "enroll", "admission", "register", "application"]):
-            return "For enrollment and admission information, please visit our school office or contact them directly. They have the most current enrollment requirements and procedures."
+            return "For enrollment information, I'd recommend visiting the school office or giving them a call. They have all the current requirements and can guide you through the process."
         
         # Schedule and time queries
         elif any(word in prompt_lower for word in ["schedule", "time", "when", "hours", "class", "school hours"]):
-            return "For current school schedules and hours, please check with the school office or your teachers. They can provide you with the most up-to-date information."
+            return "For the most current schedule information, check with the school office or your child's teacher. They'll have the latest class times and any recent changes."
         
         # Contact information
         elif any(word in prompt_lower for word in ["contact", "phone", "number", "email", "address"]):
-            return "For contact information and to speak with someone directly, please visit the school office or call them. They can provide you with the most current contact details."
+            return "The school office is your best contact for getting phone numbers, email addresses, and other contact details. They're always happy to help with any questions."
         
         # Academic queries
         elif any(word in prompt_lower for word in ["grade", "subject", "course", "curriculum", "study"]):
-            return "For academic information about grades, subjects, or curriculum, please speak with your teachers or the school office for the most accurate details."
+            return "For academic information about grades, subjects, or curriculum, your child's teacher or the school office would have the most accurate and current details."
         
         # General help
         elif any(word in prompt_lower for word in ["help", "assistance", "support", "tulong"]):

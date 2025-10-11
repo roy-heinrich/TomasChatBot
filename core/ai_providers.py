@@ -72,7 +72,7 @@ class GroqProvider(AIProvider):
     async def generate_response(self, prompt: str, system_prompt: str = None, 
                               max_tokens: int = 1000, temperature: float = 0.7) -> AIResponse:
         if not self.client:
-            return AIResponse("", "groq", "llama-3.1-8b", success=False, error="Client not initialized")
+            return AIResponse("", "groq", "meta-llama/llama-4-scout-17b-16e-instruct", success=False, error="Client not initialized")
         
         try:
             messages = []
@@ -88,7 +88,7 @@ class GroqProvider(AIProvider):
                 # Use asyncio.wait_for to implement custom timeout and rate limit detection
                 def make_request():
                     return self.client.chat.completions.create(
-                        model=self.model or "llama-3.1-8b-instant",
+                        model=self.model or "meta-llama/llama-4-scout-17b-16e-instruct",
                         messages=messages,
                         max_tokens=max_tokens,
                         temperature=temperature
@@ -103,7 +103,7 @@ class GroqProvider(AIProvider):
                 return AIResponse(
                     content=response.choices[0].message.content,
                     provider="groq",
-                    model=self.model or "llama-3.1-8b",
+                    model=self.model or "meta-llama/llama-4-scout-17b-16e-instruct",
                     tokens_used=response.usage.total_tokens if response.usage else 0,
                     success=True
                 )
@@ -111,7 +111,7 @@ class GroqProvider(AIProvider):
             except asyncio.TimeoutError:
                 # Timeout - could be network issue or rate limit, but don't assume rate limit
                 logger.warning("⏰ Groq timeout - switching to next provider")
-                return AIResponse("", "groq", self.model or "llama-3.1-8b", 
+                return AIResponse("", "groq", self.model or "meta-llama/llama-4-scout-17b-16e-instruct", 
                                success=False, error="Request timeout")
             
             except GroqError as e:
@@ -121,32 +121,32 @@ class GroqProvider(AIProvider):
                     "rate limit", "429", "too many requests", "rate_limit_exceeded"
                 ]):
                     logger.warning(f"🚫 Groq rate limited: {e}")
-                    return AIResponse("", "groq", self.model or "llama-3.1-8b", 
+                    return AIResponse("", "groq", self.model or "meta-llama/llama-4-scout-17b-16e-instruct", 
                                    success=False, error=f"Rate limited: {e}")
                 elif any(quota in error_msg for quota in [
                     "quota", "exceeded", "limit reached"
                 ]):
                     logger.warning(f"🚫 Groq quota exceeded: {e}")
-                    return AIResponse("", "groq", self.model or "llama-3.1-8b", 
+                    return AIResponse("", "groq", self.model or "meta-llama/llama-4-scout-17b-16e-instruct", 
                                    success=False, error=f"Quota exceeded: {e}")
                 else:
                     logger.error(f"Groq API error: {e}")
-                    return AIResponse("", "groq", self.model or "llama-3.1-8b", 
+                    return AIResponse("", "groq", self.model or "meta-llama/llama-4-scout-17b-16e-instruct", 
                                    success=False, error=str(e))
             
         except Exception as e:
             error_msg = str(e).lower()
             if "rate limit" in error_msg or "429" in error_msg:
                 logger.warning(f"🚫 Groq rate limited (exception): {e}")
-                return AIResponse("", "groq", self.model or "llama-3.1-8b", 
+                return AIResponse("", "groq", self.model or "meta-llama/llama-4-scout-17b-16e-instruct", 
                                success=False, error=f"Rate limited: {e}")
             elif "timeout" in error_msg:
                 logger.warning(f"⏰ Groq timeout: {e}")
-                return AIResponse("", "groq", self.model or "llama-3.1-8b", 
+                return AIResponse("", "groq", self.model or "meta-llama/llama-4-scout-17b-16e-instruct", 
                                success=False, error=f"Timeout: {e}")
             else:
                 logger.error(f"Groq API error: {e}")
-                return AIResponse("", "groq", self.model or "llama-3.1-8b", 
+                return AIResponse("", "groq", self.model or "meta-llama/llama-4-scout-17b-16e-instruct", 
                                success=False, error=str(e))
     
     def is_available(self) -> bool:
@@ -243,22 +243,22 @@ class HuggingFaceProvider(AIProvider):
                             success=False, error=str(e))
     
     def _generate_simple_response(self, prompt: str) -> str:
-        """Generate a simple response when AI models fail"""
+        """Generate a natural response when AI models fail"""
         prompt_lower = prompt.lower()
         
-        # Simple keyword-based responses
+        # Natural, conversational responses
         if any(word in prompt_lower for word in ["hello", "hi", "hey", "kumusta", "kamusta", "good morning", "good afternoon"]):
-            return "Hello! How can I help you with school-related questions today? I'm here to assist with information about enrollment, schedules, and other school matters."
+            return "Hi there! I'm here to help with any questions about Tomas SM. Bautista Elementary School. What would you like to know?"
         elif any(word in prompt_lower for word in ["thank", "thanks", "salamat", "appreciate"]):
-            return "You're welcome! I'm glad I could help. Is there anything else you need assistance with regarding school information?"
+            return "You're very welcome! I'm happy I could help. Feel free to ask if you have any other questions about the school."
         elif any(word in prompt_lower for word in ["enrollment", "enroll", "admission", "apply", "application"]):
-            return "For enrollment information, please contact the school office directly. They can provide you with the most up-to-date enrollment requirements, deadlines, and procedures."
+            return "For enrollment details, the best thing to do is visit the school office or give them a call. They have all the current requirements and can walk you through the process step by step."
         elif any(word in prompt_lower for word in ["schedule", "time", "when", "class", "period", "timetable"]):
-            return "For schedule information, please check with the school office or your teachers for the most current class schedules and timing details."
+            return "For the most up-to-date schedule information, I'd recommend checking with the school office or your child's teacher. They'll have the current class times and any recent changes."
         elif any(word in prompt_lower for word in ["contact", "phone", "number", "email", "reach"]):
-            return "You can contact the school office directly for contact information and assistance. They'll be able to provide you with the appropriate phone numbers and email addresses."
+            return "The school office is your best bet for contact information. They can give you the right phone numbers and email addresses, and they're always happy to help with any questions."
         elif any(word in prompt_lower for word in ["fee", "fees", "payment", "tuition", "cost"]):
-            return "For information about school fees and payment details, please contact the school's finance office or main office for accurate and current pricing."
+            return "For specific fee information, the school office or finance department would have the most current details. They can explain all the costs and payment options available."
         elif any(word in prompt_lower for word in ["grade", "grades", "academic", "subject", "course"]):
             return "For academic information including grades and course details, please speak with your teachers or the academic office."
         else:
@@ -382,7 +382,7 @@ class MultiProviderAI:
             {
                 "class": GroqProvider,
                 "api_key": os.environ.get("GROQ_API_KEY"),
-                "model": "llama-3.1-8b-instant"
+                "model": "meta-llama/llama-4-scout-17b-16e-instruct"
             },
             {
                 "class": CohereProvider,

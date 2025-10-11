@@ -29,7 +29,7 @@ class ImprovedScorer:
         self.intent_patterns = {
             'staff': ['who', 'sino', 'teacher', 'adviser', 'principal', 'staff', 'guro', 'head', 'director', 'administrator'],
             'schedule': ['hours', 'schedule', 'time', 'when', 'start', 'end'],
-            'location': ['where', 'saan', 'location', 'find'],
+            'location': ['location of the', 'find the'],  # More specific location patterns
             'grade': ['grade', 'baitang']
         }
     
@@ -54,16 +54,32 @@ class ImprovedScorer:
         if clean_query in keywords_lower or query_lower in keywords_lower:
             score += self.weights['keyword_match']
         
-        # 3. Word overlap scoring
+        # 2.5. Boost for exact phrase matches in keywords (highest priority)
+        important_phrases = ['learning support aide', 'support aide', 'grade level', 'grade levels']
+        for phrase in important_phrases:
+            if phrase in query_lower and phrase in keywords_lower:
+                score += 50  # High boost for exact phrase matches
+        
+        # 3. Word overlap scoring - require significant overlap to prevent false matches
         query_words = self._get_important_words(clean_query)
-        keyword_words = set(keywords_lower.split())
-        response_words = set(response_lower.split())
+        # Clean keyword words by removing punctuation
+        keyword_words_clean = [re.sub(r'[^\w]', '', word) for word in keywords_lower.split()]
+        keyword_words = set(word for word in keyword_words_clean if word)
+        response_words_clean = [re.sub(r'[^\w]', '', word) for word in response_lower.split()]
+        response_words = set(word for word in response_words_clean if word)
         
         keyword_overlap = len(query_words & keyword_words)
         response_overlap = len(query_words & response_words)
         
-        score += keyword_overlap * self.weights['word_overlap']
-        score += response_overlap * self.weights['response_match']
+        # Only apply word overlap scoring if there's significant overlap (avoid single-word matches)
+        # For short queries (2-3 words), require high overlap to prevent false matches like "sports" vs "support"
+        # For longer queries, use lower threshold to allow more flexible matching
+        overlap_threshold = 0.75 if len(query_words) <= 3 else 0.5
+        
+        if keyword_overlap >= len(query_words) * overlap_threshold:
+            score += keyword_overlap * self.weights['word_overlap']
+        if response_overlap >= len(query_words) * overlap_threshold:
+            score += response_overlap * self.weights['response_match']
         
         
         # 3.5. Enhanced word matching for activities
@@ -76,14 +92,16 @@ class ImprovedScorer:
                 if word in response_lower:
                     score += 10
         
-        # 4. Length bonus (concise answers preferred)
-        if len(result.get('response', '')) < 150:
+        # 4. Length bonus (concise answers preferred) - only if there's some relevance
+        if len(result.get('response', '')) < 150 and score > 0:
             score += self.weights['length_bonus']
         
-        # 5. Semantic similarity (simple fuzzy match)
+        # 5. Semantic similarity (simple fuzzy match) - with very strict threshold to prevent false matches
         similarity = SequenceMatcher(None, clean_query, keywords_lower).ratio()
-        similarity_score = int(similarity * self.weights['semantic_similarity'])
-        score += similarity_score
+        # Only apply similarity bonus if similarity is extremely high (>0.95) to prevent false matches like "sports" vs "support"
+        if similarity > 0.95:
+            similarity_score = int(similarity * self.weights['semantic_similarity'])
+            score += similarity_score
         
         # 5.5. Enhanced semantic matching for activities
         if 'activ' in query_lower and 'activ' in keywords_lower:
@@ -311,7 +329,7 @@ class DatabaseSearchEngine:
                 # Search for grade level information in database
                 result = self.supabase.table("chatbot_prompts") \
                     .select("keywords, response") \
-                    .or_("keywords.ilike.%grade level%,keywords.ilike.%grade%,keywords.ilike.%kindergarten%") \
+                    .text_search("search_tsv", "grade level OR grade OR kindergarten") \
                     .execute()
                 
                 if result.data:
@@ -426,38 +444,48 @@ class DatabaseSearchEngine:
             return f"Grade {min(grades)} through Grade {max(grades)}"
     
     def _translate_query_for_search(self, query: str) -> str:
-        """Translate Tagalog queries to English for better database matching using dynamic translation"""
-        query_lower = query.lower()
-        translated_query = query_lower
+        """Translate Tagalog queries to English for better database matching"""
+        import re
+        query_lower = query.lower().strip()
         
-        # 🚨 DYNAMIC TRANSLATION: Use database-driven translation instead of hardcoded dictionary
+        # Try basic translation first
         try:
-            # Get translation mappings from database or use AI-based translation
-            translated_query = self._get_dynamic_translation(query_lower)
-            # Removed verbose translation logging
-        except Exception as e:
-            logger.warning(f"Dynamic translation failed: {e}, using fallback")
-            # Fallback to basic pattern matching
-            translated_query = self._get_fallback_translation(query_lower)
-            # Removed verbose fallback translation logging
-        
-        # Dynamic pattern handling - no hardcoded translations
-        # Let the intelligent translation system handle all patterns
-        
-        
-        # 🎯 DYNAMIC TYPO FIX: Use fuzzy matching for typos
-        # This will be handled in the search logic, not here
+            from deep_translator import GoogleTranslator
+            translated_query = GoogleTranslator(source='auto', target='en').translate(query_lower)
+        except:
+            translated_query = query_lower
         
         # Clean up common words that don't help with matching
         # Include Aklanon particles: 'du' (the), 'it' (this), 'hay' (is)
-        words_to_remove = ['ang', 'ng', 'sa', 'para', 'in', 'who', 'what', 'where', 'when', 'why', 'how', 'kayo', 'kayO', 'du', 'it', 'hay']
+        words_to_remove = ['ang', 'ng', 'sa', 'para', 'in', 'who', 'what', 'where', 'when', 'why', 'how', 'kayo', 'kayO', 'du', 'it', 'hay', 'ba', 'may']
         translated_words = translated_query.split()
         cleaned_words = [word for word in translated_words if word not in words_to_remove]
         translated_query = ' '.join(cleaned_words)
         
+        # Handle specific Tagalog question patterns
+        if 'learning support aide' in translated_query.lower():
+            translated_query = 'learning support aide'
+        elif 'support aide' in translated_query.lower():
+            translated_query = 'support aide'
+        elif 'teacher' in translated_query.lower() and 'grade' in translated_query.lower():
+            # Extract grade number and create proper query
+            import re
+            grade_match = re.search(r'grade\s+(\d+)', translated_query.lower())
+            if grade_match:
+                grade_num = grade_match.group(1)
+                translated_query = f'grade {grade_num} teacher'
+        elif 'principal' in translated_query.lower():
+            translated_query = 'principal'
+        elif 'cr' in translated_query.lower() or 'banyo' in translated_query.lower():
+            translated_query = 'comfort room'
+        
         # Special handling for "may prinsipal" queries
         if 'have principal' in translated_query or 'principal' in translated_query:
             # For principal queries, just search for "principal"
+            translated_query = 'principal'
+        
+        # Handle "sino ang principal" queries specifically
+        if 'sino' in query_lower and 'principal' in query_lower:
             translated_query = 'principal'
         
         # 🚨 FIX: Special handling for office hours queries
@@ -466,13 +494,202 @@ class DatabaseSearchEngine:
             translated_query = 'office hours'
             
         # 🚨 ENHANCED: Special handling for grade teacher queries
+        # Pattern 1: teacher/adviser before grade
         grade_teacher_pattern = re.search(r'(teacher|adviser|advisor|guro|titser|maestra|maestro).*?(grade|grado|baitang)\s*(\d+)', query_lower)
+        # Pattern 2: grade before teacher/adviser  
         if not grade_teacher_pattern:
             grade_teacher_pattern = re.search(r'(grade|grado|baitang)\s*(\d+).*?(teacher|adviser|advisor|guro|titser|maestra|maestro)', query_lower)
+        # Pattern 3: "may teacher ba ang grade X" - Tagalog question pattern
+        if not grade_teacher_pattern:
+            grade_teacher_pattern = re.search(r'may\s+(teacher|adviser|advisor|guro|titser|maestra|maestro)\s+ba\s+ang\s+(grade|grado|baitang)\s*(\d+)', query_lower)
             
         if grade_teacher_pattern:
             grade_num = None
-            if grade_teacher_pattern.group(1).lower() in ['grade', 'grado', 'baitang']:
+            # For Pattern 3: "may teacher ba ang grade X" - grade is in group 3
+            if len(grade_teacher_pattern.groups()) >= 3:
+                grade_num = grade_teacher_pattern.group(3)
+            # For Patterns 1 & 2: check if first group is grade or teacher
+            elif grade_teacher_pattern.group(1).lower() in ['grade', 'grado', 'baitang']:
+                grade_num = grade_teacher_pattern.group(2)
+            else:
+                grade_num = grade_teacher_pattern.group(3)
+                
+            if grade_num:
+                # For grade teacher queries, create a standardized search pattern
+                translated_query = f"grade {grade_num} adviser"
+                # logger.info(f"🔧 GRADE TEACHER QUERY: '{query_lower}' -> '{translated_query}'")
+        
+        # Log the translation for debugging
+        if translated_query != query_lower:
+            # logger.info(f"🔧 TYPO FIX: '{query_lower}' -> '{translated_query}'")
+            return translated_query
+        
+        return query_lower
+    
+    def _extract_important_keywords(self, query: str) -> List[str]:
+        """Extract important keywords from query using database-driven approach"""
+        try:
+            # Get all keywords from database
+            result = self.supabase.table("chatbot_prompts") \
+                .select("keywords") \
+                .execute()
+            
+            if not result.data:
+                return []
+            
+            # Build keyword database
+            all_keywords = []
+            for item in result.data:
+                if item.get('keywords'):
+                    all_keywords.extend(item['keywords'].split(', '))
+            
+            # Extract important keywords from query
+            important_keywords = []
+            query_words = query.split()
+            
+            for word in query_words:
+                # Skip only very common Tagalog particles and English stopwords
+                if word in ['ang', 'ng', 'sa', 'para', 'in', 'kayo', 'kayO', 'du', 'it', 'hay', 'ba', 'may', 'sino', 'ano', 'nasaan', 'saan']:
+                    continue
+                
+                # Check if word matches any database keyword (exact or partial)
+                best_match = None
+                best_score = 0
+                
+                for keyword in all_keywords:
+                    keyword_lower = keyword.lower().strip()
+                    
+                    # Exact match gets highest priority
+                    if word == keyword_lower:
+                        best_match = keyword_lower
+                        best_score = 1.0
+                        break
+                    # Partial match gets lower priority
+                    elif word in keyword_lower or keyword_lower in word:
+                        # Calculate similarity score
+                        from difflib import SequenceMatcher
+                        score = SequenceMatcher(None, word, keyword_lower).ratio()
+                        if score > best_score and score > 0.6:  # Only accept good matches
+                            best_match = keyword_lower
+                            best_score = score
+                
+                if best_match:
+                    # Found a match, add the best English equivalent
+                    english_keyword = self._get_english_equivalent(best_match)
+                    if english_keyword and english_keyword not in important_keywords:
+                        important_keywords.append(english_keyword)
+            
+            return important_keywords
+            
+        except Exception as e:
+            logger.warning(f"Keyword extraction failed: {e}")
+            return []
+    
+    def _get_english_equivalent(self, keyword: str) -> str:
+        """Get English equivalent of a keyword"""
+        # Common Tagalog to English mappings
+        mappings = {
+            'cr': 'comfort room',
+            'banyo': 'comfort room',
+            'palikuran': 'comfort room',
+            'guro': 'teacher',
+            'titser': 'teacher',
+            'maestra': 'teacher',
+            'maestro': 'teacher',
+            'adviser': 'adviser',
+            'advisor': 'adviser',
+            'prinsipal': 'principal',
+            'principal': 'principal',
+            'paaralan': 'school',
+            'eskwela': 'school',
+            'klase': 'class',
+            'grade': 'grade',
+            'baitang': 'grade',
+            'oras': 'hours',
+            'time': 'hours',
+            'library': 'library',
+            'aklatan': 'library',
+            'computer': 'computer',
+            'lab': 'laboratory',
+            'laboratory': 'laboratory',
+            'guidance': 'guidance',
+            'counselor': 'counselor',
+            'support aide': 'support aide',
+            'learning support aide': 'learning support aide',
+            'aide': 'aide'
+        }
+        
+        # Check for exact matches first
+        if keyword in mappings:
+            return mappings[keyword]
+        
+        # Check for partial matches
+        for tagalog, english in mappings.items():
+            if tagalog in keyword or keyword in tagalog:
+                return english
+        
+        # If no mapping found, return the keyword as-is (might already be English)
+        return keyword
+        
+        
+        # 🎯 DYNAMIC TYPO FIX: Use fuzzy matching for typos
+        # This will be handled in the search logic, not here
+        
+        # Clean up common words that don't help with matching
+        # Include Aklanon particles: 'du' (the), 'it' (this), 'hay' (is)
+        words_to_remove = ['ang', 'ng', 'sa', 'para', 'in', 'who', 'what', 'where', 'when', 'why', 'how', 'kayo', 'kayO', 'du', 'it', 'hay', 'ba', 'may']
+        translated_words = translated_query.split()
+        cleaned_words = [word for word in translated_words if word not in words_to_remove]
+        translated_query = ' '.join(cleaned_words)
+        
+        # Handle specific Tagalog question patterns
+        if 'learning support aide' in translated_query.lower():
+            translated_query = 'learning support aide'
+        elif 'support aide' in translated_query.lower():
+            translated_query = 'support aide'
+        elif 'teacher' in translated_query.lower() and 'grade' in translated_query.lower():
+            # Extract grade number and create proper query
+            import re
+            grade_match = re.search(r'grade\s+(\d+)', translated_query.lower())
+            if grade_match:
+                grade_num = grade_match.group(1)
+                translated_query = f'grade {grade_num} teacher'
+        elif 'principal' in translated_query.lower():
+            translated_query = 'principal'
+        elif 'cr' in translated_query.lower() or 'banyo' in translated_query.lower():
+            translated_query = 'comfort room'
+        
+        # Special handling for "may prinsipal" queries
+        if 'have principal' in translated_query or 'principal' in translated_query:
+            # For principal queries, just search for "principal"
+            translated_query = 'principal'
+        
+        # Handle "sino ang principal" queries specifically
+        if 'sino' in query_lower and 'principal' in query_lower:
+            translated_query = 'principal'
+        
+        # 🚨 FIX: Special handling for office hours queries
+        if 'office hours' in translated_query or 'opisyal hours' in translated_query:
+            # For office hours queries, search for "office hours"
+            translated_query = 'office hours'
+            
+        # 🚨 ENHANCED: Special handling for grade teacher queries
+        # Pattern 1: teacher/adviser before grade
+        grade_teacher_pattern = re.search(r'(teacher|adviser|advisor|guro|titser|maestra|maestro).*?(grade|grado|baitang)\s*(\d+)', query_lower)
+        # Pattern 2: grade before teacher/adviser  
+        if not grade_teacher_pattern:
+            grade_teacher_pattern = re.search(r'(grade|grado|baitang)\s*(\d+).*?(teacher|adviser|advisor|guro|titser|maestra|maestro)', query_lower)
+        # Pattern 3: "may teacher ba ang grade X" - Tagalog question pattern
+        if not grade_teacher_pattern:
+            grade_teacher_pattern = re.search(r'may\s+(teacher|adviser|advisor|guro|titser|maestra|maestro)\s+ba\s+ang\s+(grade|grado|baitang)\s*(\d+)', query_lower)
+            
+        if grade_teacher_pattern:
+            grade_num = None
+            # For Pattern 3: "may teacher ba ang grade X" - grade is in group 3
+            if len(grade_teacher_pattern.groups()) >= 3:
+                grade_num = grade_teacher_pattern.group(3)
+            # For Patterns 1 & 2: check if first group is grade or teacher
+            elif grade_teacher_pattern.group(1).lower() in ['grade', 'grado', 'baitang']:
                 grade_num = grade_teacher_pattern.group(2)
             else:
                 grade_num = grade_teacher_pattern.group(3)
@@ -552,6 +769,154 @@ class DatabaseSearchEngine:
                 best_match = keyword
         
         return best_match
+    
+    async def _quick_exact_search(self, query: str) -> List[Dict[str, Any]]:
+        """Quick exact search to check if we can skip WordNet expansion"""
+        try:
+            # Query is already translated by search_prompts
+            translated_query = query
+            
+            # Search for exact phrase matches first
+            clean_query = re.sub(r'[^\w\s]', ' ', translated_query.lower())
+            words = [w for w in clean_query.split() if len(w) > 2]
+            
+            if not words:
+                return []
+            
+            # Try exact phrase search first
+            exact_phrase = ' '.join(words)
+            try:
+                result = self.supabase.table("chatbot_prompts") \
+                    .select("*") \
+                    .text_search("search_tsv", exact_phrase) \
+                    .execute()
+                
+                if result.data and len(result.data) > 0:
+                    return list(result.data[:3])  # Return top 3 exact matches
+            except Exception:
+                pass
+            
+            # Try individual word search
+            results = []
+            seen_ids = set()
+            
+            for word in list(words[:3]):  # Only check first 3 words for performance
+                try:
+                    res = self.supabase.table("chatbot_prompts") \
+                        .select("*") \
+                        .text_search("search_tsv", word) \
+                        .execute()
+                    
+                    for item in res.data:
+                        if item['id'] not in seen_ids:
+                            results.append(item)
+                            seen_ids.add(item['id'])
+                            
+                    if len(results) >= 10:  # Get more results for better scoring
+                        break
+                except Exception:
+                    continue
+            
+            # Score and rank the results to get the most relevant ones
+            if results:
+                scored = []
+                for result in results:
+                    score = self._calculate_score(result, query)
+                    scored.append((score, result))
+                
+                # Sort by score and return top results
+                scored.sort(reverse=True, key=lambda x: x[0])
+                return list([result for score, result in scored if score > 0][:5])
+            
+            return list(results[:5])  # Return top 5 results
+            
+        except Exception as e:
+            logger.warning(f"Quick exact search failed: {e}")
+            return []
+    
+    def _expand_query_with_synonyms(self, query: str, conversation_history: List[Dict] = None) -> List[str]:
+        """Use NLTK WordNet for dynamic synonym expansion"""
+        try:
+            from nltk.corpus import wordnet
+            import nltk
+            
+            # Ensure WordNet is available
+            try:
+                nltk.data.find('corpora/wordnet')
+            except LookupError:
+                logger.warning("WordNet not available, using original query only")
+                return [query.lower()]
+            
+            variations = [query.lower()]
+            words = query.lower().split()
+            
+            for word in words:
+                if len(word) < 3:  # Skip short words
+                    continue
+                
+                # Get synonyms from WordNet
+                synonyms = set()
+                for syn in wordnet.synsets(word):
+                    # Only get synonyms from the same part of speech
+                    for lemma in syn.lemmas():
+                        synonym = lemma.name().replace('_', ' ')
+                        if synonym != word and len(synonym) > 2:
+                            synonyms.add(synonym)
+                
+                # Add variations with synonyms (limit to top 1 for performance)
+                if synonyms:
+                    for synonym in list(list(synonyms)[:1]):  # Only top 1 synonym for performance
+                        variation = query.lower().replace(word, synonym)
+                        variations.append(variation)
+            
+            # Remove duplicates
+            unique_variations = list(set(variations))
+            
+            return unique_variations
+            
+        except Exception as e:
+            logger.warning(f"Synonym expansion failed: {e}")
+            return [query.lower()]
+    
+    def _expand_with_nlu_entities(self, query: str, nlu_result) -> List[str]:
+        """Expand query using NLU entity information"""
+        try:
+            from nltk.corpus import wordnet
+            
+            variations = [query.lower()]
+            
+            if not nlu_result or not nlu_result.entities:
+                return variations
+            
+            # Use entity types to find domain-specific synonyms
+            for entity in nlu_result.entities:
+                entity_value = entity.value.lower()
+                entity_type = entity.type.lower()
+                
+                # Get context-appropriate synonyms based on entity type
+                if entity_type in ['person', 'staff', 'teacher', 'role']:
+                    # For staff/roles, get related position titles
+                    for syn in wordnet.synsets(entity_value, pos=wordnet.NOUN):
+                        for lemma in syn.lemmas():
+                            synonym = lemma.name().replace('_', ' ')
+                            if synonym != entity_value:
+                                variation = query.lower().replace(entity_value, synonym)
+                                variations.append(variation)
+                
+                elif entity_type in ['location', 'place', 'room']:
+                    # For locations, get related place terms
+                    for syn in wordnet.synsets(entity_value, pos=wordnet.NOUN):
+                        for lemma in syn.lemmas():
+                            synonym = lemma.name().replace('_', ' ')
+                            if synonym != entity_value:
+                                variation = query.lower().replace(entity_value, synonym)
+                                variations.append(variation)
+            
+            return list(set(variations))
+            
+        except Exception as e:
+            logger.warning(f"NLU entity expansion failed: {e}")
+            return [query.lower()]
     
     def _learn_question_patterns_from_database(self, query: str, keywords: List[str]) -> Dict[str, str]:
         """Learn question patterns from database keywords - no hardcoding"""
@@ -731,7 +1096,8 @@ class DatabaseSearchEngine:
             return query
         
         # Get the most recent user message (excluding the current query)
-        most_recent_message = recent_user_messages[-1] if recent_user_messages else None
+        # We want the previous message, not the current one
+        most_recent_message = recent_user_messages[-2] if len(recent_user_messages) >= 2 else None
         if not most_recent_message:
             return query
             
@@ -750,6 +1116,12 @@ class DatabaseSearchEngine:
         if any(word in content for word in ['adviser', 'advisor', 'teacher', 'guro']):
             context_words.append('adviser')
         
+        # Look for staff role references in the most recent message
+        staff_roles = ['support aide', 'learning support aide', 'aide', 'principal', 'staff', 'coordinator', 'counselor', 'guidance']
+        for role in staff_roles:
+            if role in content:
+                context_words.append(role)
+        
         # Look for specific names mentioned in the most recent message
         name_match = re.search(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b', content)
         if name_match:
@@ -764,116 +1136,97 @@ class DatabaseSearchEngine:
         
         return query
     
-    async def search_prompts(self, query: str, limit: int = 20, intent: str = None, use_semantic: bool = True, conversation_history: List[Dict] = None) -> List[Dict[str, Any]]:
-        """Smart scoring with conversation context awareness"""
+    async def search_prompts(self, query: str, limit: int = 20, intent: str = None, 
+                        use_semantic: bool = True, conversation_history: List[Dict] = None,
+                        nlu_result = None) -> List[Dict[str, Any]]:
+        """Smart scoring with NLU-driven synonym expansion"""
         try:
-            # 1. Enhance query with conversation context
-            enhanced_query = self._enhance_query_with_context(query, conversation_history)
-            # logger.info(f"🔍 Enhanced query: '{query}' -> '{enhanced_query}'")
-            
-            # 2. Clean query
-            clean = re.sub(r'[^\w\s]', ' ', enhanced_query.lower())
-            words = [w for w in clean.split() if len(w) > 2]
-            
-            if not words:
-                return []
-            
-            # 1.1 Check for grade teacher query pattern
-            is_grade_teacher_query = False
-            grade_number = None
-            
-            grade_teacher_pattern = re.search(r'(teacher|adviser|advisor|guro|titser|maestra|maestro).*?(grade|grado|baitang)\s*(\d+)', query.lower())
-            if not grade_teacher_pattern:
-                grade_teacher_pattern = re.search(r'(grade|grado|baitang)\s*(\d+).*?(teacher|adviser|advisor|guro|titser|maestra|maestro)', query.lower())
-                
-            if grade_teacher_pattern:
-                is_grade_teacher_query = True
-                if grade_teacher_pattern.group(1).lower() in ['grade', 'grado', 'baitang']:
-                    grade_number = grade_teacher_pattern.group(2)
-                else:
-                    grade_number = grade_teacher_pattern.group(3)
-            
-            # 1.2 Translate query for better matching
+            # 1. Translate query for better database matching
             translated_query = self._translate_query_for_search(query)
-            if translated_query != query.lower():
-                # Use translated words if available
-                clean_translated = re.sub(r'[^\w\s]', ' ', translated_query.lower())
-                translated_words = [w for w in clean_translated.split() if len(w) > 2]
-                if translated_words:
-                    words = translated_words
             
-            # 2. Search database
-            results = []
-            seen_ids = set()
+            # 2. Enhance query with conversation context
+            enhanced_query = self._enhance_query_with_context(translated_query, conversation_history)
             
-            for word in words:
-                try:
-                    # Use text_search on search_tsv column
-                    res = self.supabase.table("chatbot_prompts") \
-                        .select("*") \
-                        .text_search("search_tsv", word) \
-                        .execute()
-                    
-                    for item in res.data:
-                        if item['id'] not in seen_ids:
-                            results.append(item)
-                            seen_ids.add(item['id'])
-                except Exception as e:
-                    logger.warning(f"Text search failed for '{word}': {e}")
-                    # Fallback to ilike if text_search fails
-                    res = self.supabase.table("chatbot_prompts") \
-                        .select("*") \
-                        .or_(f"keywords.ilike.%{word}%,response.ilike.%{word}%") \
-                        .execute()
-                    
-                    for item in res.data:
-                        if item['id'] not in seen_ids:
-                            results.append(item)
-                            seen_ids.add(item['id'])
-            
-            # 3. Smart scoring with substring matching
-            query_words = set(words)
-            scored = []
-            
-            for result in results:
-                # Use the improved scorer for proper scoring
-                score = self._calculate_score(result, enhanced_query)
-                scored.append((score, result))
-            
-            # 4. Return best matches
-            scored.sort(reverse=True, key=lambda x: x[0])
-            results = [result for score, result in scored[:limit]]
-            
-            # 5. Special handling for grade teacher queries
-            if is_grade_teacher_query and grade_number and results:
-                # Check if we found a specific entry for this grade
-                found_specific_grade = False
-                for result in results[:3]:  # Check top 3 results
-                    if f"grade {grade_number}" in result['keywords'].lower() or f"grade{grade_number}" in result['keywords'].lower():
-                        found_specific_grade = True
-                        break
+            # 2. Check if original query finds exact matches first (performance optimization)
+            exact_results = await self._quick_exact_search(enhanced_query)
+            if exact_results and len(exact_results) > 0:
+                # Found exact matches, skip expensive WordNet expansion
+                logger.info(f"🔍 Found {len(exact_results)} exact matches, skipping WordNet expansion")
                 
-                if not found_specific_grade:
-                    # Create a fallback response using general grade information
-                    # This is database-driven as it uses the grade validation logic
-                    grade_validation = self._validate_grade_level(f"grade {grade_number}")
+                # Score the exact results and return them
+                scored = []
+                for result in exact_results:
+                    score = self._calculate_score(result, enhanced_query)
                     
-                    if grade_validation['is_valid']:
-                        # Valid grade but no specific teacher info
-                        fallback_response = {
-                            'keywords': f"Grade {grade_number} adviser, grade {grade_number} teacher",
-                            'response': f"Information about the specific teacher for Grade {grade_number} is not available in our database at this time.",
-                            'id': 999999,  # Use a special ID
-                            'is_grade_validation': True,
-                            'search_tsv': f"grade {grade_number} adviser teacher"
-                        }
-                        # Add this as the top result
-                        results.insert(0, fallback_response)
-            
-            return results
+                    # Boost based on NLU confidence
+                    if nlu_result and nlu_result.confidence > 0.7:
+                        score += int(nlu_result.confidence * 20)
+                    
+                    scored.append((score, result))
+                
+                scored.sort(reverse=True, key=lambda x: x[0])
+                return list([result for score, result in scored if score > 0][:limit])
+            else:
+                # No exact matches, use WordNet for synonym expansion
+                query_variations = self._expand_query_with_synonyms(enhanced_query, conversation_history)
+                
+                # 3. If NLU entities available, add entity-based expansions
+                if nlu_result:
+                    nlu_variations = self._expand_with_nlu_entities(enhanced_query, nlu_result)
+                    query_variations.extend(nlu_variations)
+                    
+                    # Boost scores based on NLU confidence
+                
+                # 4. Translate variations
+                translated_variations = []
+                for variation in query_variations:
+                    translated = self._translate_query_for_search(variation)
+                    translated_variations.append(translated)
+                
+                all_variations = list(set(query_variations + translated_variations))
+                
+                # 5. Search with all variations
+                results = []
+                seen_ids = set()
+                
+                for variation in all_variations:
+                    clean = re.sub(r'[^\w\s]', ' ', variation.lower())
+                    words = [w for w in clean.split() if len(w) > 2]
+                    
+                    if not words:
+                        continue
+                
+                    for word in words:
+                        try:
+                            # Use text_search on search_tsv column
+                            res = self.supabase.table("chatbot_prompts") \
+                                .select("*") \
+                                .text_search("search_tsv", word) \
+                                .execute()
+                            
+                            for item in res.data:
+                                if item['id'] not in seen_ids:
+                                    results.append(item)
+                                    seen_ids.add(item['id'])
+                        except Exception as e:
+                                logger.warning(f"Search failed for '{word}': {e}")
+                
+                # 6. Score results (boost if NLU intent matches)
+                scored = []
+                for result in results:
+                    score = self._calculate_score(result, enhanced_query)
+                    
+                    # Boost based on NLU confidence
+                    if nlu_result and nlu_result.confidence > 0.7:
+                        score += int(nlu_result.confidence * 20)
+                    
+                    scored.append((score, result))
+                
+                scored.sort(reverse=True, key=lambda x: x[0])
+                return list([result for score, result in scored if score > 0][:limit])
             
         except Exception as e:
-            logger.error(f"Database search error: {e}")
+            logger.error(f"Search error: {e}")
             return []
     
     async def _search_prompts_traditional(self, query: str, limit: int = 20, intent: str = None) -> List[Dict[str, Any]]:
@@ -974,7 +1327,7 @@ class DatabaseSearchEngine:
             try:
                 result = self.supabase.table("chatbot_prompts") \
                     .select("keywords, response, search_tsv") \
-                    .ilike("keywords", f"%{translated_query}%") \
+                    .text_search("search_tsv", translated_query) \
                     .execute()
                 
                 if result.data:
@@ -1023,7 +1376,7 @@ class DatabaseSearchEngine:
                     unique_results.append(result)
             
             # logger.info(f"📊 Total unique results found: {len(unique_results)}")
-            return unique_results[:limit * 5]  # Return more results for better scoring
+            return list(unique_results[:limit * 5])  # Return more results for better scoring
             
         except Exception as e:
             logger.warning(f"Database search failed: {e}")

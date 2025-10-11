@@ -27,6 +27,10 @@ class ContextTranslator:
             if isinstance(text, list):
                 text = ' '.join(str(item) for item in text)
             
+            # 🚨 HTML PRESERVATION: Extract and preserve HTML elements
+            html_elements = self._extract_html_elements(text)
+            text_without_html = self._remove_html_elements(text)
+            
             # Clean cache periodically
             if time.time() - self.last_cleanup > 3600:  # 1 hour
                 self._clean_cache()
@@ -36,30 +40,72 @@ class ContextTranslator:
             context = self._get_conversation_context(conversation_history, session_id)
             
             # Check cache first
-            cache_key = f"{text}_{target_lang}_{context.get('context_hash', '')}"
+            cache_key = f"{text_without_html}_{target_lang}_{context.get('context_hash', '')}"
             if cache_key in self.translation_cache:
                 cached_result, timestamp = self.translation_cache[cache_key]
                 if time.time() - timestamp < self.cache_ttl:
-                    return cached_result
+                    # Restore HTML elements
+                    final_text = self._restore_html_elements(cached_result[0], html_elements)
+                    return final_text, cached_result[1]
             
-            # Perform context-aware translation
+            # Perform context-aware translation on text without HTML
             translated_text, confidence = self._translate_with_nlp_context(
-                text, target_lang, context
+                text_without_html, target_lang, context
             )
+            
+            # Restore HTML elements to translated text
+            final_text = self._restore_html_elements(translated_text, html_elements)
             
             # Cache the result
             self.translation_cache[cache_key] = ((translated_text, confidence), time.time())
             
-            # Update conversation context
-            if session_id:
-                self._update_conversation_context(session_id, text, translated_text, target_lang)
-            
-            # logger.info(f"🌐 Translated: '{text[:30]}...' -> '{translated_text[:30]}...' (confidence: {confidence:.2f})")
-            return translated_text, confidence
+            return final_text, confidence
             
         except Exception as e:
-            logger.error(f"Context translation failed: {e}")
-            return text, 0.5
+            logger.warning(f"Translation failed: {e}")
+            return text, 0.0
+    
+    def _extract_html_elements(self, text: str) -> List[Dict]:
+        """Extract HTML elements from text for preservation"""
+        import re
+        html_elements = []
+        
+        # Find all HTML tags with their attributes
+        html_pattern = r'<[^>]+>'
+        matches = re.finditer(html_pattern, text)
+        
+        for i, match in enumerate(matches):
+            html_elements.append({
+                'index': i,
+                'original': match.group(),
+                'placeholder': f'__HTML_ELEMENT_{i}__'
+            })
+        
+        return html_elements
+    
+    def _remove_html_elements(self, text: str) -> str:
+        """Remove HTML elements from text, replacing with placeholders"""
+        import re
+        
+        # Replace HTML elements with placeholders
+        html_pattern = r'<[^>]+>'
+        def replace_html(match):
+            # Find the index of this match
+            for i, element in enumerate(self._extract_html_elements(text)):
+                if element['original'] == match.group():
+                    return element['placeholder']
+            return match.group()
+        
+        return re.sub(html_pattern, replace_html, text)
+    
+    def _restore_html_elements(self, text: str, html_elements: List[Dict]) -> str:
+        """Restore HTML elements to translated text"""
+        result = text
+        
+        for element in html_elements:
+            result = result.replace(element['placeholder'], element['original'])
+        
+        return result
     
     def _get_conversation_context(self, conversation_history: List[Dict] = None, 
                                 session_id: str = None) -> Dict:

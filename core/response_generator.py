@@ -56,33 +56,36 @@ class ResponseGenerator:
         time_context = self._get_time_context()
         name_context = f" User: {user_name}." if user_name else ""
         
-        # Core instructions only - TOKEN EFFICIENT
-        base_rules = """You are TOMAS, digital assistant for Tomas SM. Bautista Elementary School.
+        # Natural, conversational instructions
+        base_rules = """You are TOMAS, a friendly and helpful digital assistant for Tomas SM. Bautista Elementary School.
 
-RULES:
-1. Use ONLY database context - never invent data
-2. If no database info: provide helpful response and offer to help with other school topics
-3. Medical emergency → 911
-4. For lists: Use numbered format (1. Item 2. Item 3. Item) - but NOT for years like 1960
-5. Complete numbered lists - never cut off mid-sentence
-6. NO HALLUCINATIONS: Only use information provided in database context
-7. NEVER INVENT NAMES: Do not create fictional staff members, administrators, or contact persons
-8. NEVER INVENT CONTACT INFO: Do not create phone numbers, emails, or messenger links
-9. TONE: Be polite, professional, factual, and communicative - vary your responses naturally, use different sentence structures and openings, and offer additional help when appropriate
-10. NO EXCESSIVE INTRODUCTIONS: Don't introduce yourself in every response
-11. FORMAT NUMBERS PROPERLY: Write years like "1960" not "1 9 6 0" - keep numbers together
-12. NO LINE BREAKS IN NUMBERS: Never put line breaks between digits in years or numbers
-13. TAGALOG GRAMMAR: Use correct Tagalog grammar:
-    - "Maaari mong kausapin" (You can talk to) - NOT "Maaari kang kausapin"
-    - "Walang batas na nangangailangan ng..." (There are no laws requiring...)
-    - "Hindi kailangan ang..." (It is not required...)
-    - "Walang patakaran tungkol sa..." (There are no policies about...)
-    - "Hindi may batas" is INCORRECT - use "Walang batas" instead
-14. HTML PRESERVATION: Never translate or modify HTML code. Keep HTML tags exactly as provided.
-15. MESSENGER BUTTON: When providing messenger links, use the exact HTML button format provided. Do not translate HTML attributes like "target", "style", "href", etc.
-16. ADMIN RESPONSES: For admin/contact queries, keep responses brief and focused. Do not mention websites, iframes, or other irrelevant links. Only provide the messenger button in a separate bubble.
-17. NO LINKS: Never include any links except the official messenger link. Do not create WhatsApp links, Facebook links, website links, or any other URLs. Only mention contacting the school office or using the official messenger.
-18. MESSENGER INTRO: Never add intro text like "tungo sa sumusunod na link" or "here's the messenger link" before messenger buttons. Just provide the messenger button directly."""
+PERSONALITY:
+- Talk like a helpful school staff member giving directions
+- Be warm, natural, and conversational
+- Use simple, clear language that parents and students can understand
+- Show genuine interest in helping
+
+CORE PRINCIPLES:
+- Use ONLY the database information provided - never make up names, contact info, or details
+- If you don't have the information, say so naturally and suggest contacting the school office
+- For medical emergencies, direct to 911 immediately
+- NEVER ask follow-up questions - just provide the information and stop
+
+RESPONSE STYLE:
+- Be conversational, not robotic
+- Give complete, helpful answers
+- Use natural transitions and explanations
+- Avoid repetitive phrases or templates
+
+TAGALOG RESPONSES:
+- Use natural, grammatically correct Tagalog
+- Be warm and approachable
+- Use proper grammar: "Maaari mong kausapin" not "Hindi may batas"
+
+ENGLISH RESPONSES:
+- Use clear, friendly English
+- Be helpful and informative
+- Avoid overly formal language"""
         
         # Language-specific additions (keep minimal)
         lang_rules = self._get_lang_rules(lang)
@@ -97,11 +100,11 @@ RULES:
         return f"{time_context}{base_rules}{lang_rules}{context_hints}"
     
     def _get_lang_rules(self, lang: str) -> str:
-        """Get minimal language-specific rules - TOKEN EFFICIENT"""
+        """Get natural language-specific rules"""
         if lang in ["tl", "akl"]:
-            return "\nLANGUAGE: TAGALOG ONLY. Use natural, grammatically correct Tagalog. Be conversational but professional. Use proper Tagalog grammar for negative statements: 'Walang batas na nangangailangan ng...' not 'Hindi may batas sa...'"
+            return "\nLANGUAGE: Respond in natural Tagalog. Be warm and conversational, like a helpful school staff member. Use proper grammar and be approachable."
         else:
-            return "\nLANGUAGE: ENGLISH ONLY. Use ONLY English words. NO Tagalog words in response."
+            return "\nLANGUAGE: Respond in natural English. Be friendly and helpful, like a school staff member giving directions to parents or students."
     
     def _get_time_context(self) -> str:
         """Get time-aware context for responses - TOKEN EFFICIENT"""
@@ -134,14 +137,14 @@ RULES:
 Q: {query}
 MULTI-Q: {question_number}/{total_questions}
 
-Concise Tagalog. Use DB info only. Natural tone. Correct grammar. Be brief."""
+CRITICAL: Answer EXACTLY what user asks. If user asks "support aide", answer about "support aide" ONLY. Never change "support" to "sports". Use DB info only. Natural tone. Correct grammar. Be brief."""
                 else:
                     return f"""DB: {context}
 
 Q: {query}
 MULTI-Q: {question_number}/{total_questions}
 
-Concise English. Use DB info only. Natural tone. Be brief."""
+CRITICAL: Answer EXACTLY what user asks. If user asks "support aide", answer about "support aide" ONLY. Never change "support" to "sports". Use DB info only. Natural tone. Be brief."""
             else:
                 if lang in ["tl", "akl"]:
                     return f"Q: {query}\nMULTI-Q: {question_number}/{total_questions}\nNo DB info. Brief Tagalog response."
@@ -175,44 +178,94 @@ Concise English. Use DB info only. Natural tone. Be brief."""
             lang_code = "TL" if lang in ["tl", "akl"] else "EN"
             
             if lang in ["tl", "akl"]:
-                return f"""DB: {context}
+                return f"""DATABASE INFORMATION:
+{context}
 
-Q: {query}
+USER QUESTION: {query}
 
-Tagalog. 2-3 SHORT sentences. Natural & conversational.
-- Answer using DB info only
-- Add relevant details
-- Offer help with other school topics naturally
-- Be unique - vary structure
-- Keep concise to avoid cutoffs
-- Grammar: "Walang..." not "Hindi may..."
+INSTRUCTIONS:
+- Use ONLY the database information above
+- Answer in Tagalog
+- Be conversational and helpful, like a school staff member
+- Provide a natural, complete response that helps the user
+- Do NOT invent any names or information not in the database
+- If the database says "Meliza A. Delgado", use that exact name
+- Give a helpful, informative response that feels like talking to a real person
 
-Example style (don't copy):
-"Ang adviser ng Grade 4 ay si Ms. Jessica Z. Go. Siya nag-aalaga sa Grade 4 students. May tanong pa ba tungkol sa ibang guro?"
-
-Answer:"""
+Please provide a natural, conversational response:"""
             else:
-                return f"""DB: {context}
+                return f"""DATABASE INFORMATION:
+{context}
 
-Q: {query}
+USER QUESTION: {query}
 
-English. 2-3 SHORT sentences. Natural & conversational.
-- Answer using DB info only
-- Add relevant details
-- Offer help with other school topics naturally
-- Be unique - vary structure
-- Keep concise to avoid cutoffs
+INSTRUCTIONS:
+- Use ONLY the database information above
+- Answer in English
+- Be conversational and helpful, like a school staff member
+- Provide a natural, complete response that helps the user
+- Do NOT invent any names or information not in the database
+- If the database says "Meliza A. Delgado", use that exact name
+- Give a helpful, informative response that feels like talking to a real person
 
-Example style (don't copy):
-"The Grade 4 adviser is Ms. Jessica Z. Go. She takes care of the Grade 4 students. Need info about other teachers?"
-
-Answer:"""
+Please provide a natural, conversational response:"""
         
         # No context available
         if lang in ["tl", "akl"]:
-            return f"Q: {query}\nNo DB info. Helpful Tagalog response. Offer help with school topics."
+            return f"Q: {query}\nNo DB info. Helpful Tagalog response. Do NOT ask follow-up questions."
         else:
-            return f"Q: {query}\nNo DB info. Helpful English response. Offer help with school topics."
+            return f"Q: {query}\nNo DB info. Helpful English response. Do NOT ask follow-up questions."
+    
+    def _generate_greeting_response(self, query: str, lang: str, user_name: str, nlu_info: Dict) -> str:
+        """Generate proper greeting response with introduction"""
+        
+        # Base introduction in both languages
+        if lang in ["tl", "akl"]:
+            # Tagalog/Aklanon greeting
+            if user_name:
+                greeting = f"Kumusta, {user_name}! Ako si TOMAS, ang digital assistant ng Tomas SM. Bautista Elementary School."
+            else:
+                greeting = "Kumusta! Ako si TOMAS, ang digital assistant ng Tomas SM. Bautista Elementary School."
+            
+            introduction = "Tumutulong ako sa mga tanong tungkol sa paaralan, mga guro, aktibidad, at iba pang impormasyon. Paano kita matutulungan ngayon?"
+            
+        else:
+            # English greeting
+            if user_name:
+                greeting = f"Hi {user_name}! I'm TOMAS, the digital assistant for Tomas SM. Bautista Elementary School."
+            else:
+                greeting = "Hi! I'm TOMAS, the digital assistant for Tomas SM. Bautista Elementary School."
+            
+            introduction = "I help with questions about the school, teachers, activities, and other information. How can I assist you today?"
+        
+        # Customize based on greeting type
+        intent = nlu_info.get('intent', 'greeting_simple')
+        
+        if intent == 'greeting_excited':
+            if lang in ["tl", "akl"]:
+                greeting = greeting.replace("Kumusta", "Kumusta! Ang saya!")
+            else:
+                greeting = greeting.replace("Hi", "Hi! Great to see you!")
+        
+        elif intent == 'greeting_formal':
+            if lang in ["tl", "akl"]:
+                greeting = greeting.replace("Kumusta", "Magandang araw po")
+            else:
+                greeting = greeting.replace("Hi", "Good day")
+        
+        elif intent == 'greeting_casual':
+            if lang in ["tl", "akl"]:
+                greeting = greeting.replace("Kumusta", "Kumusta!")
+            else:
+                greeting = greeting.replace("Hi", "Hey there!")
+        
+        elif intent == 'greeting_returning_user':
+            if lang in ["tl", "akl"]:
+                greeting = greeting.replace("Kumusta", "Kumusta! Welcome back!")
+            else:
+                greeting = greeting.replace("Hi", "Hi! Welcome back!")
+        
+        return f"{greeting} {introduction}"
     
     async def generate_response(self, query: str, context: str, lang: str, 
                               conversation_history: List[Dict] = None, 
@@ -223,11 +276,16 @@ Answer:"""
         """Generate response using multi-provider AI system with intelligent fallback"""
         
         try:
+            # Special handling for greetings - provide proper introduction
+            if nlu_info and nlu_info.get('intent') in ['greeting_simple', 'greeting_with_name', 'greeting_casual', 'greeting_formal', 'greeting_excited', 'greeting_returning_user']:
+                return self._generate_greeting_response(query, lang, user_name, nlu_info)
+            
             # Build the system prompt
             system_prompt = self.get_system_prompt(lang, user_name, nlu_info, entities, confidence)
             
             # Build concise user message
             user_message = self._build_concise_message(query, context, lang, nlu_info)
+            
             
             # Keep responses concise to save tokens
             max_tokens = 160 if lang in ["tl", "akl"] else 140
@@ -329,6 +387,11 @@ Answer:"""
         # Remove markdown-style links
         response = re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', response)
         
+        # Remove messenger buttons from non-persistent escalation responses
+        response = re.sub(r'\[Messenger Button:.*?\]', '', response, flags=re.IGNORECASE)
+        response = re.sub(r'<button[^>]*href="[^"]*facebook[^"]*"[^>]*>.*?</button>', '', response, flags=re.IGNORECASE)
+        response = re.sub(r'<button[^>]*href="[^"]*m\.me/[^"]*"[^>]*>.*?</button>', '', response, flags=re.IGNORECASE)
+        
         # Remove messenger intro text
         response = re.sub(r'tungo sa sumusunod na link[:\s]*', '', response, flags=re.IGNORECASE)
         response = re.sub(r'sa pamamagitan ng sumusunod na link[:\s]*', '', response, flags=re.IGNORECASE)
@@ -336,6 +399,7 @@ Answer:"""
         response = re.sub(r'narito ang messenger link[:\s]*', '', response, flags=re.IGNORECASE)
         response = re.sub(r'messenger link[:\s]*', '', response, flags=re.IGNORECASE)
         response = re.sub(r'sumusunod na link[:\s]*', '', response, flags=re.IGNORECASE)
+        
         
         # Clean up extra whitespace
         response = re.sub(r'\s+', ' ', response)
