@@ -24,11 +24,13 @@ nltk.data.path.insert(0, local_nltk_path)
 nltk.data.path.append(render_nltk_path)
 
 import re
+import time
 import logging
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import calendar
+from functools import lru_cache
 
 # Initialize NLTK immediately like in the earlier working builds
 NLTK_AVAILABLE = False
@@ -95,12 +97,121 @@ class ExtractedEntity:
     end_pos: int = 0
     context: str = ""  # Surrounding context for disambiguation
 
+class LightweightEntityExtractor:
+    """
+    Fast, lightweight entity extraction using regex patterns and caching
+    """
+    
+    def __init__(self):
+        # Pre-compiled regex patterns for performance
+        self.patterns = {
+            'PERSON': re.compile(r'(?:Mr|Mrs|Ms|Dr|Prof)\.?\s+([A-Z][a-z]+)', re.I),
+            'LOCATION': re.compile(r'\b(?:in|at|from|to|visit|located)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)', re.I),
+            'ORG': re.compile(r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:Corp|Inc|University|School|Elementary)', re.I),
+            'NAME_INTRO': re.compile(r'\b(?:my name is|i am|call me)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b', re.I),
+            'GRADE': re.compile(r'\b(?:grade|g\.)\s*(\d+)\b', re.I),
+            'SUBJECT': re.compile(r'\b(?:math|science|english|filipino|art|music|pe|physical education)\b', re.I),
+            'SCHOOL_NAME': re.compile(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:Elementary|School|University|College)\b', re.I),
+            'CITY': re.compile(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:City|Town|Province|State)\b', re.I)
+        }
+        
+        # Blacklist to filter out common false positives
+        self.blacklist = {'Contact', 'Talk', 'Meet', 'The', 'I', 'You', 'We', 'They', 'This', 'That', 'Here', 'There'}
+        
+        # School-specific terms
+        self.school_terms = {
+            'principal', 'teacher', 'student', 'school', 'classroom', 'library', 'cafeteria', 
+            'gymnasium', 'office', 'adviser', 'counselor', 'nurse', 'janitor', 'security'
+        }
+    
+    @lru_cache(maxsize=500)
+    def extract(self, text: str) -> List[Tuple[str, str]]:
+        """
+        Extract entities using lightweight regex patterns with caching
+        
+        Args:
+            text: Input text to analyze
+            
+        Returns:
+            List of (entity_value, entity_type) tuples
+        """
+        entities = []
+        
+        for entity_type, pattern in self.patterns.items():
+            for match in pattern.finditer(text):
+                entity = match.group(1).strip() if match.groups() else match.group(0).strip()
+                
+                # Filter out blacklisted entities
+                if entity not in self.blacklist and len(entity) > 1:
+                    # Additional validation for school context
+                    if self._is_valid_entity(entity, entity_type, text):
+                        entities.append((entity, entity_type))
+        
+        return entities
+    
+    def _is_valid_entity(self, entity: str, entity_type: str, context: str) -> bool:
+        """Validate entity based on context and type"""
+        context_lower = context.lower()
+        entity_lower = entity.lower()
+        
+        # Skip very short entities
+        if len(entity) < 2:
+            return False
+        
+        # Skip common words that aren't entities
+        common_words = {'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
+        if entity_lower in common_words:
+            return False
+        
+        # Type-specific validation
+        if entity_type == 'PERSON':
+            # Must be capitalized and not a common word
+            return entity[0].isupper() and entity_lower not in common_words
+        
+        elif entity_type == 'LOCATION':
+            # Must be capitalized and not a preposition
+            prepositions = {'in', 'at', 'from', 'to', 'on', 'by', 'with', 'for'}
+            return entity[0].isupper() and entity_lower not in prepositions
+        
+        elif entity_type == 'ORG':
+            # Must contain organization indicators
+            org_indicators = {'school', 'university', 'college', 'corp', 'inc', 'ltd', 'company'}
+            return any(indicator in entity_lower for indicator in org_indicators)
+        
+        elif entity_type == 'SUBJECT':
+            # Must be a known academic subject
+            subjects = {'math', 'mathematics', 'science', 'english', 'filipino', 'art', 'music', 'pe', 'physical education'}
+            return entity_lower in subjects
+        
+        elif entity_type == 'SCHOOL_NAME':
+            # Must be capitalized and contain school indicators
+            school_indicators = {'elementary', 'school', 'university', 'college', 'academy'}
+            return entity[0].isupper() and any(indicator in entity_lower for indicator in school_indicators)
+        
+        elif entity_type == 'CITY':
+            # Must be capitalized and contain location indicators
+            location_indicators = {'city', 'town', 'province', 'state', 'municipality'}
+            return entity[0].isupper() and any(indicator in entity_lower for indicator in location_indicators)
+        
+        elif entity_type == 'GRADE':
+            # Must be a valid grade number
+            try:
+                grade_num = int(entity)
+                return 1 <= grade_num <= 12
+            except ValueError:
+                return False
+        
+        return True
+
+
 class AdvancedEntityExtractor:
     """
     Advanced entity extraction using NLP techniques and domain-specific patterns
     """
     
     def __init__(self):
+        # Initialize lightweight extractor for fast processing
+        self.lightweight_extractor = LightweightEntityExtractor()
         self.grade_patterns = self._build_grade_patterns()
         self.subject_patterns = self._build_subject_patterns()
         self.name_patterns = self._build_name_patterns()
@@ -108,10 +219,37 @@ class AdvancedEntityExtractor:
         self.contact_patterns = self._build_contact_patterns()
         self.school_terms = self._build_school_terminology()
         
+        # Smart NLTK configuration
+        self.nltk_loaded = False
+        self._nltk_cache = {}
+        self._cache_timeout = 300  # 5 minutes
+        self._performance_stats = {
+            'total_queries': 0,
+            'nltk_queries': 0,
+            'cache_hits': 0,
+            'avg_time_ms': 0
+        }
+        
+        # Pre-compile regex patterns for performance
+        self._name_patterns = [
+            r'\b(?:my name is|i am|call me)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b',
+            r'\b(?:dr\.|mr\.|mrs\.|ms\.|professor|prof\.)\s+([A-Z][a-z]+)\b',
+            r'\b(?:meet with|talk to|contact)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b'
+        ]
+        self._compiled_patterns = [re.compile(pattern, re.IGNORECASE) for pattern in self._name_patterns]
+        
+        # Entity detection triggers
+        self._nltk_triggers = [
+            r'\b(?:my name is|i am)\s+[A-Z][a-z]+\s+[A-Z][a-z]+\b',
+            r'\b(?:dr\.|mr\.|mrs\.|ms\.|professor|prof\.)\s+[A-Z][a-z]+\b',
+            r'\b(?:visit|go to|located in)\s+[A-Z][a-z]+\s+[A-Z][a-z]+\b',
+            r'\b(?:corporation|company|organization|school|university)\b'
+        ]
+        self._compiled_triggers = [re.compile(pattern, re.IGNORECASE) for pattern in self._nltk_triggers]
+        
     def extract_entities(self, text: str, intent_context: str = None) -> List[ExtractedEntity]:
         """
-        Extract all entities from the given text using rule-based patterns
-        (Use extract_entities_async for semantic NLP extraction)
+        Extract all entities from the given text using lightweight regex first, then advanced patterns
         
         Args:
             text: Input text to analyze
@@ -120,10 +258,23 @@ class AdvancedEntityExtractor:
         Returns:
             List of extracted entities with confidence scores
         """
+        start_time = time.perf_counter()
         entities = []
         text_lower = text.lower()
         
-        # Extract different entity types using pattern matching
+        # 1. Fast lightweight extraction first
+        lightweight_entities = self.lightweight_extractor.extract(text)
+        for entity_value, entity_type in lightweight_entities:
+            entities.append(ExtractedEntity(
+                entity_type=entity_type.lower(),
+                value=entity_value,
+                confidence=0.8,  # High confidence for regex matches
+                start_pos=text.find(entity_value),
+                end_pos=text.find(entity_value) + len(entity_value),
+                context=text[max(0, text.find(entity_value)-10):text.find(entity_value)+len(entity_value)+10]
+            ))
+        
+        # 2. Advanced pattern matching for domain-specific entities
         entities.extend(self._extract_person_names(text, text_lower, intent_context))
         entities.extend(self._extract_grade_levels(text, text_lower))
         entities.extend(self._extract_subjects(text, text_lower))
@@ -133,9 +284,13 @@ class AdvancedEntityExtractor:
         entities.extend(self._extract_ages(text, text_lower))
         entities.extend(self._extract_staff_roles(text, text_lower))
         
-        # Enhanced extraction using NLTK (disabled for performance)
-        # nltk_entities = self._extract_entities_with_nltk(text)
-        # entities.extend(nltk_entities)
+        # 3. Smart NLTK extraction with conditional usage (only if lightweight didn't find enough)
+        if len(entities) < 2 and self._should_use_nltk(text, entities):
+            nltk_entities = self._extract_entities_with_nltk_cached(text)
+            entities.extend(nltk_entities)
+        
+        # Update performance stats
+        self._performance_stats['total_queries'] += 1
         
         # Extract entity relationships
         relationship_entities = self._extract_entity_relationships(text, entities)
@@ -157,81 +312,209 @@ class AdvancedEntityExtractor:
         
         return entities
     
+    def _should_use_nltk(self, text: str, existing_entities: List[ExtractedEntity]) -> bool:
+        """Determine if NLTK extraction should be used"""
+        
+        # Skip NLTK if text is very short
+        words = text.split()
+        if len(words) < 5:
+            return False
+        
+        # Skip NLTK if we already have good entities
+        if len(existing_entities) >= 3:
+            return False
+        
+        # Skip NLTK if no potential entities detected
+        if not self._has_potential_entities(text):
+            return False
+        
+        # Use NLTK for complex queries with potential entities
+        return len(words) > 10 or any(trigger.search(text) for trigger in self._compiled_triggers)
+    
+    def _has_potential_entities(self, text: str) -> bool:
+        """Check if text has potential entities without using NLTK"""
+        
+        # Check for capitalized words (potential proper nouns)
+        words = text.split()
+        capitalized_words = [word for word in words if word[0].isupper() and len(word) > 2]
+        
+        if len(capitalized_words) < 2:
+            return False
+        
+        # Check for name patterns
+        for pattern in self._compiled_patterns:
+            if pattern.search(text):
+                return True
+        
+        # Check for location indicators
+        location_indicators = ['in', 'at', 'from', 'to', 'visit', 'go', 'located']
+        if any(indicator in text.lower() for indicator in location_indicators):
+            return True
+        
+        # Check for organization indicators
+        org_indicators = ['corporation', 'company', 'organization', 'school', 'university', 'inc', 'ltd']
+        if any(indicator in text.lower() for indicator in org_indicators):
+            return True
+        
+        return True
+    
+    def _extract_entities_with_nltk_cached(self, text: str) -> List[ExtractedEntity]:
+        """Cached NLTK entity extraction with lazy loading"""
+        
+        # Check in-memory cache first
+        cache_key = text.lower().strip()
+        if cache_key in self._nltk_cache:
+            cached_result, timestamp = self._nltk_cache[cache_key]
+            if time.time() - timestamp < self._cache_timeout:
+                self._performance_stats['cache_hits'] += 1
+                return cached_result
+        
+        # Lazy load NLTK if not already loaded
+        if not self.nltk_loaded:
+            self._load_nltk()
+        
+        # Extract with NLTK
+        entities = self._extract_entities_with_nltk(text)
+        
+        # Cache result
+        self._nltk_cache[cache_key] = (entities, time.time())
+        self._performance_stats['nltk_queries'] += 1
+        
+        return entities
+    
+    def _load_nltk(self):
+        """Lazy load NLTK models only when needed"""
+        try:
+            import nltk
+            from nltk import word_tokenize, pos_tag, ne_chunk, Tree
+            
+            # Download required NLTK data if not present
+            try:
+                nltk.data.find('tokenizers/punkt')
+            except LookupError:
+                nltk.download('punkt', quiet=True)
+            
+            try:
+                nltk.data.find('taggers/averaged_perceptron_tagger')
+            except LookupError:
+                nltk.download('averaged_perceptron_tagger', quiet=True)
+            
+            try:
+                nltk.data.find('chunkers/maxent_ne_chunker')
+            except LookupError:
+                nltk.download('maxent_ne_chunker', quiet=True)
+            
+            self.nltk_loaded = True
+            logger.info("✅ NLTK models loaded successfully")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load NLTK: {e}")
+            self.nltk_loaded = False
+    
     def _extract_entities_with_nltk(self, text: str) -> List[ExtractedEntity]:
         """Enhanced entity extraction using NLTK"""
         entities = []
-        
-        # NLTK should be initialized at module import, but check just in case
-        if not NLTK_AVAILABLE or not all([word_tokenize, pos_tag, ne_chunk, Tree]):
-            logger.warning("NLTK functions not available for entity extraction")
-            return entities
-        
+
         try:
+            import nltk
+            from nltk import word_tokenize, pos_tag, ne_chunk, Tree
+            
             # Tokenize and tag the text
             tokens = word_tokenize(text)
             pos_tags = pos_tag(tokens)
             
-            # Named Entity Recognition
-            try:
-                # Try to use NLTK's named entity chunker
-                chunked = ne_chunk(pos_tags)
-                
-                for chunk in chunked:
-                    if isinstance(chunk, Tree):
-                        entity_type = chunk.label()
-                        entity_text = ' '.join([token for token, pos in chunk.leaves()])
-                        
-                        # Map NLTK entity types to our types
-                        if entity_type == 'PERSON':
-                            entities.append(ExtractedEntity(
-                                entity_type='person_name',
-                                value=entity_text,
-                                confidence=0.8,
-                                start_pos=text.find(entity_text),
-                                end_pos=text.find(entity_text) + len(entity_text)
-                            ))
-                        elif entity_type in ['GPE', 'LOCATION']:
-                            entities.append(ExtractedEntity(
-                                entity_type='location',
-                                value=entity_text,
-                                confidence=0.7,
-                                start_pos=text.find(entity_text),
-                                end_pos=text.find(entity_text) + len(entity_text)
-                            ))
-                        elif entity_type == 'ORGANIZATION':
-                            entities.append(ExtractedEntity(
-                                entity_type='organization',
-                                value=entity_text,
-                                confidence=0.7,
-                                start_pos=text.find(entity_text),
-                                end_pos=text.find(entity_text) + len(entity_text)
-                            ))
-            except Exception as e:
-                logger.warning(f"NLTK NER failed: {e}")
+            # Extract named entities using NLTK
+            tree = ne_chunk(pos_tags)
             
-            # Extract proper nouns using POS tagging - but be more conservative
-            proper_nouns = []
-            for token, pos in pos_tags:
-                if pos == 'NNP' and len(token) > 2:  # Proper noun, at least 3 characters
-                    proper_nouns.append(token)
-            
-            # Check if proper nouns are likely person names - with stricter validation
-            for noun in proper_nouns:
-                if noun.istitle() and len(noun) > 2:
-                    # 🚨 FIX: Use the same validation as rule-based extraction
-                    if self._is_valid_name(noun):
+            for subtree in tree:
+                if isinstance(subtree, Tree):
+                    entity_text = ' '.join([token for token, pos in subtree.leaves()])
+                    entity_label = subtree.label()
+                    
+                    # Map NLTK entity types to our types
+                    if entity_label == 'PERSON':
                         entities.append(ExtractedEntity(
                             entity_type='person_name',
-                            value=noun,
-                            confidence=0.6,
-                            start_pos=text.find(noun),
-                            end_pos=text.find(noun) + len(noun)
+                            value=entity_text,
+                            confidence=0.8,
+                            start_pos=text.find(entity_text),
+                            end_pos=text.find(entity_text) + len(entity_text)
                         ))
-            
+                    elif entity_label in ['GPE', 'LOCATION']:
+                        entities.append(ExtractedEntity(
+                            entity_type='location',
+                            value=entity_text,
+                            confidence=0.7,
+                            start_pos=text.find(entity_text),
+                            end_pos=text.find(entity_text) + len(entity_text)
+                        ))
+                    elif entity_label == 'ORGANIZATION':
+                        entities.append(ExtractedEntity(
+                            entity_type='organization',
+                            value=entity_text,
+                            confidence=0.7,
+                            start_pos=text.find(entity_text),
+                            end_pos=text.find(entity_text) + len(entity_text)
+                        ))
+
+            # Extract proper nouns using POS tagging
+            for token, pos in pos_tags:
+                if pos == 'NNP' and len(token) > 2:  # Proper noun, at least 3 characters
+                    if token.istitle() and self._is_valid_name(token):
+                        entities.append(ExtractedEntity(
+                            entity_type='person_name',
+                            value=token,
+                            confidence=0.6,
+                            start_pos=text.find(token),
+                            end_pos=text.find(token) + len(token)
+                        ))
+
             logger.info(f"🔍 NLTK extracted {len(entities)} entities")
-            
+
         except Exception as e:
             logger.warning(f"NLTK entity extraction failed: {e}")
+
+        return entities
+    
+    def get_performance_stats(self) -> Dict:
+        """Get performance statistics"""
+        stats = self._performance_stats.copy()
+        if stats['total_queries'] > 0:
+            stats['nltk_usage_rate'] = stats['nltk_queries'] / stats['total_queries']
+            stats['cache_hit_rate'] = stats['cache_hits'] / stats['total_queries']
+        else:
+            stats['nltk_usage_rate'] = 0
+            stats['cache_hit_rate'] = 0
+        
+        stats['cache_size'] = len(self._nltk_cache)
+        stats['nltk_loaded'] = self.nltk_loaded
+        
+        return stats
+    
+    def clear_cache(self):
+        """Clear all caches"""
+        self._nltk_cache.clear()
+        print("🗑️ NLTK cache cleared")
+    
+    def force_nltk(self, text: str) -> List[ExtractedEntity]:
+        """Force NLTK extraction for testing"""
+        entities = []
+        if self._should_use_nltk(text, entities):
+            nltk_entities = self._extract_entities_with_nltk_cached(text)
+            entities.extend(nltk_entities)
+        return entities
+    
+    def skip_nltk(self, text: str) -> List[ExtractedEntity]:
+        """Skip NLTK extraction for testing"""
+        # Temporarily disable NLTK
+        original_loaded = self.nltk_loaded
+        self.nltk_loaded = False
+        
+        # Extract without NLTK
+        entities = self.extract_entities(text)
+        
+        # Restore original state
+        self.nltk_loaded = original_loaded
         
         return entities
     

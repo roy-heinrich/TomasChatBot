@@ -83,7 +83,12 @@ class ConversationAnalyzer:
         
         # Extract topics from conversation history
         for msg in conversation_history[-5:]:  # Last 5 messages
-            content = msg.get('content', '').lower()
+            if isinstance(msg, str):
+                content = msg.lower()
+            elif isinstance(msg, dict):
+                content = msg.get('content', '').lower()
+            else:
+                content = ''
             
             # Topic detection patterns
             if any(word in content for word in ['enrollment', 'register', 'admission']):
@@ -126,7 +131,12 @@ class ConversationAnalyzer:
         # Analyze conversation history for emotional patterns
         recent_messages = conversation_history[-3:] if conversation_history else []
         for msg in recent_messages:
-            content = msg.get('content', '').lower()
+            if isinstance(msg, str):
+                content = msg.lower()
+            elif isinstance(msg, dict):
+                content = msg.get('content', '').lower()
+            else:
+                content = ''
             for emotion, indicators in emotional_indicators.items():
                 if any(indicator in content for indicator in indicators):
                     return emotion
@@ -153,10 +163,10 @@ class ConversationAnalyzer:
         
         formal_count = sum(1 for msg in conversation_history 
                           for indicator in formal_indicators 
-                          if indicator in msg.get('content', '').lower())
+                          if indicator in (msg.get('content', '') if isinstance(msg, dict) else str(msg)).lower())
         casual_count = sum(1 for msg in conversation_history 
                           for indicator in casual_indicators 
-                          if indicator in msg.get('content', '').lower())
+                          if indicator in (msg.get('content', '') if isinstance(msg, dict) else str(msg)).lower())
         
         if formal_count > casual_count:
             personality_traits['formality_level'] = 'formal'
@@ -165,12 +175,12 @@ class ConversationAnalyzer:
         
         # Analyze communication style
         question_count = sum(1 for msg in conversation_history 
-                           if '?' in msg.get('content', ''))
+                           if '?' in (msg.get('content', '') if isinstance(msg, dict) else str(msg)))
         statement_count = len(conversation_history) - question_count
         
         if question_count > statement_count:
             personality_traits['communication_style'] = 'exploratory'
-        elif len([msg for msg in conversation_history if len(msg.get('content', '')) > 100]) > len(conversation_history) / 2:
+        elif len([msg for msg in conversation_history if len((msg.get('content', '') if isinstance(msg, dict) else str(msg))) > 100]) > len(conversation_history) / 2:
             personality_traits['communication_style'] = 'detailed'
         
         return personality_traits
@@ -196,7 +206,12 @@ class ConversationAnalyzer:
         
         # Analyze conversation history for goal patterns
         for msg in conversation_history[-3:]:
-            content = msg.get('content', '').lower()
+            if isinstance(msg, str):
+                content = msg.lower()
+            elif isinstance(msg, dict):
+                content = msg.get('content', '').lower()
+            else:
+                content = ''
             for goal, patterns in goal_patterns.items():
                 if any(pattern in content for pattern in patterns):
                     if goal not in goals:
@@ -221,7 +236,12 @@ class ConversationAnalyzer:
         
         # Extract entities from conversation history
         for msg in conversation_history[-5:]:  # Last 5 messages
-            content = msg.get('content', '')
+            if isinstance(msg, str):
+                content = msg
+            elif isinstance(msg, dict):
+                content = msg.get('content', '')
+            else:
+                content = ''
             
             # Simple entity extraction from history
             if 'grade' in content.lower():
@@ -256,7 +276,12 @@ class ConversationAnalyzer:
         total_messages = len(conversation_history)
         
         for msg in conversation_history:
-            content = msg.get('content', '').lower()
+            if isinstance(msg, str):
+                content = msg.lower()
+            elif isinstance(msg, dict):
+                content = msg.get('content', '').lower()
+            else:
+                content = ''
             
             positive_count = sum(1 for word in positive_words if word in content)
             negative_count = sum(1 for word in negative_words if word in content)
@@ -299,7 +324,12 @@ class ConversationAnalyzer:
         advanced_count = 0
         
         for msg in conversation_history:
-            content = msg.get('content', '').lower()
+            if isinstance(msg, str):
+                content = msg.lower()
+            elif isinstance(msg, dict):
+                content = msg.get('content', '').lower()
+            else:
+                content = ''
             beginner_count += sum(1 for indicator in beginner_indicators if indicator in content)
             advanced_count += sum(1 for indicator in advanced_indicators if indicator in content)
         

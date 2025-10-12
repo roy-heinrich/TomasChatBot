@@ -73,6 +73,12 @@ class ConversationMemory:
             
             import re
             for message in reversed(conversation_history[-5:]):  # Check last 5 messages
+                # Ensure message is a dictionary
+                if isinstance(message, str):
+                    message = {"role": "user", "content": message}
+                elif not isinstance(message, dict):
+                    continue
+                    
                 if message.get("role") == "user":
                     content = message.get("content", "").strip()
                     if content:

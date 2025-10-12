@@ -140,8 +140,15 @@ class EmotionalIntelligence:
         history_sentiment = 0.0
         if conversation_history:
             recent_messages = conversation_history[-3:]  # Last 3 messages
-            history_sentiments = [self._calculate_text_sentiment(msg.get('content', '')) 
-                                for msg in recent_messages]
+            history_sentiments = []
+            for msg in recent_messages:
+                if isinstance(msg, str):
+                    content = msg
+                elif isinstance(msg, dict):
+                    content = msg.get('content', '')
+                else:
+                    content = ''
+                history_sentiments.append(self._calculate_text_sentiment(content))
             history_sentiment = sum(history_sentiments) / len(history_sentiments)
         
         # Weighted combination (70% current, 30% history)
@@ -258,7 +265,7 @@ class EmotionalIntelligence:
         # Check conversation history for emotional patterns
         if conversation_history:
             recent_emotional_content = any(
-                any(emotion_word in msg.get('content', '').lower() 
+                any(emotion_word in (msg.get('content', '') if isinstance(msg, dict) else str(msg)).lower() 
                    for emotion_word in ['sad', 'angry', 'worried', 'frustrated', 'upset'])
                 for msg in conversation_history[-3:]
             )
@@ -290,7 +297,12 @@ class EmotionalIntelligence:
         # Check conversation history for stress patterns
         if conversation_history:
             for msg in conversation_history[-2:]:  # Last 2 messages
-                content = msg.get('content', '').lower()
+                if isinstance(msg, str):
+                    content = msg.lower()
+                elif isinstance(msg, dict):
+                    content = msg.get('content', '').lower()
+                else:
+                    content = ''
                 for stress_type, patterns in stress_patterns.items():
                     if any(pattern in content for pattern in patterns):
                         if stress_type not in stress_indicators:
@@ -307,7 +319,10 @@ class EmotionalIntelligence:
         
         # Check for escalation requests
         if conversation_history:
-            recent_content = ' '.join([msg.get('content', '') for msg in conversation_history[-3:]])
+            recent_content = ' '.join([
+                msg.get('content', '') if isinstance(msg, dict) else str(msg) 
+                for msg in conversation_history[-3:]
+            ])
             escalation_indicators = [
                 'speak to', 'talk to', 'human', 'person', 'representative',
                 'manager', 'supervisor', 'help me', 'assistance'

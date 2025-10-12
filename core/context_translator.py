@@ -155,15 +155,19 @@ class ContextTranslator:
         # Analyze language distribution
         languages = []
         for msg in messages:
-            if msg.get('role') == 'user':
-                # Simple language detection
+            if isinstance(msg, str):
+                content = msg.lower()
+            elif isinstance(msg, dict) and msg.get('role') == 'user':
                 content = msg.get('content', '').lower()
-                if any(word in content for word in ['ang', 'ng', 'sa', 'na', 'ay']):
-                    languages.append('tl')
-                elif any(word in content for word in ['ngaean', 'sang', 'imo', 'unga']):
-                    languages.append('akl')
-                else:
-                    languages.append('en')
+            else:
+                continue
+            
+            if any(word in content for word in ['ang', 'ng', 'sa', 'na', 'ay']):
+                languages.append('tl')
+            elif any(word in content for word in ['ngaean', 'sang', 'imo', 'unga']):
+                languages.append('akl')
+            else:
+                languages.append('en')
         
         if languages:
             # Determine primary language
@@ -176,7 +180,10 @@ class ContextTranslator:
         formal_indicators = ['po', 'opo', 'sir', 'maam', 'please', 'thank you']
         informal_indicators = ['hey', 'hi', 'yo', 'kumusta', 'kamusta']
         
-        all_content = ' '.join([msg.get('content', '') for msg in messages])
+        all_content = ' '.join([
+            msg.get('content', '') if isinstance(msg, dict) else str(msg) 
+            for msg in messages
+        ])
         if any(indicator in all_content.lower() for indicator in formal_indicators):
             patterns['formality_level'] = 'formal'
         elif any(indicator in all_content.lower() for indicator in informal_indicators):
@@ -193,7 +200,12 @@ class ContextTranslator:
         # Extract key topics from recent messages
         topics = []
         for msg in messages:
-            content = msg.get('content', '').lower()
+            if isinstance(msg, str):
+                content = msg.lower()
+            elif isinstance(msg, dict):
+                content = msg.get('content', '').lower()
+            else:
+                continue
             
             # School-related topics
             if any(word in content for word in ['enrollment', 'enroll', 'admission']):
@@ -404,7 +416,12 @@ class ContextTranslator:
         context_elements = []
         
         for msg in messages[-3:]:  # Last 3 messages
-            content = msg.get('content', '')
+            if isinstance(msg, str):
+                content = msg
+            elif isinstance(msg, dict):
+                content = msg.get('content', '')
+            else:
+                content = ''
             if len(content) > 50:
                 content = content[:50] + "..."
             context_elements.append(content)

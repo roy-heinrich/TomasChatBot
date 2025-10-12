@@ -295,7 +295,7 @@ class LanguageDetector:
             r'\bano\s+ang',   # "ano ang" question pattern
             r'\bsino\s+ang',  # "sino ang" question pattern
             r'\bgusto\s+ko',  # "gusto ko" pattern
-            r'\bkailangan\s+ko', # "kailangan ko" pattern
+            r'\bkailangan\s+ko', # "kailangan ko" patternbru
         ]
         
         # Count pattern matches

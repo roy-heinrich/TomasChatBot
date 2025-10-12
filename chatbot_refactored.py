@@ -101,11 +101,16 @@ class ChatBot:
     def _extract_user_name(self, conversation_history: List[Dict]) -> str:
         """Extract user name from conversation history using NLP entity extraction"""
         for msg in reversed(conversation_history):
-            if not isinstance(msg, dict):
-                # Removed verbose warning logging
+            if isinstance(msg, str):
+                content = msg
+            elif isinstance(msg, dict):
+                if msg.get("role") == "user":
+                    content = msg.get("content", "")
+                else:
+                    continue
+            else:
                 continue
-            if msg.get("role") == "user":
-                content = msg.get("content", "")
+            
                 # logger.info(f"🔍 Extracting name from: '{content}'")  # Reduced for Railway
                 
                 # Use the entity extractor to find PERSON entities
@@ -133,11 +138,16 @@ class ChatBot:
     def _extract_child_name(self, conversation_history: List[Dict]) -> str:
         """Extract child name from conversation history"""
         for msg in reversed(conversation_history):
-            if not isinstance(msg, dict):
-                # Removed verbose warning logging
+            if isinstance(msg, str):
+                content = msg.lower()
+            elif isinstance(msg, dict):
+                if msg.get("role") == "user":
+                    content = msg.get("content", "").lower()
+                else:
+                    continue
+            else:
                 continue
-            if msg.get("role") == "user":
-                content = msg.get("content", "").lower()
+            
                 # Look for child name patterns
                 if "my child" in content or "anak ko" in content or "child's name" in content:
                     # Extract child name
@@ -158,11 +168,16 @@ class ChatBot:
             language_scores = {"en": 0.0, "tl": 0.0, "akl": 0.0}
             
             for msg in recent_messages:
-                if not isinstance(msg, dict):
-                    # Removed verbose warning logging
+                if isinstance(msg, str):
+                    content = msg
+                elif isinstance(msg, dict):
+                    if msg.get("role") == "user":
+                        content = msg.get("content", "")
+                    else:
+                        continue
+                else:
                     continue
-                if msg.get("role") == "user":
-                    content = msg.get("content", "")
+                
                     if content:
                         # Use enhanced language detection
                         lang, conf = self.language_detector.detect_language(content)
@@ -249,10 +264,20 @@ class ChatBot:
         ]
         
         # Only count user messages, not assistant responses
-        user_messages = [msg for msg in recent_messages if isinstance(msg, dict) and msg.get('role') == 'user']
+        user_messages = []
+        for msg in recent_messages:
+            if isinstance(msg, str):
+                user_messages.append({"role": "user", "content": msg})
+            elif isinstance(msg, dict) and msg.get('role') == 'user':
+                user_messages.append(msg)
         
         for message in user_messages:
-            content = message.get('content', '').lower()
+            if isinstance(message, str):
+                content = message.lower()
+            elif isinstance(message, dict):
+                content = message.get('content', '').lower()
+            else:
+                content = ''
             
             # Check for escalation patterns
             if any(pattern in content for pattern in escalation_patterns):
@@ -507,7 +532,13 @@ class ChatBot:
             combined_intent = "multi_question"
             
             # Track conversation context for each question
-            current_conversation_history = conversation_history or []
+            # Ensure conversation_history is a list
+            if isinstance(conversation_history, str):
+                current_conversation_history = [{"role": "user", "content": conversation_history}]
+            elif isinstance(conversation_history, list):
+                current_conversation_history = conversation_history
+            else:
+                current_conversation_history = []
             
             for i, question in enumerate(questions):
                 # Add context from previous questions in this session
@@ -1120,10 +1151,23 @@ class ChatBot:
             emotional_analysis = None
             
             try:
+                # Ensure conversation_history is properly formatted
+                safe_conversation_history = []
+                if conversation_history:
+                    for msg in conversation_history:
+                        if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
+                            safe_conversation_history.append(msg)
+                        elif isinstance(msg, str):
+                            # Convert string messages to proper format
+                            safe_conversation_history.append({
+                                'role': 'user',
+                                'content': msg
+                            })
+                
                 # Analyze conversation context
                 conversation_context = await self.conversation_analyzer.analyze_conversation_context(
                     current_query=query,
-                    conversation_history=conversation_history or [],
+                    conversation_history=safe_conversation_history,
                     nlu_result=nlu_result,
                     entities=[]  # Will be populated later
                 )
@@ -1132,7 +1176,7 @@ class ChatBot:
                 # Analyze emotions
                 emotional_analysis = await self.emotional_intelligence.analyze_emotions(
                     current_query=query,
-                    conversation_history=conversation_history or [],
+                    conversation_history=safe_conversation_history,
                     language=detected_lang
                 )
                 # logger.info(f"💭 Emotional analysis: {emotional_analysis.primary_emotion} (intensity: {emotional_analysis.emotion_intensity:.2f})")

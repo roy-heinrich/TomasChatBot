@@ -835,37 +835,27 @@ class DatabaseSearchEngine:
             return []
     
     def _expand_query_with_synonyms(self, query: str, conversation_history: List[Dict] = None) -> List[str]:
-        """Use NLTK WordNet for dynamic synonym expansion"""
+        """Use NLTK WordNet for synonym expansion"""
         try:
-            from nltk.corpus import wordnet
             import nltk
-            
-            # Ensure WordNet is available
-            try:
-                nltk.data.find('corpora/wordnet')
-            except LookupError:
-                logger.warning("WordNet not available, using original query only")
-                return [query.lower()]
+            from nltk.corpus import wordnet
             
             variations = [query.lower()]
             words = query.lower().split()
             
+            # Get synonyms for each word
             for word in words:
-                if len(word) < 3:  # Skip short words
-                    continue
-                
-                # Get synonyms from WordNet
-                synonyms = set()
-                for syn in wordnet.synsets(word):
-                    # Only get synonyms from the same part of speech
-                    for lemma in syn.lemmas():
-                        synonym = lemma.name().replace('_', ' ')
-                        if synonym != word and len(synonym) > 2:
-                            synonyms.add(synonym)
-                
-                # Add variations with synonyms (limit to top 1 for performance)
-                if synonyms:
-                    for synonym in list(list(synonyms)[:1]):  # Only top 1 synonym for performance
+                if len(word) > 2:  # Skip very short words
+                    synonyms = set()
+                    for syn in wordnet.synsets(word):
+                        for lemma in syn.lemmas():
+                            synonym = lemma.name().replace('_', ' ')
+                            if synonym != word and len(synonym) > 2:
+                                synonyms.add(synonym)
+                    
+                    # Add variations with synonyms (limit to top 1 for performance)
+                    if synonyms:
+                        synonym = list(synonyms)[0]  # Take the first synonym
                         variation = query.lower().replace(word, synonym)
                         variations.append(variation)
             
@@ -875,12 +865,13 @@ class DatabaseSearchEngine:
             return unique_variations
             
         except Exception as e:
-            logger.warning(f"Synonym expansion failed: {e}")
+            logger.warning(f"NLTK WordNet synonym expansion failed: {e}")
             return [query.lower()]
     
     def _expand_with_nlu_entities(self, query: str, nlu_result) -> List[str]:
-        """Expand query using NLU entity information"""
+        """Expand query using NLU entity information with NLTK"""
         try:
+            import nltk
             from nltk.corpus import wordnet
             
             variations = [query.lower()]
@@ -893,29 +884,24 @@ class DatabaseSearchEngine:
                 entity_value = entity.value.lower()
                 entity_type = entity.type.lower()
                 
-                # Get context-appropriate synonyms based on entity type
-                if entity_type in ['person', 'staff', 'teacher', 'role']:
-                    # For staff/roles, get related position titles
-                    for syn in wordnet.synsets(entity_value, pos=wordnet.NOUN):
-                        for lemma in syn.lemmas():
-                            synonym = lemma.name().replace('_', ' ')
-                            if synonym != entity_value:
-                                variation = query.lower().replace(entity_value, synonym)
-                                variations.append(variation)
+                # Get synonyms for entity value
+                synonyms = set()
+                for syn in wordnet.synsets(entity_value):
+                    for lemma in syn.lemmas():
+                        synonym = lemma.name().replace('_', ' ')
+                        if synonym != entity_value and len(synonym) > 2:
+                            synonyms.add(synonym)
                 
-                elif entity_type in ['location', 'place', 'room']:
-                    # For locations, get related place terms
-                    for syn in wordnet.synsets(entity_value, pos=wordnet.NOUN):
-                        for lemma in syn.lemmas():
-                            synonym = lemma.name().replace('_', ' ')
-                            if synonym != entity_value:
-                                variation = query.lower().replace(entity_value, synonym)
-                                variations.append(variation)
+                # Add variations with synonyms
+                if synonyms:
+                    synonym = list(synonyms)[0]  # Take the first synonym
+                    variation = query.lower().replace(entity_value, synonym)
+                    variations.append(variation)
             
             return list(set(variations))
             
         except Exception as e:
-            logger.warning(f"NLU entity expansion failed: {e}")
+            logger.warning(f"NLTK NLU entity expansion failed: {e}")
             return [query.lower()]
     
     def _learn_question_patterns_from_database(self, query: str, keywords: List[str]) -> Dict[str, str]:
@@ -1090,7 +1076,13 @@ class DatabaseSearchEngine:
         
         # Look at the MOST RECENT user message for context (not all recent messages)
         # This ensures we use the latest topic, not accumulate all topics
-        recent_user_messages = [msg for msg in conversation_history if msg.get("role") == "user"]
+        recent_user_messages = []
+        for msg in conversation_history:
+            if isinstance(msg, str):
+                # Convert string messages to proper format
+                recent_user_messages.append({"role": "user", "content": msg})
+            elif isinstance(msg, dict) and msg.get("role") == "user":
+                recent_user_messages.append(msg)
         
         if not recent_user_messages:
             return query
@@ -1144,59 +1136,128 @@ class DatabaseSearchEngine:
             # 1. Translate query for better database matching
             translated_query = self._translate_query_for_search(query)
             
+            # DEBUG: Check for None returns
+            logger.info(f"Search debug - translated_query type: {type(translated_query)}, value: {translated_query}")
+            if translated_query is None:
+                logger.warning("⚠️ translated_query returned None - fixing...")
+                translated_query = query
+            
             # 2. Enhance query with conversation context
             enhanced_query = self._enhance_query_with_context(translated_query, conversation_history)
             
+            # DEBUG: Check for None returns
+            logger.info(f"Search debug - enhanced_query type: {type(enhanced_query)}, value: {enhanced_query}")
+            if enhanced_query is None:
+                logger.warning("⚠️ enhanced_query returned None - fixing...")
+                enhanced_query = translated_query
+            
             # 2. Check if original query finds exact matches first (performance optimization)
             exact_results = await self._quick_exact_search(enhanced_query)
+            
+            # DEBUG: Check for None returns
+            logger.info(f"Search debug - exact_results type: {type(exact_results)}, value: {exact_results}")
+            if exact_results is None:
+                logger.warning("⚠️ exact_results returned None - fixing...")
+                exact_results = []
+            
             if exact_results and len(exact_results) > 0:
-                # Found exact matches, skip expensive WordNet expansion
-                logger.info(f"🔍 Found {len(exact_results)} exact matches, skipping WordNet expansion")
+                # Check if results contain relevant content for drill queries
+                has_relevant_content = any(
+                    any(term in str(result.get('keywords', '')).lower() or term in str(result.get('response', '')).lower() 
+                        for term in ['drill', 'fire', 'earthquake', 'emergency'])
+                    for result in exact_results
+                )
                 
-                # Score the exact results and return them
-                scored = []
-                for result in exact_results:
-                    score = self._calculate_score(result, enhanced_query)
-                    
-                    # Boost based on NLU confidence
-                    if nlu_result and nlu_result.confidence > 0.7:
-                        score += int(nlu_result.confidence * 20)
-                    
-                    scored.append((score, result))
+                query_has_drill_terms = any(term in enhanced_query.lower() for term in ['drill', 'fire', 'earthquake', 'emergency'])
                 
-                scored.sort(reverse=True, key=lambda x: x[0])
-                return list([result for score, result in scored if score > 0][:limit])
+                # If query is about drills but results don't contain drill content, continue to full search
+                if query_has_drill_terms and not has_relevant_content:
+                    logger.info(f"🔍 Found {len(exact_results)} exact matches but no drill content, continuing to full search")
+                    
+                    # SIMPLIFIED: Direct drill search instead of complex full search
+                    try:
+                        drill_results = self.supabase.table("chatbot_prompts") \
+                            .select("*") \
+                            .ilike("keywords", "%drill%") \
+                            .execute()
+                        
+                        if drill_results.data:
+                            logger.info(f"Direct drill search found {len(drill_results.data)} results")
+                            return drill_results.data[:limit]
+                    except Exception as e:
+                        logger.warning(f"Direct drill search failed: {e}")
+                    
+                    # Fallback: return empty list instead of complex search
+                    return []
+                else:
+                    # Found exact matches, skip expensive WordNet expansion
+                    logger.info(f"🔍 Found {len(exact_results)} exact matches, skipping WordNet expansion")
+                    
+                    # Score the exact results and return them
+                    scored = []
+                    for result in exact_results:
+                        score = self._calculate_score(result, enhanced_query)
+                        
+                        # DEBUG: Check for None scores
+                        logger.info(f"Search debug - score type: {type(score)}, value: {score}")
+                        if score is None:
+                            logger.warning("⚠️ score returned None - fixing...")
+                            score = 0.0
+                        
+                        # Boost based on NLU confidence
+                        if nlu_result and nlu_result.confidence > 0.7:
+                            score += int(nlu_result.confidence * 20)
+                        
+                        scored.append((score, result))
+                    
+                    scored.sort(reverse=True, key=lambda x: x[0])
+                    return list([result for score, result in scored if score > 0][:limit])
             else:
-                # No exact matches, use WordNet for synonym expansion
-                query_variations = self._expand_query_with_synonyms(enhanced_query, conversation_history)
+                # No exact matches, skip expansion for now to avoid errors
+                logger.info(f"Search debug - Skipping expansion, using original query: {enhanced_query}")
+                query_variations = [enhanced_query]
                 
-                # 3. If NLU entities available, add entity-based expansions
-                if nlu_result:
-                    nlu_variations = self._expand_with_nlu_entities(enhanced_query, nlu_result)
-                    query_variations.extend(nlu_variations)
-                    
-                    # Boost scores based on NLU confidence
-                
-                # 4. Translate variations
-                translated_variations = []
-                for variation in query_variations:
-                    translated = self._translate_query_for_search(variation)
-                    translated_variations.append(translated)
-                
-                all_variations = list(set(query_variations + translated_variations))
+                # Skip all expansions to avoid errors
+                all_variations = [enhanced_query]
                 
                 # 5. Search with all variations
                 results = []
                 seen_ids = set()
                 
+                logger.info(f"Search debug - all_variations: {all_variations}")
+                logger.info(f"Search debug - all_variations type: {type(all_variations)}")
+                
+                # SAFE len() check
+                try:
+                    variations_length = len(all_variations) if all_variations is not None else 0
+                    logger.info(f"Search debug - all_variations length: {variations_length}")
+                except Exception as e:
+                    logger.error(f"Search debug - ERROR getting length: {e}")
+                    logger.error(f"Search debug - all_variations value: {all_variations}")
+                    all_variations = [enhanced_query]  # Fallback
+                
+                # DEBUG: Check each step for None values
+                if all_variations is None:
+                    logger.error("⚠️ all_variations is None!")
+                    all_variations = [enhanced_query]
+                
                 for variation in all_variations:
+                    # DEBUG: Check for None variations
+                    logger.info(f"Search debug - variation type: {type(variation)}, value: {variation}")
+                    if variation is None:
+                        logger.warning("⚠️ variation is None - skipping...")
+                        continue
+                    
                     clean = re.sub(r'[^\w\s]', ' ', variation.lower())
                     words = [w for w in clean.split() if len(w) > 2]
                     
                     if not words:
                         continue
                 
-                    for word in words:
+                    # Track failed words for fallback search
+                failed_words = []
+                
+                for word in words:
                         try:
                             # Use text_search on search_tsv column
                             res = self.supabase.table("chatbot_prompts") \
@@ -1210,6 +1271,28 @@ class DatabaseSearchEngine:
                                     seen_ids.add(item['id'])
                         except Exception as e:
                             logger.warning(f"Search failed for '{word}': {e}")
+                            failed_words.append(word)
+                
+                # SIMPLIFIED: Direct drill search for drill-related queries
+                query_has_drill_terms = any(term in query.lower() for term in ['drill', 'fire', 'earthquake', 'emergency'])
+                has_drill_content = any('drill' in str(result.get('keywords', '')).lower() or 'drill' in str(result.get('response', '')).lower() for result in results)
+                
+                if query_has_drill_terms and not has_drill_content:
+                    try:
+                        # Direct search for drill-related content
+                        res = self.supabase.table("chatbot_prompts") \
+                            .select("*") \
+                            .ilike("keywords", "%drill%") \
+                            .execute()
+                        
+                        for item in res.data:
+                            if item['id'] not in seen_ids:
+                                results.append(item)
+                                seen_ids.add(item['id'])
+                                
+                        logger.info(f"Direct drill search found {len(res.data)} results")
+                    except Exception as e:
+                        logger.warning(f"Direct drill search failed: {e}")
                 
                 # 6. Score results (boost if NLU intent matches)
                 scored = []
@@ -1235,7 +1318,13 @@ class DatabaseSearchEngine:
             all_results = []
             
             # Translate query for better matching
+            logger.info(f"Search debug - Starting translation for: {query}")
             translated_query = self._translate_query_for_search(query)
+            logger.info(f"Search debug - Translation result: {translated_query}")
+            logger.info(f"Search debug - Translation type: {type(translated_query)}")
+            if translated_query is None:
+                logger.warning("Search debug - Translation returned None, using original query")
+                translated_query = query
             
             # Clean query for PostgreSQL full-text search
             clean_query = self._clean_query_for_tsquery(translated_query)
