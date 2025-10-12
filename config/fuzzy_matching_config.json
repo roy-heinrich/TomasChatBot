@@ -1,0 +1,150 @@
+{
+  "fuzzy_matching": {
+    "base_threshold": 0.8,
+    "dynamic_thresholds": {
+      "short_words_length": 4,
+      "short_words_threshold": 0.9,
+      "medium_words_length": 6,
+      "medium_words_threshold": 0.85,
+      "same_length_boost": 0.05,
+      "length_difference_threshold": 3,
+      "length_difference_penalty": 0.1,
+      "min_threshold": 0.7,
+      "max_threshold": 0.95
+    },
+    "validation": {
+      "meaning_preserving_words": [
+        "start", "end", "begin", "finish", "time", "when", "where", "what", "how"
+      ],
+      "academic_subjects": [
+        "art", "math", "science", "english", "filipino", "music", "pe"
+      ],
+      "problematic_patterns": [
+        {
+          "original_pattern": "start",
+          "candidate_pattern": "art",
+          "context": "time does the class",
+          "description": "Prevent start->art correction in time context"
+        },
+        {
+          "original_pattern": "end",
+          "candidate_pattern": "and",
+          "context": "class",
+          "description": "Prevent end->and correction"
+        },
+        {
+          "original_pattern": "begin",
+          "candidate_pattern": "big",
+          "context": "class",
+          "description": "Prevent begin->big correction"
+        },
+        {
+          "original_pattern": "math",
+          "candidate_pattern": "match",
+          "context": "class",
+          "description": "Prevent math->match correction"
+        },
+        {
+          "original_pattern": "science",
+          "candidate_pattern": "since",
+          "context": "class",
+          "description": "Prevent science->since correction"
+        }
+      ]
+    },
+    "vocabulary": {
+      "school_terms": [
+        "school", "activities", "available", "principal", "enrollment",
+        "student", "students", "teacher", "teachers", "education",
+        "program", "programs", "schedule", "hours", "location", "address",
+        "grade", "grades", "class", "classes", "subject", "subjects",
+        "event", "events", "celebration", "month", "year", "semester",
+        "curriculum", "academic", "extracurricular", "sports", "music",
+        "art", "science", "mathematics", "english", "filipino", "history",
+        "social", "studies", "physical", "education", "computer", "technology",
+        "support", "aide", "learning", "assistance", "help"
+      ],
+      "common_query_words": [
+        "start", "end", "begin", "finish", "time", "when", "where", "what", "how"
+      ],
+      "emergency_keywords": [
+        "heart", "attack", "stroke", "emergency", "medical", "ambulance",
+        "bleeding", "unconscious", "dying", "pain", "injury", "accident"
+      ]
+    }
+  },
+  "entity_extraction": {
+    "validation": {
+      "problematic_patterns": {
+        "art": [
+          "start", "starts", "starting",
+          "part", "parts", "party", "parties",
+          "smart", "chart", "dart", "heart"
+        ],
+        "math": [
+          "match", "matches", "matching",
+          "path", "paths"
+        ],
+        "science": [
+          "since", "conscience"
+        ],
+        "pe": [
+          "person", "people", "personal"
+        ]
+      },
+      "context_validation": {
+        "time_contexts": ["time", "when", "start", "end", "begin", "finish"],
+        "class_contexts": ["class", "subject", "course", "lesson", "period"],
+        "require_class_context_for_subjects": true
+      }
+    }
+  },
+  "monitoring": {
+    "alert_thresholds": {
+      "response_time_ms": 10000,
+      "error_rate": 0.1,
+      "false_positive_rate": 0.05
+    },
+    "time_windows": {
+      "1min": "1 minute",
+      "5min": "5 minutes", 
+      "15min": "15 minutes",
+      "1hour": "1 hour"
+    },
+    "max_metrics": 10000,
+    "background_check_interval_seconds": 60
+  },
+  "testing": {
+    "test_cases": {
+      "false_positive_prevention": [
+        {
+          "query": "hi what time does the class start",
+          "should_not_extract": "art",
+          "description": "Prevent start->art false positive"
+        },
+        {
+          "query": "when does the class end",
+          "should_not_extract": "art", 
+          "description": "Prevent end->art false positive"
+        },
+        {
+          "query": "what time is the match",
+          "should_not_extract": "math",
+          "description": "Prevent match->math false positive"
+        }
+      ],
+      "valid_extractions": [
+        {
+          "query": "what time is art class",
+          "should_extract": "art",
+          "description": "Correctly extract art from art class"
+        },
+        {
+          "query": "when is math class",
+          "should_extract": "math",
+          "description": "Correctly extract math from math class"
+        }
+      ]
+    }
+  }
+}

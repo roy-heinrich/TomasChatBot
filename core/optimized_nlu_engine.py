@@ -209,6 +209,12 @@ class OptimizedNLUEngine(NLUEngine):
         """Fast greeting detection using compiled patterns"""
         from nlu_engine import Intent
         
+        # Check if this is a greeting + question combination
+        if self._is_greeting_with_question(user_input.lower()):
+            # Don't return greeting intent, let other intents be detected
+            # Fall back to full analysis for complex cases
+            return await super()._analyze_single_intent(user_input, context)
+        
         # Check for name introduction
         name_match = self.compiled_patterns['name_patterns'].search(user_input.lower())
         

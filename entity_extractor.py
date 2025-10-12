@@ -133,9 +133,9 @@ class AdvancedEntityExtractor:
         entities.extend(self._extract_ages(text, text_lower))
         entities.extend(self._extract_staff_roles(text, text_lower))
         
-        # Enhanced extraction using NLTK
-        nltk_entities = self._extract_entities_with_nltk(text)
-        entities.extend(nltk_entities)
+        # Enhanced extraction using NLTK (disabled for performance)
+        # nltk_entities = self._extract_entities_with_nltk(text)
+        # entities.extend(nltk_entities)
         
         # Extract entity relationships
         relationship_entities = self._extract_entity_relationships(text, entities)
@@ -470,12 +470,17 @@ class AdvancedEntityExtractor:
         return entities
     
     def _extract_subjects(self, text: str, text_lower: str) -> List[ExtractedEntity]:
-        """Extract academic subjects"""
+        """Extract academic subjects using word boundary matching with validation"""
         entities = []
         
         for subject in self.subject_patterns:
-            if subject in text_lower:
-                start_pos = text_lower.find(subject)
+            # Use word boundary matching to avoid false positives
+            import re
+            pattern = r'\b' + re.escape(subject) + r'\b'
+            matches = re.finditer(pattern, text_lower)
+            
+            for match in matches:
+                start_pos = match.start()
                 
                 # Skip false positives for "pe" - only match if it's standalone or part of "physical education"
                 if subject == "pe":
@@ -483,17 +488,67 @@ class AdvancedEntityExtractor:
                     if start_pos + 2 < len(text_lower) and text_lower[start_pos:start_pos+6] == "person":
                         continue  # Skip this match as it's "person" not "PE"
                 
-                entity = ExtractedEntity(
-                    entity_type="academic_subject",
-                    value=subject.title(),
-                    confidence=0.8,
-                    start_pos=start_pos,
-                    end_pos=start_pos + len(subject),
-                    context=text[max(0, start_pos-15):start_pos+len(subject)+15]
-                )
-                entities.append(entity)
+                # Additional validation to prevent false positives
+                if self._validate_subject_extraction(subject, text, start_pos, match.end()):
+                    entity = ExtractedEntity(
+                        entity_type="academic_subject",
+                        value=subject.title(),
+                        confidence=0.8,
+                        start_pos=start_pos,
+                        end_pos=match.end(),
+                        context=text[max(0, start_pos-15):match.end()+15]
+                    )
+                    entities.append(entity)
         
         return entities
+    
+    def _validate_subject_extraction(self, subject: str, text: str, start_pos: int, end_pos: int) -> bool:
+        """Validate that subject extraction makes sense in context"""
+        
+        # Get surrounding context
+        context_start = max(0, start_pos - 10)
+        context_end = min(len(text), end_pos + 10)
+        context = text[context_start:context_end].lower()
+        
+        # Known problematic patterns
+        problematic_patterns = {
+            'art': [
+                # Prevent "art" from being extracted from "start"
+                r'start', r'starts', r'starting',
+                # Prevent from other common words
+                r'part', r'parts', r'party', r'parties',
+                r'smart', r'chart', r'dart', r'heart'
+            ],
+            'math': [
+                # Prevent from common words
+                r'match', r'matches', r'matching',
+                r'path', r'paths', r'paths'
+            ],
+            'science': [
+                # Prevent from common words
+                r'since', r'conscience'
+            ],
+            'pe': [
+                # Prevent from person-related words
+                r'person', r'people', r'personal'
+            ]
+        }
+        
+        if subject in problematic_patterns:
+            for pattern in problematic_patterns[subject]:
+                if re.search(pattern, context):
+                    return False
+        
+        # Additional context validation
+        # If subject appears in a time-related context, be more careful
+        time_contexts = ['time', 'when', 'start', 'end', 'begin', 'finish']
+        if any(time_word in context for time_word in time_contexts):
+            # For academic subjects, require class/subject context
+            class_contexts = ['class', 'subject', 'course', 'lesson', 'period']
+            if not any(class_word in context for class_word in class_contexts):
+                return False
+        
+        return True
     
     def _extract_dates(self, text: str, text_lower: str) -> List[ExtractedEntity]:
         """Extract date and time information"""

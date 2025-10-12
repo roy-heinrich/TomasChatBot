@@ -860,7 +860,13 @@ class NLUEngine:
         # Enhanced greeting detection with confidence scoring
         greeting_indicators = self._analyze_greeting_patterns(user_lower)
         if greeting_indicators['intent'] != Intent.UNKNOWN:
-            return NLUResult(greeting_indicators['intent'], greeting_indicators['confidence'], [])
+            # Check if this is a greeting + question combination
+            is_greeting_with_question = self._is_greeting_with_question(user_lower)
+            if is_greeting_with_question:
+                # Don't return greeting intent, let other intents be detected
+                pass
+            else:
+                return NLUResult(greeting_indicators['intent'], greeting_indicators['confidence'], [])
         
         # Enhanced enrollment detection
         enrollment_score = self._calculate_enrollment_confidence(user_lower)
@@ -1017,17 +1023,22 @@ class NLUEngine:
         import re
         greeting_pattern = r'\b(' + '|'.join(re.escape(greet) for greet in greeting_keywords) + r')\b'
         if re.search(greeting_pattern, user_lower):
-            # Detect greeting style/mood for dynamic personalization
-            if any(word in user_lower for word in ["awesome", "great", "fantastic", "wonderful", "amazing", "excited", "!!!", "super", "really good"]):
-                return NLUResult(Intent.GREETING_EXCITED, 0.9, [])
-            elif any(word in user_lower for word in ["sir", "ma'am", "please", "good day", "greetings", "salutations", "formal"]):
-                return NLUResult(Intent.GREETING_FORMAL, 0.9, [])
-            elif any(word in user_lower for word in ["sup", "hiya", "wassup", "howdy", "hey there", "casual"]):
-                return NLUResult(Intent.GREETING_CASUAL, 0.9, [])
-            elif any(word in user_lower for word in ["back", "again", "return", "here again", "returning"]):
-                return NLUResult(Intent.GREETING_RETURNING_USER, 0.9, [])
+            # Check if this is a greeting + question combination
+            if self._is_greeting_with_question(user_lower):
+                # Don't return greeting intent, let other intents be detected
+                pass
             else:
-                return NLUResult(Intent.GREETING_SIMPLE, 0.8, [])
+                # Detect greeting style/mood for dynamic personalization
+                if any(word in user_lower for word in ["awesome", "great", "fantastic", "wonderful", "amazing", "excited", "!!!", "super", "really good"]):
+                    return NLUResult(Intent.GREETING_EXCITED, 0.9, [])
+                elif any(word in user_lower for word in ["sir", "ma'am", "please", "good day", "greetings", "salutations", "formal"]):
+                    return NLUResult(Intent.GREETING_FORMAL, 0.9, [])
+                elif any(word in user_lower for word in ["sup", "hiya", "wassup", "howdy", "hey there", "casual"]):
+                    return NLUResult(Intent.GREETING_CASUAL, 0.9, [])
+                elif any(word in user_lower for word in ["back", "again", "return", "here again", "returning"]):
+                    return NLUResult(Intent.GREETING_RETURNING_USER, 0.9, [])
+                else:
+                    return NLUResult(Intent.GREETING_SIMPLE, 0.8, [])
         
         # Priority 4: Name queries - asking about their own name
         name_query_patterns = [
@@ -1374,6 +1385,26 @@ class NLUEngine:
                 confidence = 0.8
         
         return {"intent": intent, "confidence": confidence}
+    
+    def _is_greeting_with_question(self, user_lower: str) -> bool:
+        """Check if this is a greeting combined with a question"""
+        # Common greeting words
+        greeting_words = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", 
+                         "good afternoon", "good evening", "magandang umaga", "magandang hapon", 
+                         "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", 
+                         "evening", "greetings", "hiya", "wassup", "howdy"]
+        
+        # Question words that indicate there's a real question
+        question_words = ["what", "where", "when", "who", "how", "why", "which", "can", "could", 
+                         "would", "should", "is", "are", "do", "does", "did", "will", "have", "has",
+                         "ano", "saan", "kailan", "sino", "paano", "bakit", "alin", "pwed", "maaari", 
+                         "gusto", "kailangan", "?", "time", "class", "start", "adviser", "grade"]
+        
+        # Check if query contains both greeting and question words
+        has_greeting = any(word in user_lower for word in greeting_words)
+        has_question = any(word in user_lower for word in question_words)
+        
+        return has_greeting and has_question
     
     def _calculate_enrollment_confidence(self, user_lower: str) -> float:
         """Calculate confidence score for enrollment intent"""

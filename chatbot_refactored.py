@@ -324,10 +324,10 @@ class ChatBot:
         single_question_patterns = [
             r'does\s+\w+\s+\w+\s+have\s+',  # "does the grade five have"
             r'do\s+\w+\s+\w+\s+have\s+',    # "do the students have"
-            r'is\s+\w+\s+\w+\s+',           # "is the school"
-            r'are\s+\w+\s+\w+\s+',          # "are the students"
-            r'can\s+\w+\s+\w+\s+',          # "can the school"
-            r'will\s+\w+\s+\w+\s+',         # "will the school"
+            r'is\s+the\s+\w+\s+\w+\s+(open|closed|available|ready)',     # "is the school open" (more specific)
+            r'are\s+the\s+\w+\s+\w+\s+(here|ready|available)',    # "are the students here" (more specific)
+            r'can\s+the\s+\w+\s+\w+\s+(help|assist)',    # "can the school help" (more specific)
+            r'will\s+the\s+\w+\s+\w+\s+(open|close)',   # "will the school open" (more specific)
             r'does\s+the\s+\w+\s+\w+\s+',   # "does the grade five"
             r'saan\s+ang\s+\w+\s+',         # "saan ang guidance office" (Tagalog)
             r'ano\s+ang\s+\w+\s+',          # "ano ang school" (Tagalog)
@@ -336,7 +336,28 @@ class ChatBot:
             r'paano\s+ang\s+\w+\s+',        # "paano ang enrollment" (Tagalog)
         ]
         
+        # Enhanced detection for compound questions with "and" + numbers/grades
+        # Pattern: "who is the adviser of grade 3 and 4" should be split
+        compound_grade_patterns = [
+            r'\b(adviser|teacher|instructor|principal|director)\s+of\s+(grade|level|year)\s+\d+\s+and\s+\d+',
+            r'\b(adviser|teacher|instructor|principal|director)\s+of\s+(grade|level|year)\s+\d+\s+at\s+\d+',
+            r'\b(adviser|teacher|instructor|principal|director)\s+of\s+(grade|level|year)\s+\d+\s+,\s*\d+',
+            r'\b(adviser|teacher|instructor|principal|director)\s+of\s+(grade|level|year)\s+\d+\s+pati\s+\d+',
+        ]
+        
+        # Check for compound grade questions
+        is_compound_grade_question = any(re.search(pattern, query, re.IGNORECASE) for pattern in compound_grade_patterns)
+        
+        if is_compound_grade_question:
+            # Force splitting for compound grade questions
+            question_count += 2
+            # Debug: Print detection for troubleshooting
+            # print(f"DEBUG: Compound grade question detected: '{query}'")
+        
         is_single_question = any(re.search(pattern, query, re.IGNORECASE) for pattern in single_question_patterns)
+        
+        # Debug: Print question count for troubleshooting
+        # print(f"DEBUG: Query='{query}', Question count={question_count}, Is single question={is_single_question}, Is compound grade={is_compound_grade_question}")
         
         # If we have multiple question indicators, try to split
         if question_count >= 2 and not is_single_question:
@@ -384,6 +405,26 @@ class ChatBot:
                 # If we found multiple questions, stop here
                 if len(questions) > 1:
                     break
+            
+            # Special handling for compound grade questions
+            if len(questions) == 1 and is_compound_grade_question:
+                # print(f"DEBUG: Attempting to split compound grade question: '{query}'")
+                # Split compound grade questions like "who is the adviser of grade 3 and 4"
+                grade_split_pattern = r'\b(adviser|teacher|instructor|principal|director)\s+of\s+(grade|level|year)\s+(\d+)\s+(and|at|,|pati)\s+(\d+)'
+                match = re.search(grade_split_pattern, query, re.IGNORECASE)
+                if match:
+                    role = match.group(1)
+                    level_type = match.group(2)
+                    first_grade = match.group(3)
+                    second_grade = match.group(5)
+                    
+                    # Create two separate questions
+                    question1 = f"who is the {role} of {level_type} {first_grade}?"
+                    question2 = f"who is the {role} of {level_type} {second_grade}?"
+                    questions = [question1, question2]
+                    # print(f"DEBUG: Split into: {questions}")
+                # else:
+                    # print(f"DEBUG: Pattern did not match for splitting")
             
             # If simple separators didn't work, try intelligent question word splitting
             if len(questions) == 1:
@@ -678,7 +719,7 @@ class ChatBot:
             return ChatResponse(
                 response=split_messages,
                 entities=[{"entity_type": e.entity_type, "value": e.value, "confidence": e.confidence} for e in entities],
-                detected_language=response_lang,
+                detected_language=detected_lang,  # Use original detected language, not mapped
                 language_confidence=confidence,
                 is_split=len(split_messages) > 1,
                 message_count=len(split_messages),
@@ -746,9 +787,45 @@ class ChatBot:
                         fallback_responses.append(response.response)
             return fallback_responses
 
+    def _is_pure_greeting(self, query: str, nlu_result) -> bool:
+        """Check if this is a pure greeting (no question content) vs greeting + question"""
+        if not nlu_result or nlu_result.intent.value != 'greeting_simple':
+            return False
+        
+        query_lower = query.lower().strip()
+        
+        # Common greeting words
+        greeting_words = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", 
+                         "good afternoon", "good evening", "magandang umaga", "magandang hapon", 
+                         "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", 
+                         "evening", "greetings", "hiya", "wassup", "howdy"]
+        
+        # Question words that indicate there's a real question
+        question_words = ["what", "where", "when", "who", "how", "why", "which", "can", "could", 
+                         "would", "should", "is", "are", "do", "does", "did", "will", "have", "has",
+                         "ano", "saan", "kailan", "sino", "paano", "bakit", "alin", "pwed", "maaari", 
+                         "gusto", "kailangan", "?", "time", "class", "start", "adviser", "grade"]
+        
+        # Check if query contains question words
+        has_question_content = any(word in query_lower for word in question_words)
+        
+        # If it has question content, it's not a pure greeting
+        if has_question_content:
+            return False
+        
+        # Check if query is just greeting words (with minimal other content)
+        words = query_lower.split()
+        greeting_word_count = sum(1 for word in words if any(greeting in word for greeting in greeting_words))
+        
+        # If more than half the words are greeting words, it's likely a pure greeting
+        return greeting_word_count >= len(words) * 0.5
+
     def _correct_common_typos(self, query: str) -> str:
         """Real fuzzy matching typo correction using string similarity"""
         import re
+        import time
+        start_time = time.time()
+        
         try:
             from difflib import SequenceMatcher
         except ImportError:
@@ -766,6 +843,7 @@ class ChatBot:
             'art', 'science', 'mathematics', 'english', 'filipino', 'history',
             'social', 'studies', 'physical', 'education', 'computer', 'technology',
             'support', 'aide', 'learning', 'assistance', 'help',
+            'start', 'end', 'begin', 'finish', 'time', 'when', 'where',  # Common query words
             # Emergency keywords to prevent correction
             'heart', 'attack', 'stroke', 'emergency', 'medical', 'ambulance',
             'bleeding', 'unconscious', 'dying', 'pain', 'injury', 'accident'
@@ -782,7 +860,7 @@ class ChatBot:
                 corrected_words.append(word)
                 continue
             
-            # Find the best match using fuzzy matching
+            # Find the best match using fuzzy matching with context validation
             best_match = None
             best_ratio = 0.0
             
@@ -790,13 +868,18 @@ class ChatBot:
                 # Calculate similarity ratio
                 ratio = SequenceMatcher(None, clean_word, vocab_word.lower()).ratio()
                 
-                # If similarity is high enough (threshold: 0.7)
-                if ratio > 0.7 and ratio > best_ratio:
-                    best_ratio = ratio
-                    best_match = vocab_word
+                # Dynamic threshold based on word length and context
+                threshold = self._calculate_dynamic_threshold(clean_word, vocab_word)
+                
+                # If similarity is high enough and passes context validation
+                if ratio > threshold and ratio > best_ratio:
+                    # Additional validation to prevent false positives
+                    if self._validate_word_correction(clean_word, vocab_word, query):
+                        best_ratio = ratio
+                        best_match = vocab_word
             
             # Use the best match if found, otherwise keep original
-            if best_match and best_ratio > 0.7:
+            if best_match and best_ratio > self._calculate_dynamic_threshold(clean_word, best_match):
                 # Preserve original capitalization pattern
                 if word.isupper():
                     corrected_words.append(best_match.upper())
@@ -807,7 +890,132 @@ class ChatBot:
             else:
                 corrected_words.append(word)
         
-        return ' '.join(corrected_words)
+        corrected_query = ' '.join(corrected_words)
+        
+        # Record metrics and check for false positives
+        duration_ms = (time.time() - start_time) * 1000
+        corrections = []
+        
+        for i, (original, corrected) in enumerate(zip(words, corrected_words)):
+            if original != corrected:
+                corrections.append({
+                    'original': original,
+                    'corrected': corrected,
+                    'position': i
+                })
+        
+        # Record typo correction metrics
+        try:
+            from core.monitoring_system import record_metric, record_false_positive
+            
+            record_metric(
+                operation="typo_correction",
+                duration_ms=duration_ms,
+                success=True,
+                additional_data={
+                    "original_query": query,
+                    "corrected_query": corrected_query,
+                    "corrections": corrections,
+                    "changed": query != corrected_query
+                }
+            )
+            
+            # Check for false positives
+            false_positive_patterns = [
+                {"original": "start", "false_positive": "art", "context": "time does the class"},
+                {"original": "end", "false_positive": "and", "context": "class"},
+                {"original": "begin", "false_positive": "big", "context": "class"},
+                {"original": "math", "false_positive": "match", "context": "class"},
+                {"original": "science", "false_positive": "since", "context": "class"},
+            ]
+            
+            for correction in corrections:
+                original_word = correction['original'].lower()
+                corrected_word = correction['corrected'].lower()
+                
+                for pattern_info in false_positive_patterns:
+                    if (pattern_info['original'] == original_word and 
+                        pattern_info['false_positive'] == corrected_word and
+                        pattern_info['context'] in query.lower()):
+                        
+                        record_false_positive(
+                            operation="typo_correction",
+                            details={
+                                "original_query": query,
+                                "corrected_query": corrected_query,
+                                "correction": correction,
+                                "pattern": pattern_info['original'],
+                                "false_positive": pattern_info['false_positive']
+                            }
+                        )
+                        break
+        
+        except ImportError:
+            # Monitoring not available, continue silently
+            pass
+        
+        return corrected_query
+    
+    def _calculate_dynamic_threshold(self, original_word: str, candidate_word: str) -> float:
+        """Calculate dynamic threshold based on word characteristics"""
+        base_threshold = 0.8  # Increased from 0.7
+        
+        # Higher threshold for shorter words (more prone to false positives)
+        if len(original_word) <= 4:
+            base_threshold = 0.9
+        elif len(original_word) <= 6:
+            base_threshold = 0.85
+        
+        # Higher threshold if words have same length (prevents substring matches)
+        if len(original_word) == len(candidate_word):
+            base_threshold += 0.05
+        
+        # Lower threshold for words with significant length difference
+        length_diff = abs(len(original_word) - len(candidate_word))
+        if length_diff >= 3:
+            base_threshold -= 0.1
+        
+        return min(max(base_threshold, 0.7), 0.95)  # Keep between 0.7-0.95
+    
+    def _validate_word_correction(self, original_word: str, candidate_word: str, full_query: str) -> bool:
+        """Additional validation to prevent false positive corrections"""
+        import re
+        
+        # Prevent corrections that create nonsensical phrases
+        problematic_patterns = [
+            # Time-related false positives
+            (r'\bstart\b', r'\bart\b', 'time does the class'),
+            (r'\bend\b', r'\band\b', 'class'),
+            (r'\bbegin\b', r'\bbig\b', 'class'),
+            
+            # Subject-related false positives  
+            (r'\bmath\b', r'\bmatch\b', 'class'),
+            (r'\bscience\b', r'\bsince\b', 'class'),
+            
+            # Common false positive patterns
+            (r'\bthe\b', r'\bthey\b', 'class'),
+            (r'\bof\b', r'\boff\b', 'class'),
+        ]
+        
+        for original_pattern, candidate_pattern, context in problematic_patterns:
+            if (re.search(original_pattern, original_word.lower()) and 
+                re.search(candidate_pattern, candidate_word.lower()) and
+                context in full_query.lower()):
+                return False
+        
+        # Prevent corrections that change word meaning significantly
+        meaning_preserving_words = ['start', 'end', 'begin', 'finish', 'time', 'when', 'where', 'what', 'how']
+        if original_word.lower() in meaning_preserving_words and candidate_word.lower() not in meaning_preserving_words:
+            return False
+        
+        # Prevent corrections to academic subjects unless context suggests it
+        academic_subjects = ['art', 'math', 'science', 'english', 'filipino', 'music', 'pe']
+        if (original_word.lower() not in academic_subjects and 
+            candidate_word.lower() in academic_subjects and
+            'class' not in full_query.lower() and 'subject' not in full_query.lower()):
+            return False
+        
+        return True
 
     async def chat(self, query: str, conversation_history: List[Dict] = None, 
                    user_timezone: str = None, session_id: str = None) -> ChatResponse:
@@ -881,8 +1089,16 @@ class ChatBot:
                         confidence = context_confidence
                         # logger.info(f"🌍 Context-based language detection: {detected_lang} → {response_lang} (confidence: {confidence:.2f})")  # Commented out debug logs
             
-            # 2. Get NLU analysis for intent
-            nlu_result = await self.nlu_engine.analyze_intent(query, {"conversation_history": conversation_history})
+            # 2. Get NLU analysis for intent with enhanced context
+            nlu_context = {
+                "conversation_history": conversation_history,
+                "detected_language": detected_lang,
+                "language_confidence": confidence,
+                "query_length": len(query),
+                "has_question_mark": "?" in query,
+                "word_count": len(query.split())
+            }
+            nlu_result = await self.nlu_engine.analyze_intent(query, nlu_context)
             
             # Emergency detection is now handled by NLU engine with context awareness
             
@@ -897,7 +1113,7 @@ class ChatBot:
                 
                 if intent_value == "emergency" or intent_value == "medical_emergency":
                     logger.warning(f"🚨 EMERGENCY DETECTED via NLU: {query}")
-                    return self._handle_emergency_response(query, response_lang)
+                    return self._handle_emergency_response(query, response_lang, detected_lang)
             
             # 2.5. Advanced AI Analysis - Conversation Intelligence
             conversation_context = None
@@ -1135,7 +1351,7 @@ class ChatBot:
                                 return ChatResponse(
                                     response=[f"Grade {grade_num} is not a valid grade level. Grade levels must be positive numbers (1-6)."],
                                     entities=entities,
-                                    detected_language=response_lang,
+                                    detected_language=detected_lang,  # Use original detected language, not mapped
                                     language_confidence=confidence,
                                     is_split=False,
                                     message_count=1,
@@ -1145,7 +1361,7 @@ class ChatBot:
                                 return ChatResponse(
                                     response=[f"Grade {grade_num} is not a valid grade level. Elementary schools typically offer grades 1-6."],
                                     entities=entities,
-                                    detected_language=response_lang,
+                                    detected_language=detected_lang,  # Use original detected language, not mapped
                                     language_confidence=confidence,
                                     is_split=False,
                                     message_count=1,
@@ -1229,6 +1445,15 @@ class ChatBot:
                 'intent': nlu_result.intent.value if nlu_result else 'unknown',
                 'confidence': nlu_result.confidence if nlu_result else 0.0,
                 'entities': [(e.entity_type, e.value) for e in entities],
+                'query_analysis': {
+                    'length': len(query),
+                    'word_count': len(query.split()),
+                    'has_question_mark': '?' in query,
+                    'detected_language': detected_lang,
+                    'language_confidence': confidence,
+                    'is_likely_gibberish': self._analyze_query_clarity(query, detected_lang),
+                    'complexity_score': self._calculate_query_complexity(query)
+                },
                 'emotional_analysis': {
                     'primary_emotion': emotional_analysis.primary_emotion if emotional_analysis else 'neutral',
                     'emotion_intensity': emotional_analysis.emotion_intensity if emotional_analysis else 0.0,
@@ -1252,6 +1477,9 @@ class ChatBot:
             # 🚨 FIX: Handle name introductions and greeting with name even without database context
             # BUT ONLY if we don't have database context already
             if not best_result:
+                # Check if this is a pure greeting (no other content) vs greeting + question
+                is_pure_greeting = self._is_pure_greeting(query, nlu_result)
+                
                 if nlu_result and nlu_result.intent.value in ['name_introduction', 'greeting_with_name']:
                     # logger.info(f"👋 {nlu_result.intent.value} detected - handling with Groq even without database context")  # Commented out debug logs
                     # For name introductions, we don't need database context
@@ -1264,10 +1492,13 @@ class ChatBot:
                     # logger.info(f"🙏 {nlu_result.intent.value} detected - handling appreciation/thanks")  # Commented out debug logs
                     # For appreciation/thanks, provide friendly acknowledgment
                     context = "User is expressing appreciation or thanks"
-                elif nlu_result and nlu_result.intent.value == 'greeting_simple':
+                elif nlu_result and nlu_result.intent.value == 'greeting_simple' and is_pure_greeting:
                     # logger.info(f"👋 {nlu_result.intent.value} detected - handling simple greeting")  # Commented out debug logs
                     # For simple greetings, provide friendly response
                     context = "User is giving a simple greeting"
+                elif nlu_result and nlu_result.intent.value == 'greeting_simple' and not is_pure_greeting:
+                    # This is a greeting + question - treat as informational query
+                    context = "User is greeting and asking a question - answer the question while being friendly"
                 elif nlu_result and nlu_result.intent.value == 'medical_emergency':
                     # logger.info(f"🚨 {nlu_result.intent.value} detected - handling medical emergency")  # Commented out debug logs
                     # For medical emergencies, provide immediate emergency response
@@ -1479,7 +1710,7 @@ class ChatBot:
             return ChatResponse(
                 response=split_messages,
                 entities=[{"entity_type": e.entity_type, "value": e.value, "confidence": e.confidence} for e in entities],
-                detected_language=response_lang,
+                detected_language=detected_lang,  # Use original detected language, not mapped
                 language_confidence=confidence,
                 is_split=len(split_messages) > 1,
                 message_count=len(split_messages),
@@ -1590,7 +1821,7 @@ class ChatBot:
             return ChatResponse(
                 response=split_messages,
                 entities=[],
-                detected_language=response_lang,  # Use mapped response language
+                detected_language=detected_lang,  # Use original detected language, not mapped  # Use mapped response language
                 language_confidence=0.8,
                 is_split=len(split_messages) > 1,
                 message_count=len(split_messages),
@@ -1608,7 +1839,7 @@ class ChatBot:
             return ChatResponse(
                 response=[fallback_text],
                 entities=[],
-                detected_language=response_lang,  # Use mapped response language
+                detected_language=detected_lang,  # Use original detected language, not mapped  # Use mapped response language
                 language_confidence=0.8,
                 is_split=False,
                 message_count=1,
@@ -1631,6 +1862,59 @@ class ChatBot:
             message_count=1,
             intent='error'
         )
+    
+    def _analyze_query_clarity(self, query: str, detected_lang: str) -> bool:
+        """Analyze query clarity using NLP techniques"""
+        query_lower = query.lower().strip()
+        
+        # Basic length check
+        if len(query_lower) < 3:
+            return True
+        
+        # Check for meaningful word patterns
+        words = query_lower.split()
+        if len(words) == 0:
+            return True
+        
+        # Check for repeated characters (gibberish indicator)
+        if len(set(query_lower)) < len(query_lower) * 0.3:
+            return True
+        
+        # Check for keyboard patterns
+        keyboard_patterns = ['qwerty', 'asdfgh', 'zxcvbn', 'hjkl']
+        if any(pattern in query_lower for pattern in keyboard_patterns):
+            return True
+        
+        # Check for language-specific patterns
+        if detected_lang in ['tl', 'akl']:
+            # Tagalog/Aklanon meaningful words
+            meaningful_patterns = ['ang', 'ng', 'sa', 'ay', 'si', 'mga', 'ko', 'mo', 'niya', 'nila', 'kami', 'kayo', 'sila', 'ano', 'saan', 'kailan', 'sino', 'paano', 'bakit', 'alin']
+            if not any(pattern in query_lower for pattern in meaningful_patterns):
+                if len(words) > 2:  # Only flag if query is long enough to expect meaningful words
+                    return True
+        else:
+            # English meaningful words
+            meaningful_patterns = ['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'what', 'where', 'when', 'who', 'how', 'why', 'which']
+            if not any(pattern in query_lower for pattern in meaningful_patterns):
+                if len(words) > 2:  # Only flag if query is long enough to expect meaningful words
+                    return True
+        
+        return False
+    
+    def _calculate_query_complexity(self, query: str) -> float:
+        """Calculate query complexity score (0.0 to 1.0)"""
+        words = query.split()
+        word_count = len(words)
+        
+        # Base complexity on word count
+        if word_count <= 3:
+            return 0.2
+        elif word_count <= 6:
+            return 0.5
+        elif word_count <= 10:
+            return 0.7
+        else:
+            return 0.9
     
     def _detect_gibberish_input(self, query: str, nlu_result, entities: List, detected_lang: str, confidence: float) -> bool:
         """
@@ -1788,7 +2072,7 @@ class ChatBot:
         # Final decision based on cumulative score
         return gibberish_score >= 0.5  # Threshold for gibberish detection
     
-    def _handle_emergency_response(self, query: str, response_lang: str) -> ChatResponse:
+    def _handle_emergency_response(self, query: str, response_lang: str, detected_lang: str) -> ChatResponse:
         """Handle medical emergency responses with immediate action guidance"""
         logger.warning(f"🚨 PROCESSING EMERGENCY: {query}")
         
@@ -1823,7 +2107,7 @@ class ChatBot:
         
         return ChatResponse(
             response=response_text,
-            detected_language=response_lang,
+            detected_language=detected_lang,  # Use original detected language, not mapped
             language_confidence=1.0,
             entities=[],
             intent="emergency",

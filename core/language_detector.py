@@ -149,17 +149,188 @@ class LanguageDetector:
         """Use linguistic patterns to identify Aklanon words"""
         import re
         
-        # Aklanon linguistic patterns
+        # Clean word for analysis
+        clean_word = re.sub(r'[^\w]', '', word.lower())
+        
+        # Aklanon linguistic patterns based on phonology and morphology
         aklanon_patterns = [
-            r'^(ngaean|sin-o|nahanumdom|nga|sang|imo|unga)$',   # Aklanon pronouns/particles
-            r'^(maayong|salamat|gid|damo|huo|indi|sige|tama|mali)$', # Aklanon common words
-            r'^(diin|siin|ngaa|wara|mayo|ro|eon|aton|inyo|ila)$',  # Aklanon question words
-            r'^(sayud|kung|du|cr|comfort|room|banyo|palikuran)$',  # Aklanon/English mixed words
-            r'^(mo|ko|niya|namin|ninyo|nila|naton|inyo|ila)$',  # Aklanon pronouns
-            r'^(sino|du|it|hay)$'  # Aklanon question words and particles
+            # Aklanon-specific particles and pronouns
+            r'^(ngaean|sin-o|nahanumdom|nga|sang|imo|unga)$',
+            
+            # Aklanon greetings and common words
+            r'^(maayong|salamat|gid|damo|huo|indi|sige|tama|mali)$',
+            
+            # Aklanon question words and interrogatives
+            r'^(diin|siin|ngaa|wara|mayo|ro|eon|aton|inyo|ila)$',
+            
+            # Aklanon verbs and action words
+            r'^(ginausoy|hinahanap|gusto|kailangan|pwede|maaari|ginausoy|ginahambae|ginahambae)$',
+            
+            # Aklanon nouns with 'sang' particle (distinctive feature)
+            r'^(oras|klase|paaralan|teacher|grade|sang)$',
+            
+            # Aklanon time words
+            r'^(aga|hapon|gab-i|umaga|tanghali|gabi)$',
+            
+            # Aklanon pronouns (more comprehensive)
+            r'^(mo|ko|niya|namin|ninyo|nila|naton|inyo|ila|ako|ikaw|siya|kami|kayo|sila)$',
+            
+            # Aklanon question words and particles
+            r'^(sino|du|it|hay|alin|kanino|kailan|bakit|paano)$',
+            
+            # NEW: Aklanon-specific particles and demonstratives
+            r'^(ro|ra|raya|daya|roon|don|ra|da)$',  # Subject/topic markers and demonstratives
+            
+            # NEW: Aklanon pronouns (expanded)
+            r'^(ako|ikaw|imaw|kita|kami|kamo|sanda)$',  # Aklanon pronouns
+            
+            # NEW: Aklanon verbal affixes
+            r'^(mag|ga|nag).*',  # Verbal prefixes/infixes
+            r'.*mag.*',  # Words containing 'mag' prefix
+            r'.*ga.*',   # Words containing 'ga' infix
+            
+            # NEW: Aklanon emphatic particles
+            r'^(du|don|dun|gita|eun|eon)$',  # Emphatic particles
+            
+            # NEW: Aklanon demonstratives (expanded)
+            r'^(raya|daya|roon|don|ra|da)$',  # This/that/here/there
+            
+            # NEW: Aklanon common words from examples
+            r'^(nami|uean|isda|libro|balay|bugas|maaeagkit|tanan|malipayon|kabuhi|atong|kaun|mauna)$',
+            
+            # Aklanon-specific morphological patterns
+            r'^(gin|hin|mag|nag|pag|pang).*',  # Aklanon verb prefixes
+            r'.*(ng|nga|sang)$',  # Aklanon particles as suffixes
+            r'^(sa|ng|na|ay|ko|mo|niya|namin|ninyo|nila)$',  # Aklanon particles
         ]
         
-        return any(re.match(pattern, word) for pattern in aklanon_patterns)
+        # Check against patterns
+        pattern_match = any(re.match(pattern, clean_word) for pattern in aklanon_patterns)
+        
+        # Additional linguistic analysis
+        linguistic_score = self._analyze_aklanon_linguistics(clean_word)
+        
+        return pattern_match or linguistic_score > 0.5
+    
+    def _analyze_aklanon_linguistics(self, word: str) -> float:
+        """Analyze word using Aklanon linguistic features"""
+        score = 0.0
+        
+        # Aklanon phonological features
+        # 1. Presence of 'ng' clusters (common in Aklanon)
+        if 'ng' in word:
+            score += 0.3
+        
+        # 2. Presence of 'sang' particle (very distinctive)
+        if word == 'sang':
+            score += 0.8
+        
+        # 3. Aklanon verb prefixes and infixes
+        aklanon_prefixes = ['gin', 'hin', 'mag', 'nag', 'pag', 'pang']
+        aklanon_infixes = ['ga', 'um', 'in']
+        if any(word.startswith(prefix) for prefix in aklanon_prefixes):
+            score += 0.4
+        if any(infix in word for infix in aklanon_infixes):
+            score += 0.3
+        
+        # 4. Aklanon question words ending patterns
+        if word.endswith(('in', 'on', 'ng')):
+            score += 0.2
+        
+        # 5. Aklanon-specific consonant clusters and particles
+        aklanon_clusters = ['ng', 'nga', 'sang', 'ngaean', 'ro', 'raya', 'roon', 'ra', 'da', 'du', 'gita', 'eun', 'eon']
+        if any(cluster in word for cluster in aklanon_clusters):
+            score += 0.3
+        
+        # 6. Aklanon vowel patterns (more open vowels)
+        vowel_count = sum(1 for char in word if char in 'aeiou')
+        if vowel_count > 0:
+            vowel_ratio = vowel_count / len(word)
+            if vowel_ratio > 0.4:  # Aklanon tends to have more open vowels
+                score += 0.2
+        
+        return min(score, 1.0)
+    
+    def _analyze_contextual_features(self, text_lower: str) -> dict:
+        """Analyze contextual features to distinguish Aklanon from Tagalog"""
+        features = {"aklanon_score": 0.0, "tagalog_score": 0.0}
+        
+        # 1. Sentence structure analysis
+        words = text_lower.split()
+        
+        # 2. Aklanon-specific contextual patterns
+        aklanon_context_patterns = [
+            r'\bsang\s+\w+',  # "sang" + noun pattern
+            r'\bnga\s+\w+',   # "nga" + word pattern
+            r'\bdiin\s+ang',  # "diin ang" question pattern
+            r'\bsiin\s+ang',  # "siin ang" question pattern
+            r'\bngaa\s+ang',  # "ngaa ang" question pattern
+            r'\bginausoy\s+ko', # "ginausoy ko" pattern
+            r'\bhinahanap\s+ko', # "hinahanap ko" pattern
+            
+            # NEW: Aklanon-specific patterns from examples
+            r'\bro\s+\w+',    # "ro" + word (subject/topic marker)
+            r'\braya\s+\w+',  # "raya" + word (this/these)
+            r'\broon\s+\w+',  # "roon" + word (that/those)
+            r'\bra\s+\w+',    # "ra" + word (this/these specific)
+            r'\bda\s+\w+',    # "da" + word (this/these specific)
+            r'\bako\s+hay',   # "ako hay" (I am)
+            r'\bmag\w+',      # "mag" + verb (verbal prefix)
+            r'\bga\w+',       # "ga" + verb (verbal infix)
+            r'\bdu\s+\w+',    # "du" + word (emphatic particle)
+            r'\bgita\s+\w+',  # "gita" + word (emphatic particle)
+            r'\beun\s+\w+',   # "eun" + word (already/now)
+            r'\beon\s+\w+',   # "eon" + word (already/now)
+            r'\bkita\s+\w+',  # "kita" + word (we inclusive)
+            r'\bkami\s+\w+',  # "kami" + word (we exclusive)
+            r'\bkamo\s+\w+',  # "kamo" + word (you plural)
+            r'\bsanda\s+\w+', # "sanda" + word (they)
+        ]
+        
+        # 3. Tagalog-specific contextual patterns
+        tagalog_context_patterns = [
+            r'\bang\s+\w+',   # "ang" + noun pattern
+            r'\bng\s+\w+',    # "ng" + word pattern
+            r'\bsaan\s+ang',  # "saan ang" question pattern
+            r'\bano\s+ang',   # "ano ang" question pattern
+            r'\bsino\s+ang',  # "sino ang" question pattern
+            r'\bgusto\s+ko',  # "gusto ko" pattern
+            r'\bkailangan\s+ko', # "kailangan ko" pattern
+        ]
+        
+        # Count pattern matches
+        import re
+        for pattern in aklanon_context_patterns:
+            if re.search(pattern, text_lower):
+                features["aklanon_score"] += 0.2
+        
+        for pattern in tagalog_context_patterns:
+            if re.search(pattern, text_lower):
+                features["tagalog_score"] += 0.2
+        
+        # 4. Word order analysis
+        # Aklanon tends to use "sang" while Tagalog uses "ng"
+        sang_count = text_lower.count('sang')
+        ng_count = text_lower.count(' ng ')
+        
+        if sang_count > ng_count:
+            features["aklanon_score"] += 0.3
+        elif ng_count > sang_count:
+            features["tagalog_score"] += 0.3
+        
+        # 5. Question word analysis
+        aklanon_questions = ['diin', 'siin', 'ngaa', 'ginausoy', 'hinahanap', 'ro', 'raya', 'roon', 'ra', 'da', 'ako', 'ikaw', 'imaw', 'kita', 'kami', 'kamo', 'sanda', 'du', 'gita', 'eun', 'eon', 'mag', 'ga', 'nag']
+        tagalog_questions = ['saan', 'ano', 'sino', 'gusto', 'kailangan', 'ang', 'ng', 'sa', 'ay', 'si', 'mga', 'namin', 'natin', 'ko', 'mo', 'niya', 'nila', 'kami', 'kayo', 'sila']
+        
+        aklanon_q_count = sum(1 for q in aklanon_questions if q in text_lower)
+        tagalog_q_count = sum(1 for q in tagalog_questions if q in text_lower)
+        
+        if aklanon_q_count > tagalog_q_count:
+            features["aklanon_score"] += 0.2
+        elif tagalog_q_count > aklanon_q_count:
+            features["tagalog_score"] += 0.2
+        
+        return features
     
     def _detect_with_langid(self, text: str) -> Tuple[str, float]:
         """Detect language using langid library (removed - using langdetect instead)"""
@@ -189,13 +360,13 @@ class LanguageDetector:
             best_lang = max(language_scores.items(), key=lambda x: x[1])
             max_score = best_lang[1]
             
-            # Check for ties and prefer Tagalog/Aklanon
+            # Check for ties and prefer Aklanon over Tagalog
             tied_languages = [lang for lang, score in language_scores.items() if score == max_score]
             if len(tied_languages) > 1:
-                if "tl" in tied_languages:
-                    return "tl", max_score
-                elif "akl" in tied_languages:
+                if "akl" in tied_languages:
                     return "akl", max_score
+                elif "tl" in tied_languages:
+                    return "tl", max_score
             
             return best_lang[0], best_lang[1]
             
@@ -209,17 +380,25 @@ class LanguageDetector:
             # Check for greeting patterns first (more specific)
             english_greetings = ["good morning", "good afternoon", "good evening", "good day", "hello", "hi there", "hey there"]
             tagalog_greetings = ["kumusta", "kamusta", "magandang umaga", "magandang hapon", "magandang gabi"]
+            aklanon_greetings = ["maayong aga", "maayong hapon", "maayong gab-i", "maayong buntag"]
             
             if any(greeting in text_lower for greeting in english_greetings):
                 return "en", 0.9
+            elif any(greeting in text_lower for greeting in aklanon_greetings):
+                return "akl", 0.9
             elif any(greeting in text_lower for greeting in tagalog_greetings):
                 return "tl", 0.9
             
             # Check for mixed-language indicators first
             mixed_tagalog_indicators = ["po", "ng", "sa", "ang", "ay", "si", "mga"]
+            mixed_aklanon_indicators = ["sang", "nga", "ngaean", "diin", "siin", "ngaa"]
             has_mixed_tagalog = any(indicator in text_lower for indicator in mixed_tagalog_indicators)
+            has_mixed_aklanon = any(indicator in text_lower for indicator in mixed_aklanon_indicators)
             
-            if has_mixed_tagalog:
+            if has_mixed_aklanon:
+                # If mixed Aklanon indicators are present, prefer Aklanon
+                return "akl", 0.8
+            elif has_mixed_tagalog:
                 # If mixed Tagalog indicators are present, prefer Tagalog
                 return "tl", 0.8
             
@@ -245,13 +424,13 @@ class LanguageDetector:
                 best_lang = max(pattern_counts.items(), key=lambda x: x[1])
                 max_score = best_lang[1]
                 
-                # Check for ties and prefer Tagalog/Aklanon
+                # Check for ties and prefer Aklanon over Tagalog
                 tied_languages = [lang for lang, score in pattern_counts.items() if score == max_score]
                 if len(tied_languages) > 1:
-                    if "tl" in tied_languages:
-                        return "tl", max_score
-                    elif "akl" in tied_languages:
+                    if "akl" in tied_languages:
                         return "akl", max_score
+                    elif "tl" in tied_languages:
+                        return "tl", max_score
                 
                 return best_lang[0], best_lang[1]
             else:
@@ -292,6 +471,11 @@ class LanguageDetector:
             # Pattern contribution
             if pattern_result[0] == lang:
                 language_scores[lang] += pattern_result[1] * weights["pattern"]
+        
+        # Add contextual analysis for Aklanon vs Tagalog distinction
+        contextual_features = self._analyze_contextual_features(text_lower)
+        language_scores["akl"] += contextual_features["aklanon_score"] * 0.3
+        language_scores["tl"] += contextual_features["tagalog_score"] * 0.3
         
         # Get the language with highest score
         best_lang = max(language_scores.items(), key=lambda x: x[1])
