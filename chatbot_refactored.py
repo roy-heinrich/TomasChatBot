@@ -111,27 +111,27 @@ class ChatBot:
             else:
                 continue
             
-                # logger.info(f"🔍 Extracting name from: '{content}'")  # Reduced for Railway
-                
-                # Use the entity extractor to find PERSON entities
-                entities = self.entity_extractor.extract_entities(content)
-                # logger.info(f"🔍 Found {len(entities)} entities")  # Reduced for Railway
-                
-                # Look for PERSON entities that could be names
-                for entity in entities:
-                    # logger.info(f"🔍 Entity: type='{entity.entity_type}', value='{entity.value}', confidence={entity.confidence}")  # Reduced for Railway
-                    if entity.entity_type in ["PERSON", "person_name"] and entity.confidence > 0.7:
-                        # Clean up the name (remove punctuation, capitalize properly)
-                        name = ''.join(c for c in entity.value if c.isalnum() or c.isspace()).strip()
-                        if name and len(name) > 1 and len(name) < 50:  # Reasonable name length
-                            # logger.info(f"🔍 Extracted name: '{name.title()}'")  # Reduced for Railway
-                            return name.title()
-                
-                # Use the NLU engine's NLP-based name extraction for better accuracy
-                extracted_name = self.nlu_engine._extract_name_using_nlp(content, "name_introduction")
-                if extracted_name:
-                    # logger.info(f"🔍 NLU extracted name: '{extracted_name}'")  # Reduced for Railway
-                    return extracted_name
+            # logger.info(f"🔍 Extracting name from: '{content}'")  # Reduced for Railway
+            
+            # Use the entity extractor to find PERSON entities
+            entities = self.entity_extractor.extract_entities(content)
+            # logger.info(f"🔍 Found {len(entities)} entities")  # Reduced for Railway
+            
+            # Look for PERSON entities that could be names
+            for entity in entities:
+                # logger.info(f"🔍 Entity: type='{entity.entity_type}', value='{entity.value}', confidence={entity.confidence}")  # Reduced for Railway
+                if entity.entity_type in ["PERSON", "person_name"] and entity.confidence > 0.7:
+                    # Clean up the name (remove punctuation, capitalize properly)
+                    name = ''.join(c for c in entity.value if c.isalnum() or c.isspace()).strip()
+                    if name and len(name) > 1 and len(name) < 50:  # Reasonable name length
+                        # logger.info(f"🔍 Extracted name: '{name.title()}'")  # Reduced for Railway
+                        return name.title()
+            
+            # Use the NLU engine's NLP-based name extraction for better accuracy
+            extracted_name = self.nlu_engine._extract_name_using_nlp(content, "name_introduction")
+            if extracted_name:
+                # logger.info(f"🔍 NLU extracted name: '{extracted_name}'")  # Reduced for Railway
+                return extracted_name
         # logger.info("🔍 No name found in conversation history")  # Reduced for Railway
         return ""
     
@@ -148,13 +148,13 @@ class ChatBot:
             else:
                 continue
             
-                # Look for child name patterns
-                if "my child" in content or "anak ko" in content or "child's name" in content:
-                    # Extract child name
-                    parts = content.split()
-                    for i, part in enumerate(parts):
-                        if part in ["child", "anak"] and i + 1 < len(parts):
-                            return parts[i + 1].title()
+            # Look for child name patterns
+            if "my child" in content or "anak ko" in content or "child's name" in content:
+                # Extract child name
+                parts = content.split()
+                for i, part in enumerate(parts):
+                    if part in ["child", "anak"] and i + 1 < len(parts):
+                        return parts[i + 1].title()
         return ""
     
     def _detect_context_language(self, conversation_history: List[Dict]) -> Tuple[str, float]:
@@ -178,11 +178,11 @@ class ChatBot:
                 else:
                     continue
                 
-                    if content:
-                        # Use enhanced language detection
-                        lang, conf = self.language_detector.detect_language(content)
-                        if lang in language_scores:
-                            language_scores[lang] += conf
+                if content:
+                    # Use enhanced language detection
+                    lang, conf = self.language_detector.detect_language(content)
+                    if lang in language_scores:
+                        language_scores[lang] += conf
             
             # Get the language with highest score
             if any(score > 0 for score in language_scores.values()):
@@ -875,6 +875,7 @@ class ChatBot:
             'social', 'studies', 'physical', 'education', 'computer', 'technology',
             'support', 'aide', 'learning', 'assistance', 'help',
             'start', 'end', 'begin', 'finish', 'time', 'when', 'where',  # Common query words
+            'being', 'held', 'what', 'are', 'is', 'was', 'were', 'have', 'has', 'had',  # Common English words
             # Emergency keywords to prevent correction
             'heart', 'attack', 'stroke', 'emergency', 'medical', 'ambulance',
             'bleeding', 'unconscious', 'dying', 'pain', 'injury', 'accident'
@@ -1140,7 +1141,7 @@ class ChatBot:
             # Use the NLU engine's intent classification
             if nlu_result and hasattr(nlu_result, 'intent') and hasattr(nlu_result.intent, 'value'):
                 intent_value = nlu_result.intent.value
-                logger.info(f"🎯 Checking emergency intent: {intent_value}")
+                # logger.info(f"🎯 Checking emergency intent: {intent_value}")
                 
                 if intent_value == "emergency" or intent_value == "medical_emergency":
                     logger.warning(f"🚨 EMERGENCY DETECTED via NLU: {query}")
@@ -1347,24 +1348,13 @@ class ChatBot:
                     # 3. Perform traditional database search to get context for Groq
                     intent_name = nlu_result.intent.name.lower() if nlu_result and nlu_result.intent else None
                     
-                    # Enhance search with emotional context
+                    # Enhance search with emotional context using smart enhancement
                     # Note: Translation is handled inside search_prompts method
-                    search_query = query
-                    if emotional_analysis and emotional_analysis.primary_emotion != 'neutral':
-                        # Add emotional context to search for better results
-                        if emotional_analysis.primary_emotion == 'sad':
-                            search_query = f"{query} emotional support help support aide"
-                        elif emotional_analysis.primary_emotion == 'worried':
-                            search_query = f"{query} support help guidance"
-                        elif emotional_analysis.primary_emotion == 'confused':
-                            # Special handling for guidance office queries - don't enhance them
-                            if 'guidance office' in query.lower() or 'guidance' in query.lower():
-                                search_query = query  # Keep original query for guidance office
-                            else:
-                                search_query = f"{query} help guidance support"
-                        # logger.info(f"💭 Enhanced search query: '{search_query}' (emotion: {emotional_analysis.primary_emotion})")
+                    search_query = self._apply_smart_enhancement(query, emotional_analysis, intent_name)
+                    # logger.info(f"💭 Enhanced search query: '{search_query}' (emotion: {emotional_analysis.primary_emotion if emotional_analysis else 'none'})")
                     
-                    search_results = await self.database_search.search_prompts(search_query, limit=10, intent=intent_name, conversation_history=conversation_history, nlu_result=nlu_result)
+                    # Use three-tier search for better results
+                    search_results = await self.database_search.search_prompts_three_tier(search_query, limit=10, intent=intent_name, conversation_history=conversation_history, nlu_result=nlu_result)
                     
                     # 4. Simple logic: Use top database result if available
                     best_result = None
@@ -1618,6 +1608,7 @@ class ChatBot:
                     # Return a safe response that doesn't hallucinate
                     response_text = f"I don't have specific information about that in my database. Please contact the school office for more details."
                 else:
+                    # Generate AI response with proper database context
                     response_text = await self.response_generator.generate_response(
                         query, context, response_lang, conversation_history, nlu_info_dict, final_user_name, entities, float(confidence), None
                     )
@@ -1629,12 +1620,14 @@ class ChatBot:
                     )
                 
                 # Fix HTML attributes that may have been translated
-                logger.info(f"🔧 Before AI HTML fix: {response_text}")
+                # logger.info(f"🔧 Before AI HTML fix: {response_text}")
+                
+                # Apply post-processing to all responses
                 if isinstance(response_text, list):
                     response_text = [self._fix_translated_html(item) for item in response_text]
                 else:
                     response_text = self._fix_translated_html(response_text)
-                logger.info(f"🔧 After AI HTML fix: {response_text}")
+                # logger.info(f"🔧 After AI HTML fix: {response_text}")
                 # Ensure response_text is properly flattened if it's a nested list
                 if isinstance(response_text, list) and len(response_text) > 0 and isinstance(response_text[0], list):
                     # Flatten nested lists
@@ -2158,3 +2151,104 @@ class ChatBot:
             is_split=len(response_text) > 1,
             message_count=len(response_text)
         )
+    
+    def _is_factual_query(self, query: str, intent: str = None) -> bool:
+        """Enhanced factual query detection with intent-based and keyword-based detection"""
+        
+        # Intent-based detection (highest priority)
+        factual_intents = [
+            'location_inquiry', 'schedule_inquiry', 'staff_inquiry', 
+            'enrollment_inquiry', 'facilities_inquiry', 'school_info',
+            'contact_inquiry', 'academic_inquiry'
+        ]
+        if intent and intent in factual_intents:
+            return True
+        
+        # Keyword-based detection
+        factual_keywords = [
+            # English keywords
+            'location', 'address', 'where', 'when', 'what', 'who', 'how',
+            'time', 'schedule', 'hours', 'start', 'end', 'principal', 'teacher',
+            'enrollment', 'admission', 'canteen', 'library', 'office', 'contact',
+            'phone', 'number', 'email', 'website', 'facebook', 'uniform', 'fees',
+            'cost', 'price', 'rules', 'policy', 'requirements', 'needed',
+            # Tagalog keywords
+            'saan', 'kailan', 'ano', 'sino', 'paano', 'oras', 'oras ng', 'klase',
+            'paaralan', 'guro', 'principal', 'enrollment', 'kantin', 'aklatan',
+            'opisina', 'kontak', 'telepono', 'email', 'website', 'uniporme',
+            'bayad', 'presyo', 'batas', 'patakaran', 'kailangan',
+            # Aklanon keywords
+            'diin', 'ngaean', 'sino', 'oras', 'klase', 'paaralan', 'guro',
+            'principal', 'enrollment', 'kantin', 'aklatan', 'opisina'
+        ]
+        
+        query_lower = query.lower()
+        return any(keyword in query_lower for keyword in factual_keywords)
+    
+    def _classify_query_type(self, query: str) -> str:
+        """Classify query as factual, emotional, or mixed"""
+        
+        factual_indicators = ['what', 'where', 'when', 'who', 'how', 'saan', 'kailan', 'ano', 'sino', 'diin', 'ngaean']
+        emotional_indicators = ['sad', 'angry', 'worried', 'confused', 'happy', 'excited', 'frustrated', 'upset']
+        
+        has_factual = any(indicator in query.lower() for indicator in factual_indicators)
+        has_emotional = any(indicator in query.lower() for indicator in emotional_indicators)
+        
+        if has_factual and has_emotional:
+            return 'mixed'
+        elif has_factual:
+            return 'factual'
+        elif has_emotional:
+            return 'emotional'
+        else:
+            return 'neutral'
+    
+    def _apply_smart_enhancement(self, query: str, emotional_analysis, intent: str = None) -> str:
+        """Apply smart enhancement based on query type and emotion"""
+        
+        # Never enhance factual queries
+        if self._is_factual_query(query, intent):
+            return query
+        
+        # Check if we have emotional analysis
+        if not emotional_analysis or emotional_analysis.primary_emotion == 'neutral':
+            return query
+        
+        # Classify query type
+        query_type = self._classify_query_type(query)
+        
+        if query_type == 'factual':
+            return query  # Never enhance factual queries
+        
+        elif query_type == 'mixed':
+            # For mixed queries, be conservative - only enhance if clearly emotional
+            if emotional_analysis.primary_emotion in ['sad', 'worried', 'confused']:
+                return self._enhance_emotional_query(query, emotional_analysis.primary_emotion)
+            return query
+        
+        elif query_type == 'emotional':
+            # Full emotional enhancement for purely emotional queries
+            return self._enhance_emotional_query(query, emotional_analysis.primary_emotion)
+        
+        else:
+            return query  # No enhancement for neutral queries
+    
+    def _enhance_emotional_query(self, query: str, emotion: str) -> str:
+        """Enhance emotional queries with appropriate context"""
+        
+        if emotion == 'sad':
+            return f"{query} emotional support help"
+        elif emotion == 'worried':
+            return f"{query} support help guidance"
+        elif emotion == 'confused':
+            # Special handling for guidance office queries
+            if 'guidance office' in query.lower() or 'guidance' in query.lower():
+                return query  # Keep original query for guidance office
+            else:
+                return f"{query} help guidance support"
+        elif emotion == 'angry':
+            return f"{query} support help understanding"
+        elif emotion == 'frustrated':
+            return f"{query} help support assistance"
+        else:
+            return query  # No enhancement for other emotions

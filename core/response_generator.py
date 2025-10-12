@@ -179,6 +179,8 @@ CRITICAL: Answer EXACTLY what user asks. If user asks "support aide", answer abo
         # Database context - the priority case
         if context and context not in ["General school information query", 
                                        "No specific information available in database for this query"]:
+        # Remove the bypass - we want AI processing
+            
             lang_code = "TL" if lang in ["tl", "akl"] else "EN"
             
             if lang in ["tl", "akl"]:
@@ -187,32 +189,32 @@ CRITICAL: Answer EXACTLY what user asks. If user asks "support aide", answer abo
 
 USER QUESTION: {query}
 
-INSTRUCTIONS:
-- Use ONLY the database information above
-- Answer in Tagalog
-- Be conversational and helpful, like a school staff member
-- Provide a natural, complete response that helps the user
-- Do NOT invent any names or information not in the database
-- If the database says "Meliza A. Delgado", use that exact name
-- Give a helpful, informative response that feels like talking to a real person
+CRITICAL INSTRUCTIONS:
+- The database information above is COMPLETE and ACCURATE
+- You MUST use this information to answer the user's question
+- Rephrase the database information naturally in Tagalog
+- NEVER say "I don't have" or "I don't know" when the database provides the information
+- If the database says "You can ask their names here", tell the user they can ask for the names
+- Be helpful and direct - the database has the information the user needs
+- Use proper Tagalog grammar and be conversational
 
-Please provide a natural, conversational response:"""
+RESPONSE:"""
             else:
                 return f"""DATABASE INFORMATION:
 {context}
 
 USER QUESTION: {query}
 
-INSTRUCTIONS:
-- Use ONLY the database information above
-- Answer in English
-- Be conversational and helpful, like a school staff member
-- Provide a natural, complete response that helps the user
-- Do NOT invent any names or information not in the database
-- If the database says "Meliza A. Delgado", use that exact name
-- Give a helpful, informative response that feels like talking to a real person
+CRITICAL INSTRUCTIONS:
+- The database information above is COMPLETE and ACCURATE
+- You MUST use this information to answer the user's question
+- Rephrase the database information naturally in English
+- NEVER say "I don't have" or "I don't know" when the database provides the information
+- If the database says "You can ask their names here", tell the user they can ask for the names
+- Be helpful and direct - the database has the information the user needs
+- Use proper English grammar and be conversational
 
-Please provide a natural, conversational response:"""
+RESPONSE:"""
         
         # No context available - use NLU/NLP approach
         if lang in ["tl", "akl"]:
@@ -312,9 +314,10 @@ Provide a natural, helpful response based on the analysis:"""
             # Build concise user message
             user_message = self._build_concise_message(query, context, lang, nlu_info)
             
+        # Remove the bypass - we want AI processing
             
-            # Keep responses concise to save tokens
-            max_tokens = 160 if lang in ["tl", "akl"] else 140
+            # Allow for complete responses without truncation
+            max_tokens = 200 if lang in ["tl", "akl"] else 180
             
             # Use multi-provider AI system
             ai_response = await self.multi_ai.generate_response(
@@ -331,15 +334,22 @@ Provide a natural, helpful response based on the analysis:"""
                 # Check if response contains list items and split them into separate bubbles
                 response = self._split_list_items(response)
                 
+                # Apply smart chunking for long responses - RE-ENABLED for bubble separation
+                response = self._apply_smart_chunking(response)
+                
                 # Process each response item
                 if isinstance(response, list):
                     processed_responses = []
                     for item in response:
                         processed_item = self._clean_response(item)
+                        # Fix capitalization for sentence beginnings
+                        processed_item = self._fix_sentence_capitalization(processed_item)
                         processed_responses.append(processed_item)
                     return processed_responses
                 else:
-                    return self._clean_response(response)
+                    cleaned_response = self._clean_response(response)
+                    # Fix capitalization for sentence beginnings
+                    return self._fix_sentence_capitalization(cleaned_response)
             else:
                 # Removed verbose AI provider logging
                 return self._get_fallback_response(lang)
@@ -354,6 +364,18 @@ Provide a natural, helpful response based on the analysis:"""
             return "Paumanhin, hindi ko alam ang sagot sa tanong na ito. Makipag-ugnayan sa opisina ng paaralan para sa karagdagang impormasyon."
         else:
             return "I'm sorry, I don't have that specific information. Please contact the school office for details."
+    
+    def _fix_sentence_capitalization(self, text: str) -> str:
+        """Fix capitalization at the beginning of sentences"""
+        if not text or len(text.strip()) == 0:
+            return text
+        
+        # Capitalize the first letter of the text
+        text = text.strip()
+        if text and text[0].islower():
+            text = text[0].upper() + text[1:]
+        
+        return text
     
     def add_messenger_link_if_needed(self, response: str, query: str, context: str, lang: str) -> str:
         """Add messenger link ONLY for persistent escalation requests - returns list for separate bubbles"""
@@ -633,6 +655,192 @@ Provide a natural, helpful response based on the analysis:"""
             messages.append(current)
         
         return messages if len(messages) > 1 else [response]
+    
+    def _apply_smart_chunking(self, response) -> List[str]:
+        """Apply smart sentence-aware chunking for long responses"""
+        
+        # If response is already a list, process each item
+        if isinstance(response, list):
+            chunked_responses = []
+            for item in response:
+                chunked_items = self._chunk_single_response(item)
+                chunked_responses.extend(chunked_items)
+            return chunked_responses
+        
+        # Process single response
+        return self._chunk_single_response(response)
+    
+    def _chunk_single_response(self, response: str) -> List[str]:
+        """Chunk a single response into multiple bubbles based on sentence boundaries"""
+        
+        # Configuration - larger bubbles for better readability
+        MAX_CHARS_PER_BUBBLE = 300  # Larger bubbles for better readability
+        MIN_CHARS_PER_BUBBLE = 120  # Larger minimum to avoid tiny fragments
+        
+        # If response is short enough, return as-is
+        if len(response) <= MAX_CHARS_PER_BUBBLE:
+            return [response]
+        
+        # Split by sentences first
+        sentences = self._split_by_sentences(response)
+        
+        # If only one sentence or sentences are too long, try splitting by clauses
+        if len(sentences) == 1 or (len(sentences) > 0 and max(len(s) for s in sentences) > MAX_CHARS_PER_BUBBLE):
+            # Try clause-based splitting for better chunking
+            clause_sentences = []
+            for sentence in sentences:
+                if len(sentence) > MAX_CHARS_PER_BUBBLE:
+                    clause_sentences.extend(self._split_by_clauses(sentence))
+                else:
+                    clause_sentences.append(sentence)
+            sentences = clause_sentences
+        
+        # NEW APPROACH: Each sentence becomes its own bubble (unless it's very short)
+        chunks = []
+        current_chunk = ""
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            
+            # If sentence is short enough to stand alone, add it as a bubble
+            if len(sentence) >= MIN_CHARS_PER_BUBBLE:
+                if current_chunk:
+                    # Add any pending chunk first
+                    chunks.append(current_chunk.strip())
+                    current_chunk = ""
+                # Add this sentence as its own bubble
+                chunks.append(sentence)
+            else:
+                # Very short sentence - merge with previous or next
+                if current_chunk and len(current_chunk + " " + sentence) <= MAX_CHARS_PER_BUBBLE:
+                    current_chunk += " " + sentence
+                elif not current_chunk:
+                    current_chunk = sentence
+                else:
+                    # Current chunk is full, start new one
+                    chunks.append(current_chunk.strip())
+                    current_chunk = sentence
+        
+        # Add the last chunk
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
+        
+        return chunks if chunks else [response]
+    
+    def _split_by_sentences(self, text: str) -> List[str]:
+        """Split text by sentence boundaries with abbreviation handling and punctuation preservation"""
+        
+        # Common abbreviations that shouldn't end sentences
+        abbreviations = [
+            'mr', 'mrs', 'ms', 'dr', 'prof', 'rev', 'sr', 'jr', 'esq',
+            'st', 'ave', 'blvd', 'rd', 'ct', 'ln', 'pl', 'pkwy',
+            'inc', 'corp', 'ltd', 'llc', 'co', 'etc', 'vs', 'v',
+            'am', 'pm', 'ad', 'bc', 'ce', 'bce', 'no', 'nos',
+            'vol', 'pp', 'ch', 'sec', 'fig', 'ref', 'ex', 'eg',
+            'ie', 'viz', 'cf', 'et', 'al', 'ca', 'approx', 'est',
+            'dept', 'govt', 'mgr', 'asst', 'dir', 'pres', 'vice',
+            'gen', 'adm', 'col', 'maj', 'capt', 'lt', 'sgt', 'cpl',
+            'jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug',
+            'sep', 'oct', 'nov', 'dec', 'mon', 'tue', 'wed', 'thu',
+            'fri', 'sat', 'sun', 'sm'
+        ]
+        
+        # First, try to restore missing punctuation
+        text = self._restore_punctuation(text)
+        
+        # Use finditer to extract sentences WITH their punctuation
+        sentences = []
+        current_pos = 0
+        
+        # Pattern to find sentence endings (periods, exclamation marks, question marks)
+        sentence_endings = re.compile(r'[.!?]+')
+        
+        for match in sentence_endings.finditer(text):
+            end_pos = match.end()
+            
+            # Check if this punctuation is part of an abbreviation
+            is_abbreviation = False
+            
+            # Look backwards to see if this period is part of an abbreviation
+            start_check = max(0, end_pos - 20)  # Check up to 20 characters back
+            context = text[start_check:end_pos].lower()
+            
+            # Check for abbreviations
+            for abbr in abbreviations:
+                if context.endswith(abbr + '.'):
+                    # Additional check: make sure it's not followed by a space and capital letter
+                    # (which would indicate a real sentence boundary)
+                    if end_pos < len(text) and text[end_pos:end_pos+2] == ' ' and end_pos+1 < len(text) and text[end_pos+1].isupper():
+                        # This is likely a real sentence boundary, not an abbreviation
+                        is_abbreviation = False
+                    else:
+                        is_abbreviation = True
+                    break
+            
+            # If it's not an abbreviation, extract the sentence
+            if not is_abbreviation:
+                sentence = text[current_pos:end_pos].strip()
+                if sentence and len(sentence) > 10:  # Ignore very short fragments
+                    sentences.append(sentence)
+                current_pos = end_pos
+        
+        # Add the last sentence if there's remaining text
+        if current_pos < len(text):
+            remaining = text[current_pos:].strip()
+            if remaining and len(remaining) > 10:
+                sentences.append(remaining)
+        
+        return sentences if sentences else [text]
+    
+    def _restore_punctuation(self, text: str) -> str:
+        """Restore missing punctuation in text - simplified approach"""
+        
+        # Only add periods at the end if missing
+        if not any(text.endswith(p) for p in ['.', '!', '?']):
+            text += '.'
+        
+        return text
+    
+    def _split_by_clauses(self, text: str) -> List[str]:
+        """Split text by clause boundaries when sentences are too long"""
+        
+        # Clause splitting patterns
+        clause_patterns = [
+            r',\s+(?=[A-Z])',  # Comma followed by capital letter
+            r';\s+',           # Semicolon
+            r':\s+',           # Colon
+            r'\s+and\s+',      # "and" conjunction
+            r'\s+but\s+',      # "but" conjunction
+            r'\s+or\s+',       # "or" conjunction
+            r'\s+so\s+',       # "so" conjunction
+            r'\s+however\s+',  # "however" conjunction
+            r'\s+therefore\s+', # "therefore" conjunction
+            r'\s+also\s+',     # "also" conjunction
+            r'\s+additionally\s+', # "additionally" conjunction
+            r'\s+furthermore\s+', # "furthermore" conjunction
+            r'\s+moreover\s+', # "moreover" conjunction
+            r'\s+in\s+addition\s+', # "in addition" conjunction
+            r'\s+on\s+the\s+other\s+hand\s+', # "on the other hand" conjunction
+        ]
+        
+        # Try each pattern
+        for pattern in clause_patterns:
+            clauses = re.split(pattern, text, flags=re.IGNORECASE)
+            if len(clauses) > 1:
+                # Clean up clauses
+                cleaned_clauses = []
+                for clause in clauses:
+                    clause = clause.strip()
+                    if clause and len(clause) > 20:  # Ignore very short fragments
+                        cleaned_clauses.append(clause)
+                
+                if len(cleaned_clauses) > 1:
+                    return cleaned_clauses
+        
+        # If no clause splitting worked, return the original text
+        return [text]
     
     def _clean_response(self, response: str) -> str:
         """Clean and format a single response"""

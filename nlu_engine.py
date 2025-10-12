@@ -614,8 +614,10 @@ class NLUEngine:
         ]
         
         # Check for high-confidence emergency patterns
+        import re
         for keyword in high_confidence_emergency_keywords:
-            if keyword in user_lower:
+            # Use word boundary matching to avoid false positives like "held" containing "help"
+            if re.search(r'\b' + re.escape(keyword) + r'\b', user_lower):
                 # Check if it's used in a figurative context
                 is_figurative = False
                 figurative_contexts = [
@@ -694,10 +696,30 @@ class NLUEngine:
         ]
         
         # Special cases for common figurative expressions
-        if ("dying to know" in user_lower or ("dying" in user_lower and "to know" in user_lower) or
-            "dying laughing" in user_lower or ("dying" in user_lower and "laughing" in user_lower)):
-            logger.info(f"🎭 NLU: Figurative 'dying' expression detected in: '{user_input}'")
-            # Skip emergency detection for this query
+        figurative_expressions = [
+            "dying to know", "dying laughing", "gonna die laughing", "dying of laughter",
+            "dying of", "dying from", "dying with", "almost died", "nearly died"
+        ]
+        
+        is_figurative = False
+        for expr in figurative_expressions:
+            if expr in user_lower:
+                logger.info(f"🎭 NLU: Figurative 'dying' expression detected: '{expr}' in '{user_input}'")
+                is_figurative = True
+                break
+        
+        # Also check for "dying" + context words
+        if "dying" in user_lower:
+            figurative_contexts = ["laughing", "laugh", "know", "curiosity", "funny", "joke", "amused", "hilarious"]
+            for context in figurative_contexts:
+                if context in user_lower:
+                    logger.info(f"🎭 NLU: Figurative 'dying' with context '{context}' detected in: '{user_input}'")
+                    is_figurative = True
+                    break
+        
+        if is_figurative:
+            # Skip emergency detection for this query - return unknown intent
+            return NLUResult(Intent.UNKNOWN, 0.3, [])
         else:
             # Check for direct critical emergency phrases first
             for phrase in critical_emergency_phrases:

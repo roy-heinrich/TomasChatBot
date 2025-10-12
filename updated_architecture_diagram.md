@@ -54,25 +54,31 @@
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                              CORE MODULES                                      │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │ Language    │  │ Optimized   │  │   Entity    │  │ Cached DB   │          │
+│  │ Language    │  │ Optimized   │  │   Entity    │  │ Three-Tier  │          │
 │  │ Detector    │  │ NLU Engine  │  │ Extractor   │  │   Search    │          │
-│  │ (3 langs)   │  │(Redis Cache)│  │(Advanced)   │  │(Redis Cache)│          │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │ Response    │  │  Keyword    │  │  Memory     │  │  Context    │          │
-│  │ Generator   │  │   Matcher   │  │  System     │  │   Aware     │          │
-│  │ (Multi-AI)  │  │ (Fallback)  │  │(Persistent) │  │ Translation │          │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │ Emotional   │  │  Personal   │  │  Conversation│  │ Enhanced    │          │
-│  │ Intelligence│  │  Response   │  │  Analyzer   │  │  Security   │          │
-│  │ (Sentiment) │  │ Personalizer│  │ (Context)   │  │ Validator   │          │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │ Monitoring  │  │ Debug       │  │ Config      │  │ Fuzzy       │          │
-│  │ System      │  │ Logger      │  │ Loader      │  │ Matching    │          │
-│  │ (Real-time) │  │ (Events)    │  │ (Hot Reload)│  │ (Dynamic)   │          │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘          │
+│  │ (3 langs)   │  │(Redis Cache)│  │(Advanced)   │  │(FTS+BM25+   │          │
+│  └─────────────┘  └─────────────┘  └─────────────┘  │Fuzzy+Cache) │          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  └─────────────┘          │
+│  │ Response    │  │  Keyword    │  │  Memory     │  ┌─────────────┐          │
+│  │ Generator   │  │   Matcher   │  │  System     │  │ Cached DB   │          │
+│  │ (Multi-AI)  │  │ (Fallback)  │  │(Persistent) │  │   Search    │          │
+│  └─────────────┘  └─────────────┘  └─────────────┘  │(Redis Cache)│          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  └─────────────┘          │
+│  │ Emotional   │  │  Personal   │  │  Conversation│  ┌─────────────┐          │
+│  │ Intelligence│  │  Response   │  │  Analyzer   │  │   BM25      │          │
+│  │ (Sentiment) │  │ Personalizer│  │ (Context)   │  │   Cache     │          │
+│  └─────────────┘  └─────────────┘  └─────────────┘  │(Custom)     │          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  └─────────────┘          │
+│  │ Enhanced    │  │ Figurative  │  │ Typo        │  ┌─────────────┐          │
+│  │ Security    │  │ Expression  │  │ Correction  │  │ Context-    │          │
+│  │ Validator   │  │ Detection   │  │ (Advanced)  │  │ Aware Fuzzy │          │
+│  └─────────────┘  └─────────────┘  └─────────────┘  │(Smart)      │          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  └─────────────┘          │
+│  │ Monitoring  │  │ Debug       │  │ Config      │  ┌─────────────┐          │
+│  │ System      │  │ Logger      │  │ Loader      │  │ Full-Text   │          │
+│  │ (Real-time) │  │ (Events)    │  │ (Hot Reload)│  │ Search      │          │
+│  └─────────────┘  └─────────────┘  └─────────────┘  │(PostgreSQL) │          │
+│                                                     └─────────────┘          │
 └─────────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -128,7 +134,7 @@
 │                              AI PROVIDER HIERARCHY                             │
 │                                                                                 │
 │  1. GROQ PROVIDER (Primary)                                                     │
-│     • Model: llama-3.1-8b-instant                                             │
+│     • Model: meta-llama/llama-4-scout-17b-16e-instruct                        │
 │     • API Key: GROQ_API_KEY                                                    │
 │     • Rate Limits: 30 requests/minute                                          │
 │     • Fallback: CohereProvider                                                 │
@@ -196,6 +202,8 @@
 │  • Input Validation and Sanitization                                          │
 │  • Gibberish Detection with NLP patterns                                       │
 │  • Context-aware emergency analysis                                           │
+│  • Figurative Expression Detection (prevents false emergency alerts)          │
+│  • Advanced Typo Correction with school vocabulary                            │
 │                                                                                 │
 │  💡 ADVANCED AI FEATURES                                                       │
 │  • Emotional Intelligence with sentiment analysis                              │
@@ -203,8 +211,12 @@
 │  • Conversation Analysis with topic flow tracking                            │
 │  • Multi-provider AI with intelligent fallback                                │
 │  • Context-aware responses with memory integration                            │
-│  • Typo correction and text normalization                                     │
-│  • Semantic similarity matching for database search                           │
+│  • Advanced typo correction with school vocabulary                            │
+│  • Three-Tier Search Strategy (FTS + BM25 + Fuzzy)                           │
+│  • Custom BM25 implementation (no external dependencies)                      │
+│  • Context-aware fuzzy matching with synonym expansion                       │
+│  • Intelligent response chunking and bubble separation                        │
+│  • Sentence capitalization and formatting optimization                        │
 │                                                                                 │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -215,15 +227,15 @@
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                              CONVERSATION FLOW                                 │
 │                                                                                 │
-│  User Input → Enhanced Security Validation → Typo Correction → Language Detection │
+│  User Input → Enhanced Security Validation → Advanced Typo Correction → Language Detection │
 │       ↓                                                                         │
-│  Redis NLU Cache Check → NLU Analysis (if cache miss) → Entity Extraction      │
+│  Redis NLU Cache Check → NLU Analysis (if cache miss) → Figurative Expression Check │
 │       ↓                                                                         │
-│  Emergency Check → Redis DB Cache Check → Database Search (if cache miss)     │
+│  Emergency Check → Redis Three-Tier Cache Check → Three-Tier Search (if cache miss) │
 │       ↓                                                                         │
 │  Context Analysis → Memory Update → Response Generation → Personalization       │
 │       ↓                                                                         │
-│  Translation Cache Check → Multi-Question Processing → Response Splitting      │
+│  Translation Cache Check → Multi-Question Processing → Smart Response Chunking │
 │       ↓                                                                         │
 │  Cache Storage → User Output                                                   │
 │                                                                                 │
@@ -249,7 +261,7 @@
 │         │                   │                       │                   │       │
 │         ▼                   ▼                       ▼                   ▼       │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    │
-│  │   Cache     │    │  Database   │    │   Memory    │    │  Response   │    │
+│  │   Cache     │    │ Three-Tier  │    │   Memory    │    │  Response   │    │
 │  │ Management  │◀───│   Search    │───▶│   System    │───▶│  Generator  │    │
 │  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    │
 │                           │                       │                   │       │
@@ -258,11 +270,61 @@
 │  │   Redis     │    │  Supabase   │    │ Emotional   │    │   User      │    │
 │  │   Cache     │◀───│  Database   │    │Intelligence │───▶│  Output     │    │
 │  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    │
+│                           │                                               │       │
+│                           ▼                                               ▼       │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    │
+│  │   BM25      │    │ Context-    │    │ Full-Text   │    │ Figurative  │    │
+│  │   Cache     │    │ Aware Fuzzy │    │ Search      │    │ Expression  │    │
+│  │ (Custom)    │    │ (Smart)     │    │(PostgreSQL) │    │ Detection   │    │
+│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    │
 │                                                                                 │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Database Search System (Detailed)
+## Three-Tier Search Strategy (New Advanced System)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              THREE-TIER SEARCH SYSTEM                          │
+│                                                                                 │
+│  🎯 TIER 1: POSTGRESQL FULL-TEXT SEARCH (FTS)                                 │
+│  • Direct PostgreSQL tsquery with cleaned syntax                              │
+│  • Exact phrase matching with word boundaries                                 │
+│  • High confidence scoring (95.0 points)                                      │
+│  • Fastest response time for exact matches                                    │
+│  • Handles complex queries with proper escaping                               │
+│                                                                                 │
+│  🎯 TIER 2: CUSTOM BM25 RANKING ALGORITHM                                     │
+│  • Custom implementation using standard Python libraries                       │
+│  • No external BM25 packages required                                         │
+│  • Semantic similarity with term frequency analysis                           │
+│  • Document length normalization                                              │
+│  • Configurable k1 and b parameters for optimal ranking                       │
+│  • High confidence threshold: 5.0+ points                                     │
+│                                                                                 │
+│  🎯 TIER 3: CONTEXT-AWARE FUZZY MATCHING                                      │
+│  • Smart synonym expansion and variation detection                            │
+│  • Context-aware similarity scoring                                           │
+│  • Dynamic threshold adjustment (85%+ similarity)                             │
+│  • Handles typos, abbreviations, and variations                               │
+│  • Fallback for uncertain BM25 results                                        │
+│                                                                                 │
+│  ⚡ REDIS CACHING INTEGRATION                                                  │
+│  • All three tiers cached with intelligent TTL                               │
+│  • Cache key includes query, intent, and context                              │
+│  • Automatic cache invalidation on database changes                           │
+│  • Fallback to traditional search on cache miss                              │
+│                                                                                 │
+│  🔄 INTELLIGENT FALLBACK STRATEGY                                             │
+│  • Tier 1 → Tier 2 → Tier 3 → Traditional Search                             │
+│  • Confidence-based tier selection                                            │
+│  • Graceful degradation with performance monitoring                           │
+│  • Error handling with comprehensive logging                                  │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Database Search System (Legacy + Enhanced)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -407,6 +469,58 @@
 │  • Configuration management with hot reload                                    │
 │  • Automated test suite for regression prevention                            │
 │  • False positive detection and alerting                                       │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Recent Major Improvements & Fixes (2024)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              RECENT IMPROVEMENTS                               │
+│                                                                                 │
+│  🔍 THREE-TIER SEARCH STRATEGY IMPLEMENTATION                                  │
+│  • PostgreSQL Full-Text Search (Tier 1) with cleaned syntax                   │
+│  • Custom BM25 ranking algorithm (Tier 2) - no external dependencies          │
+│  • Context-aware fuzzy matching (Tier 3) with synonym expansion               │
+│  • Intelligent fallback strategy with confidence-based tier selection         │
+│  • Redis caching integration for all three tiers                              │
+│                                                                                 │
+│  🛡️ FIGURATIVE EXPRESSION DETECTION                                            │
+│  • Prevents false emergency alerts for phrases like "dying laughing"          │
+│  • Context-aware analysis of "dying" expressions                              │
+│  • Humor and sarcasm detection to avoid emergency false positives             │
+│  • Integrated into both NLU engines for comprehensive coverage                │
+│                                                                                 │
+│  ✏️ ADVANCED TYPO CORRECTION SYSTEM                                            │
+│  • School-specific vocabulary to prevent incorrect corrections                │
+│  • Word boundary matching to avoid substring issues                           │
+│  • Context-aware correction with meaning preservation                         │
+│  • Prevents "being" → "bleeding" type errors                                  │
+│                                                                                 │
+│  🎨 RESPONSE FORMATTING OPTIMIZATION                                           │
+│  • Intelligent response chunking with natural bubble separation               │
+│  • Sentence capitalization for proper text formatting                        │
+│  • Configurable bubble sizes (300 chars max, 120 chars min)                  │
+│  • Improved readability with smart sentence boundary detection                │
+│                                                                                 │
+│  🌍 LANGUAGE DETECTION ENHANCEMENTS                                            │
+│  • Enhanced English pattern recognition for contractions                      │
+│  • Improved detection of mixed-language inputs                                │
+│  • Better handling of common English words and phrases                        │
+│  • Reduced false positives for Tagalog detection                              │
+│                                                                                 │
+│  ⚡ PERFORMANCE & LOGGING OPTIMIZATION                                         │
+│  • Removed verbose logging for cleaner production output                      │
+│  • Preserved essential warnings and error logging                            │
+│  • Optimized token limits for better response completion                      │
+│  • Improved cache hit rates with better key generation                       │
+│                                                                                 │
+│  🔧 FTS SYNTAX ERROR RESOLUTION                                                │
+│  • Fixed PostgreSQL tsquery syntax errors with apostrophes                   │
+│  • Proper character escaping for complex queries                              │
+│  • Simplified FTS query structure for better reliability                     │
+│  • Fallback mechanisms for problematic query patterns                         │
 │                                                                                 │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -714,4 +828,4 @@
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-This comprehensive architecture diagram represents a production-ready, multilingual chatbot system with advanced NLP capabilities, robust security measures, intelligent fallback systems, and comprehensive prevention & scalability features. It demonstrates sophisticated applied AI in education technology with comprehensive error handling, performance optimization, real-world deployment considerations, and proactive mistake prevention systems.
+This comprehensive architecture diagram represents a production-ready, multilingual chatbot system with advanced NLP capabilities, robust security measures, intelligent fallback systems, and comprehensive prevention & scalability features. The system now includes a revolutionary Three-Tier Search Strategy combining PostgreSQL Full-Text Search, custom BM25 ranking, and context-aware fuzzy matching, along with advanced figurative expression detection, enhanced typo correction, and optimized response formatting. It demonstrates sophisticated applied AI in education technology with comprehensive error handling, performance optimization, real-world deployment considerations, and proactive mistake prevention systems.

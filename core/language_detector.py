@@ -125,7 +125,8 @@ class LanguageDetector:
             r'^(the|and|or|but|in|on|at|to|for|of|with|by)$',   # English articles/prepositions
             r'^(what|where|when|why|how|who|which)$',           # English question words
             r'^(is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|can|could|should|may|might)$',  # English verbs
-            r'^(support|aide|teacher|student|school|principal|admin|staff|learning|education|sports|activities)$'  # Common English school terms
+            r'^(support|aide|teacher|student|school|principal|admin|staff|learning|education|sports|activities|held)$',  # Common English school terms
+            r'^(im|gonna|die|laughing|laugh|funny|joke|joking|kidding|serious|not|really|just|like|love|hate|want|need|get|go|come|see|know|think|feel|say|tell|ask|give|take|make|do|have|will|would|could|should|may|might|can|must|shall)$'  # Common English words and contractions
         ]
         
         return any(re.match(pattern, word) for pattern in english_patterns)

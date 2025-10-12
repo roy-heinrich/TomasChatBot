@@ -141,6 +141,38 @@ class CachedDatabaseSearch(DatabaseSearchEngine):
             logger.warning(f"Redis store error: {e}")
             return False
     
+    async def search_prompts_three_tier(self, query: str, limit: int = 20, intent: str = None, 
+                                      conversation_history: List[Dict] = None,
+                                      nlu_result = None) -> List[Dict[str, Any]]:
+        """Search using three-tier search strategy with caching"""
+        try:
+            # Create cache key for three-tier search
+            cache_key = self._create_cache_key(query, intent, limit, conversation_history, nlu_result)
+            cache_key = f"three_tier_{cache_key}"
+            
+            # Try to get from cache first
+            cached_result = self._get_from_cache(cache_key)
+            if cached_result:
+                logger.info(f"🚀 Three-tier cache HIT for: {query[:50]}...")
+                return cached_result
+            
+            # Cache miss - perform three-tier search
+            logger.info(f"💾 Three-tier cache MISS for: {query[:50]}...")
+            
+            # Use three-tier search from parent class
+            results = await super().search_prompts_three_tier(query, limit, intent, conversation_history, nlu_result)
+            
+            # Store in cache
+            if results:
+                self._store_in_cache(cache_key, results)
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Three-tier cached search failed: {e}")
+            # Fallback to traditional search
+            return await self.search_prompts(query, limit, intent, True, conversation_history, nlu_result)
+
     async def search_prompts(self, query: str, limit: int = 20, intent: str = None, 
                         use_semantic: bool = True, conversation_history: List[Dict] = None,
                         nlu_result = None) -> List[Dict[str, Any]]:

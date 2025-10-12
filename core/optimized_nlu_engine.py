@@ -192,8 +192,40 @@ class OptimizedNLUEngine(NLUEngine):
         """Fast emergency detection using compiled patterns"""
         from nlu_engine import Intent
         
+        user_lower = user_input.lower()
+        
+        # Check for figurative expressions first
+        figurative_expressions = [
+            "dying to know", "dying laughing", "gonna die laughing", "dying of laughter",
+            "dying of", "dying from", "dying with", "almost died", "nearly died"
+        ]
+        
+        is_figurative = False
+        for expr in figurative_expressions:
+            if expr in user_lower:
+                # logger.info(f"🎭 OptimizedNLU: Figurative 'dying' expression detected: '{expr}' in '{user_input}'")
+                is_figurative = True
+                break
+        
+        # Also check for "dying" + context words
+        if "dying" in user_lower and not is_figurative:
+            figurative_contexts = ["laughing", "laugh", "know", "curiosity", "funny", "joke", "amused", "hilarious"]
+            for context in figurative_contexts:
+                if context in user_lower:
+                    # logger.info(f"🎭 OptimizedNLU: Figurative 'dying' with context '{context}' detected in: '{user_input}'")
+                    is_figurative = True
+                    break
+        
+        if is_figurative:
+            # Skip emergency detection for figurative expressions
+            return NLUResult(
+                intent=Intent.UNKNOWN,
+                confidence=0.3,
+                entities=[]
+            )
+        
         # Use compiled pattern for faster matching
-        emergency_match = self.compiled_patterns['emergency_keywords'].search(user_input.lower())
+        emergency_match = self.compiled_patterns['emergency_keywords'].search(user_lower)
         
         if emergency_match:
             return NLUResult(

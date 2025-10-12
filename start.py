@@ -7,6 +7,16 @@ Locks NLTK to local nltk_data folder
 import os
 import sys
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("✅ Environment variables loaded from .env file")
+except ImportError:
+    print("⚠️ python-dotenv not available - using system environment variables only")
+except Exception as e:
+    print(f"⚠️ Error loading .env file: {e}")
+
 def main():
     """Start the web server"""
     print("🌐 Starting Tomas Chatbot Web Server...")

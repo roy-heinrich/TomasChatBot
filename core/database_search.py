@@ -267,11 +267,22 @@ class ImprovedScorer:
         return penalty
 
 class DatabaseSearchEngine:
-    """Clean database search engine with reliable scoring"""
+    """Clean database search engine with reliable scoring and three-tier search"""
     
     def __init__(self, supabase_url: str, supabase_key: str):
         self.supabase: Client = create_client(supabase_url, supabase_key)
         self._improved_scorer = ImprovedScorer()
+        
+        # Initialize three-tier search system
+        try:
+            from core.three_tier_search import ThreeTierSearch
+            self.three_tier_search = ThreeTierSearch(self.supabase)
+            self.use_three_tier = True
+            logger.info("✅ Three-tier search system initialized")
+        except ImportError as e:
+            logger.warning(f"Three-tier search not available: {e}")
+            self.three_tier_search = None
+            self.use_three_tier = False
     
     def _clean_query_for_tsquery(self, query: str) -> str:
         """Clean query for PostgreSQL tsquery syntax to avoid syntax errors"""
@@ -425,6 +436,59 @@ class DatabaseSearchEngine:
         
         return sorted(list(available_grades))
     
+    def _validate_search_results(self, query: str, results: List[Dict]) -> List[Dict]:
+        """Validate search results to ensure they match query intent"""
+        
+        if not results:
+            return results
+        
+        # Calculate confidence scores for each result
+        validated_results = []
+        for result in results:
+            confidence = self._calculate_result_confidence(query, result)
+            if confidence > 0.3:  # Minimum confidence threshold
+                validated_results.append(result)
+        
+        # If no results pass validation, return original results (fallback)
+        if not validated_results:
+            logger.warning(f"No results passed validation for query: {query}")
+            return results[:3]  # Return top 3 original results as fallback
+        
+        return validated_results
+    
+    def _calculate_result_confidence(self, query: str, result: Dict) -> float:
+        """Calculate confidence score for search results"""
+        
+        query_words = set(query.lower().split())
+        keywords = result.get('keywords', '').lower()
+        response = result.get('response', '').lower()
+        
+        # Combine keywords and response for matching
+        result_text = f"{keywords} {response}"
+        result_words = set(result_text.split())
+        
+        # Calculate word overlap
+        overlap = len(query_words.intersection(result_words))
+        total_words = len(query_words.union(result_words))
+        
+        if total_words == 0:
+            return 0.0
+        
+        # Base confidence from word overlap
+        base_confidence = overlap / total_words
+        
+        # Boost confidence for exact keyword matches
+        keyword_matches = sum(1 for word in query_words if word in keywords)
+        if keyword_matches > 0:
+            base_confidence += keyword_matches * 0.1
+        
+        # Boost confidence for response content matches
+        response_matches = sum(1 for word in query_words if word in response)
+        if response_matches > 0:
+            base_confidence += response_matches * 0.05
+        
+        return min(base_confidence, 1.0)  # Cap at 1.0
+    
     def _format_grade_range(self, grades: List[int]) -> str:
         """Format grade range in a user-friendly way"""
         if not grades:
@@ -448,18 +512,33 @@ class DatabaseSearchEngine:
         import re
         query_lower = query.lower().strip()
         
-        # Try basic translation first
-        try:
-            from deep_translator import GoogleTranslator
-            translated_query = GoogleTranslator(source='auto', target='en').translate(query_lower)
-        except:
+        # Check if query is already in English to avoid unnecessary translation
+        # Simple heuristic: if query contains common English words, don't translate
+        english_indicators = ['what', 'where', 'when', 'why', 'how', 'who', 'which', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'can', 'could', 'should', 'may', 'might', 'activities', 'held', 'school', 'teacher', 'student', 'principal', 'admin', 'staff']
+        
+        # If query contains English indicators, don't translate
+        if any(indicator in query_lower for indicator in english_indicators):
             translated_query = query_lower
+        else:
+            # Try basic translation for non-English queries
+            try:
+                from deep_translator import GoogleTranslator
+                translated_query = GoogleTranslator(source='auto', target='en').translate(query_lower)
+            except:
+                translated_query = query_lower
         
         # Clean up common words that don't help with matching
         # Include Aklanon particles: 'du' (the), 'it' (this), 'hay' (is)
+        # BUT PRESERVE GRADE NUMBERS (1, 2, 3, etc.)
         words_to_remove = ['ang', 'ng', 'sa', 'para', 'in', 'who', 'what', 'where', 'when', 'why', 'how', 'kayo', 'kayO', 'du', 'it', 'hay', 'ba', 'may']
         translated_words = translated_query.split()
-        cleaned_words = [word for word in translated_words if word not in words_to_remove]
+        cleaned_words = []
+        for word in translated_words:
+            # Preserve grade numbers (1, 2, 3, etc.) and grade-related words
+            if word.isdigit() or word in ['grade', 'teacher', 'adviser', 'advisor', 'guro', 'titser', 'maestra', 'maestro']:
+                cleaned_words.append(word)
+            elif word not in words_to_remove:
+                cleaned_words.append(word)
         translated_query = ' '.join(cleaned_words)
         
         # Handle specific Tagalog question patterns
@@ -506,12 +585,15 @@ class DatabaseSearchEngine:
         if grade_teacher_pattern:
             grade_num = None
             # For Pattern 3: "may teacher ba ang grade X" - grade is in group 3
-            if len(grade_teacher_pattern.groups()) >= 3:
-                grade_num = grade_teacher_pattern.group(3)
-            # For Patterns 1 & 2: check if first group is grade or teacher
-            elif grade_teacher_pattern.group(1).lower() in ['grade', 'grado', 'baitang']:
+            # Check which pattern matched to determine correct group
+            # Pattern 1: teacher before grade - grade is in group 3
+            # Pattern 2: grade before teacher - grade is in group 2  
+            # Pattern 3: "may teacher ba ang grade X" - grade is in group 3
+            if grade_teacher_pattern.group(1).lower() in ['grade', 'grado', 'baitang']:
+                # Pattern 2: grade before teacher - grade is in group 2
                 grade_num = grade_teacher_pattern.group(2)
             else:
+                # Pattern 1 or 3: teacher before grade or Tagalog pattern - grade is in group 3
                 grade_num = grade_teacher_pattern.group(3)
                 
             if grade_num:
@@ -686,12 +768,15 @@ class DatabaseSearchEngine:
         if grade_teacher_pattern:
             grade_num = None
             # For Pattern 3: "may teacher ba ang grade X" - grade is in group 3
-            if len(grade_teacher_pattern.groups()) >= 3:
-                grade_num = grade_teacher_pattern.group(3)
-            # For Patterns 1 & 2: check if first group is grade or teacher
-            elif grade_teacher_pattern.group(1).lower() in ['grade', 'grado', 'baitang']:
+            # Check which pattern matched to determine correct group
+            # Pattern 1: teacher before grade - grade is in group 3
+            # Pattern 2: grade before teacher - grade is in group 2  
+            # Pattern 3: "may teacher ba ang grade X" - grade is in group 3
+            if grade_teacher_pattern.group(1).lower() in ['grade', 'grado', 'baitang']:
+                # Pattern 2: grade before teacher - grade is in group 2
                 grade_num = grade_teacher_pattern.group(2)
             else:
+                # Pattern 1 or 3: teacher before grade or Tagalog pattern - grade is in group 3
                 grade_num = grade_teacher_pattern.group(3)
                 
             if grade_num:
@@ -1128,6 +1213,48 @@ class DatabaseSearchEngine:
         
         return query
     
+    async def search_prompts_three_tier(self, query: str, limit: int = 20, intent: str = None, 
+                                      conversation_history: List[Dict] = None,
+                                      nlu_result = None) -> List[Dict[str, Any]]:
+        """Search using three-tier search strategy"""
+        try:
+            if not self.use_three_tier or not self.three_tier_search:
+                logger.warning("Three-tier search not available, falling back to traditional search")
+                return await self.search_prompts(query, limit, intent, True, conversation_history, nlu_result)
+            
+            logger.info(f"🔍 Using three-tier search for: '{query}'")
+            
+            # Use three-tier search for single best result
+            if limit == 1:
+                result = await self.three_tier_search.search(query, limit)
+                if result:
+                    return [result]
+                else:
+                    return []
+            
+            # Use three-tier search for multiple results
+            results = await self.three_tier_search.search_multiple(query, limit)
+            
+            # Convert to expected format
+            formatted_results = []
+            for result in results:
+                formatted_results.append({
+                    'id': result.get('id'),
+                    'keywords': result.get('keywords', ''),
+                    'response': result.get('response', ''),
+                    'score': result.get('score', 0),
+                    'match_type': result.get('match_type', 'unknown'),
+                    'tier': result.get('tier', 0)
+                })
+            
+            logger.info(f"✅ Three-tier search returned {len(formatted_results)} results")
+            return formatted_results
+            
+        except Exception as e:
+            logger.error(f"Three-tier search failed: {e}")
+            # Fallback to traditional search
+            return await self.search_prompts(query, limit, intent, True, conversation_history, nlu_result)
+
     async def search_prompts(self, query: str, limit: int = 20, intent: str = None, 
                         use_semantic: bool = True, conversation_history: List[Dict] = None,
                         nlu_result = None) -> List[Dict[str, Any]]:
@@ -1306,7 +1433,11 @@ class DatabaseSearchEngine:
                     scored.append((score, result))
                 
                 scored.sort(reverse=True, key=lambda x: x[0])
-                return list([result for score, result in scored if score > 0][:limit])
+                results = [result for score, result in scored if score > 0][:limit]
+                
+                # Validate results to ensure they match query intent
+                validated_results = self._validate_search_results(query, results)
+                return validated_results
             
         except Exception as e:
             logger.error(f"Search error: {e}")

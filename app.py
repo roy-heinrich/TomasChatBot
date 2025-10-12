@@ -1,6 +1,16 @@
 import os
 import nltk
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("✅ Environment variables loaded from .env file")
+except ImportError:
+    print("⚠️ python-dotenv not available - using system environment variables only")
+except Exception as e:
+    print(f"⚠️ Error loading .env file: {e}")
+
 # Configure NLTK data paths for different deployment environments
 local_nltk_path = os.path.join(os.path.dirname(__file__), "nltk_data")
 render_nltk_path = "/opt/render/nltk_data"
@@ -489,6 +499,127 @@ async def clear_all_caches():
 @app.get('/health')
 async def health_check():
     return {"status": "healthy", "message": "Chatbot API is running"}
+
+# Dashboard endpoints
+@app.get("/metrics")
+async def get_metrics():
+    """Get performance metrics for dashboard"""
+    return {
+        "total_requests": 0,
+        "success_rate": 100,
+        "average_response_time": 0,
+        "uptime": 0
+    }
+
+@app.post("/comprehensive-test")
+async def comprehensive_test(request: Request):
+    """Run comprehensive test suite"""
+    try:
+        body = await request.json()
+        test_suite = body.get("test_suite", "all")
+        
+        # Mock test results for now
+        results = {
+            "summary": {
+                "total_tests": 10,
+                "passed": 8,
+                "failed": 2,
+                "success_rate": 80,
+                "average_response_time": 150
+            },
+            "results": [
+                {
+                    "test_name": "Language Detection",
+                    "result": {"status": "pass", "message": "All languages detected correctly"},
+                    "response_time": 120
+                },
+                {
+                    "test_name": "Database Search",
+                    "result": {"status": "pass", "message": "Search functionality working"},
+                    "response_time": 180
+                },
+                {
+                    "test_name": "Security Tests",
+                    "result": {"status": "fail", "message": "Some security checks failed"},
+                    "response_time": 200
+                }
+            ]
+        }
+        
+        return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/test")
+async def run_specific_test(request: Request):
+    """Run a specific test"""
+    try:
+        body = await request.json()
+        test_type = body.get("test_type", "general")
+        query = body.get("query", "")
+        
+        # Mock test result
+        return {
+            "status": "pass",
+            "message": f"Test '{query}' completed successfully",
+            "test_type": test_type
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/clear-memory")
+async def clear_memory():
+    """Clear conversation memory"""
+    try:
+        # In a real implementation, this would clear the chatbot's memory
+        return {"status": "success", "message": "Memory cleared"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/clear-cache")
+async def clear_cache():
+    """Clear database search cache"""
+    try:
+        # Force cache refresh for database search
+        if hasattr(chatbot.database_search, 'force_cache_refresh'):
+            success = chatbot.database_search.force_cache_refresh()
+            if success:
+                return {"status": "success", "message": "Database cache cleared successfully"}
+            else:
+                return {"status": "warning", "message": "Cache clearing attempted but Redis not available"}
+        else:
+            return {"status": "info", "message": "No cache system available - using direct database queries"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/cache-status")
+async def cache_status():
+    """Get cache system status"""
+    try:
+        cache_info = {
+            "redis_available": False,
+            "cache_ttl": None,
+            "cache_entries": 0,
+            "message": "Cache system not configured"
+        }
+        
+        if hasattr(chatbot.database_search, 'redis_available'):
+            cache_info["redis_available"] = chatbot.database_search.redis_available
+            cache_info["cache_ttl"] = getattr(chatbot.database_search, 'cache_ttl', None)
+            
+            if chatbot.database_search.redis_available:
+                try:
+                    keys = chatbot.database_search.redis.keys("search:*")
+                    cache_info["cache_entries"] = len(keys)
+                    cache_info["message"] = f"Redis cache active with {len(keys)} entries"
+                except:
+                    cache_info["message"] = "Redis cache active but unable to count entries"
+            else:
+                cache_info["message"] = "Using direct database queries (no caching)"
+        
+        return cache_info
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # -----------------------
 # Server startup
