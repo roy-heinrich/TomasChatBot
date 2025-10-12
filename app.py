@@ -37,6 +37,7 @@ from dotenv import load_dotenv
 from chatbot_refactored import ChatBot
 from pydantic import BaseModel
 from core.security import sql_protector
+from core.enhanced_security import enhanced_security
 
 # Configure logging to reduce verbosity
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
@@ -160,9 +161,28 @@ async def sql_injection_middleware(request: Request, call_next):
                     status_code=400
                 )
             
-            # Check for SQL injection attempts
-            is_safe, error_message = sql_protector.validate_request(request_data)
+            # Enhanced security validation
+            query = request_data.get("query", "")
+            is_valid, error_msg, validation_details = enhanced_security.validate_input(query, "query")
+            if not is_valid:
+                logger.warning(f"Enhanced security validation failed: {error_msg}")
+                return JSONResponse(
+                    content={"error": "Invalid request detected"},
+                    status_code=400
+                )
             
+            # Validate conversation history
+            conversation_history = request_data.get("conversation_history", [])
+            is_history_valid, history_error = enhanced_security.validate_conversation_history(conversation_history)
+            if not is_history_valid:
+                logger.warning(f"Conversation history validation failed: {history_error}")
+                return JSONResponse(
+                    content={"error": "Invalid conversation history"},
+                    status_code=400
+                )
+            
+            # Legacy SQL injection check (kept for compatibility)
+            is_safe, error_message = sql_protector.validate_request(request_data)
             if not is_safe:
                 logger.warning(f"SQL injection attempt blocked: {error_message}")
                 return JSONResponse(

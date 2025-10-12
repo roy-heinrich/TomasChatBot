@@ -29,6 +29,7 @@ from nlu_engine import NLUEngine, Intent, NLUResult
 from core.optimized_nlu_engine import OptimizedNLUEngine
 from entity_extractor import AdvancedEntityExtractor, ExtractedEntity
 from core.security import sql_protector
+from core.enhanced_security import enhanced_security
 
 # Import advanced AI modules
 from core.conversation_analyzer import ConversationAnalyzer, ConversationContext
@@ -553,7 +554,21 @@ class ChatBot:
             # Use the existing chat logic but with multi-question context
             # This is essentially the same as the main chat method but with additional context
             
-            # 0.1. Security validation
+            # 0.1. Enhanced security validation for individual questions
+            is_valid, error_msg, validation_details = enhanced_security.validate_input(question, "query")
+            if not is_valid:
+                logger.warning(f"Enhanced security validation failed for question: {error_msg}")
+                return ChatResponse(
+                    response=["I'm sorry, but I cannot process that type of request. Please ask about school-related topics instead."],
+                    entities=[],
+                    detected_language="en",
+                    language_confidence=1.0,
+                    is_split=False,
+                    message_count=1,
+                    intent="security_block"
+                )
+            
+            # Legacy SQL injection check
             if sql_protector.is_sql_injection(question):
                 return ChatResponse(
                     response=["I'm sorry, but I cannot process that type of request. Please ask about school-related topics instead."],
@@ -799,9 +814,23 @@ class ChatBot:
         """Main chat method - Groq-first approach for natural responses with multi-question support"""
         try:
             # Debug removed
-            # 0. Input validation - reject empty or whitespace-only queries
+            # 0. Enhanced input validation
             if not query or not query.strip():
                 raise ValueError("Empty or whitespace-only query is not allowed")
+            
+            # Enhanced security validation
+            is_valid, error_msg, validation_details = enhanced_security.validate_input(query, "query")
+            if not is_valid:
+                logger.warning(f"Enhanced security validation failed: {error_msg}")
+                return ChatResponse(
+                    response=["I'm sorry, but I cannot process that type of request. Please ask about school-related topics instead."],
+                    entities=[],
+                    detected_language="en",
+                    language_confidence=1.0,
+                    is_split=False,
+                    message_count=1,
+                    intent="security_block"
+                )
             
             # Emergency detection is handled by NLU engine
             # 0.1. Typo correction
@@ -816,7 +845,7 @@ class ChatBot:
                 # Process multiple questions
                 return await self._handle_multiple_questions(questions, conversation_history, user_timezone, session_id)
             
-            # 0.2. Security validation - check for SQL injection attempts
+            # 0.2. Legacy SQL injection check (kept for compatibility)
             if sql_protector.is_sql_injection(query):
                 # Removed verbose SQL injection logging
                 return ChatResponse(

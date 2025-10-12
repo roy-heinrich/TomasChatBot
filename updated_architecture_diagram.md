@@ -53,9 +53,9 @@
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                              CORE MODULES                                      │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │ Language    │  │    NLU      │  │   Entity    │  │  Database   │          │
-│  │ Detector    │  │   Engine    │  │ Extractor   │  │   Search    │          │
-│  │ (3 langs)   │  │ (40+ intents)│  │(Advanced)   │  │ (Scoring)   │          │
+│  │ Language    │  │ Optimized   │  │   Entity    │  │ Cached DB   │          │
+│  │ Detector    │  │ NLU Engine  │  │ Extractor   │  │   Search    │          │
+│  │ (3 langs)   │  │(Redis Cache)│  │(Advanced)   │  │(Redis Cache)│          │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘          │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
 │  │ Response    │  │  Keyword    │  │  Memory     │  │  Context    │          │
@@ -63,10 +63,25 @@
 │  │ (Multi-AI)  │  │ (Fallback)  │  │(Persistent) │  │ Translation │          │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘          │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │ Emotional   │  │  Personal   │  │  Conversation│  │  Rate Limit │          │
-│  │ Intelligence│  │  Response   │  │  Analyzer   │  │   Monitor   │          │
-│  │ (Sentiment) │  │ Personalizer│  │ (Context)   │  │ (Security)  │          │
+│  │ Emotional   │  │  Personal   │  │  Conversation│  │ Enhanced    │          │
+│  │ Intelligence│  │  Response   │  │  Analyzer   │  │  Security   │          │
+│  │ (Sentiment) │  │ Personalizer│  │ (Context)   │  │ Validator   │          │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              REDIS CACHING LAYER                               │
+│  ┌─────────────────────────────────────────────────────────────────────────┐    │
+│  │                        Redis Cache System                              │    │
+│  │  • Database Query Cache (TTL: 1 hour)                                 │    │
+│  │  • NLU Result Cache (TTL: 30 minutes)                                 │    │
+│  │  • Language Detection Cache (83% hit rate)                             │    │
+│  │  • Translation Cache for repeated phrases                             │    │
+│  │  • Cache Management Utility (Manual refresh/invalidation)             │    │
+│  │  • Memory Management (Max 1000 entries, LRU eviction)                │    │
+│  │  • Fallback to In-Memory Cache when Redis unavailable                 │    │
+│  └─────────────────────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -167,7 +182,10 @@
 │                                                                                 │
 │  🚨 SAFETY & SECURITY                                                          │
 │  • Medical Emergency Detection with 911 protocols                             │
-│  • SQL Injection Protection Middleware                                        │
+│  • Enhanced Security Validator (10+ threat types)                             │
+│  • SQL Injection Protection with 59+ patterns                                 │
+│  • XSS Prevention and HTML encoding detection                                │
+│  • Command Injection and Path Traversal protection                            │
 │  • Rate Limiting and Abuse Prevention                                         │
 │  • Input Validation and Sanitization                                          │
 │  • Gibberish Detection with NLP patterns                                       │
@@ -185,19 +203,55 @@
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Data Flow (Updated)
+## Data Flow (Updated with Redis Caching)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                              CONVERSATION FLOW                                 │
 │                                                                                 │
-│  User Input → Typo Correction → Language Detection → NLU Analysis              │
+│  User Input → Enhanced Security Validation → Typo Correction → Language Detection │
 │       ↓                                                                         │
-│  Entity Extraction → Emergency Check → Database Search → Context Analysis      │
+│  Redis NLU Cache Check → NLU Analysis (if cache miss) → Entity Extraction      │
 │       ↓                                                                         │
-│  Memory Update → Response Generation → Personalization → Translation          │
+│  Emergency Check → Redis DB Cache Check → Database Search (if cache miss)     │
 │       ↓                                                                         │
-│  Multi-Question Processing → Response Splitting → User Output                  │
+│  Context Analysis → Memory Update → Response Generation → Personalization       │
+│       ↓                                                                         │
+│  Translation Cache Check → Multi-Question Processing → Response Splitting      │
+│       ↓                                                                         │
+│  Cache Storage → User Output                                                   │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## System Flow Diagram (Redis-Enhanced)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              SYSTEM FLOW WITH REDIS                            │
+│                                                                                 │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    │
+│  │   User      │    │   FastAPI   │    │   Security  │    │   Language  │    │
+│  │   Input     │───▶│   App       │───▶│  Validator  │───▶│  Detector   │    │
+│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    │
+│                           │                       │                   │       │
+│                           ▼                       ▼                   ▼       │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    │
+│  │   Redis     │◀───│   NLU       │    │   Entity    │    │ Translation │    │
+│  │   Cache     │    │   Engine    │───▶│ Extractor   │───▶│   Cache     │    │
+│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    │
+│         │                   │                       │                   │       │
+│         ▼                   ▼                       ▼                   ▼       │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    │
+│  │   Cache     │    │  Database   │    │   Memory    │    │  Response   │    │
+│  │ Management  │◀───│   Search    │───▶│   System    │───▶│  Generator  │    │
+│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    │
+│                           │                       │                   │       │
+│                           ▼                       ▼                   ▼       │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    │
+│  │   Redis     │    │  Supabase   │    │ Emotional   │    │   User      │    │
+│  │   Cache     │◀───│  Database   │    │Intelligence │───▶│  Output     │    │
+│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    │
 │                                                                                 │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -268,9 +322,12 @@
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                              SECURITY LAYERS                                   │
 │                                                                                 │
-│  🛡️ INPUT VALIDATION                                                           │
-│  • SQL Injection Protection Middleware                                         │
-│  • XSS Prevention in responses                                                 │
+│  🛡️ ENHANCED INPUT VALIDATION                                                  │
+│  • Enhanced Security Validator (Comprehensive threat detection)               │
+│  • SQL Injection Protection (59+ patterns)                                   │
+│  • XSS Prevention and HTML encoding detection                                  │
+│  • Command Injection and Path Traversal protection                            │
+│  • Null Byte and Malicious URL detection                                       │
 │  • Input Sanitization and validation                                           │
 │  • Gibberish detection with NLP patterns                                       │
 │                                                                                 │
@@ -301,19 +358,25 @@
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                              PERFORMANCE FEATURES                              │
 │                                                                                 │
-│  ⚡ CACHING SYSTEM                                                              │
+│  ⚡ REDIS CACHING SYSTEM                                                       │
+│  • Database Query Cache (TTL: 1 hour, 1000 max entries)                      │
+│  • NLU Result Cache (TTL: 30 minutes, Redis-backed)                          │
 │  • Language detection cache with 83% hit rate                                  │
 │  • Translation cache for repeated phrases                                      │
 │  • Response cache for common queries                                            │
 │  • NLTK data caching for faster initialization                                 │
+│  • Cache Management Utility (Manual refresh/invalidation)                     │
+│  • In-Memory Fallback Cache (LRU eviction)                                     │
 │                                                                                 │
 │  📊 MONITORING & METRICS                                                        │
 │  • Health endpoints (/health, /admin/logs)                                     │
 │  • Performance metrics (/admin/metrics)                                        │
 │  • Error tracking and logging                                                  │
 │  • Response time monitoring (<1.5s average)                                    │
-│  • Cache hit rate monitoring                                                   │
+│  • Redis cache hit rate monitoring                                             │
+│  • Cache statistics and memory usage tracking                                  │
 │  • Provider health status tracking                                             │
+│  • Cache Management Utility (Manual operations)                               │
 │                                                                                 │
 │  🔄 FALLBACK SYSTEM                                                             │
 │  • Multi-provider AI with intelligent switching                               │
@@ -361,12 +424,27 @@
 │  • Semantic similarity matching using difflib                                │
 │  • Context-specific boosting for school topics                                │
 │  • Intent-based search refinement                                              │
+│  • Redis caching for query performance optimization                           │
 │                                                                                 │
 │  🛡️ INTELLIGENT EMERGENCY DETECTION                                            │
 │  • Context-aware analysis to prevent false positives                          │
 │  • Humor and sarcasm detection                                                 │
 │  • Standalone medical term validation                                          │
 │  • Immediate safety protocol activation                                        │
+│                                                                                 │
+│  ⚡ REDIS CACHING INNOVATIONS                                                   │
+│  • Multi-layer caching strategy (NLU, DB, Translation)                       │
+│  • Intelligent cache invalidation and refresh                                  │
+│  • Fallback to in-memory cache when Redis unavailable                          │
+│  • Cache management utility for manual operations                             │
+│  • Performance monitoring and statistics tracking                             │
+│                                                                                 │
+│  🔒 ENHANCED SECURITY VALIDATION                                                │
+│  • Comprehensive threat detection (10+ attack types)                          │
+│  • Advanced SQL injection protection (59+ patterns)                           │
+│  • XSS, Command Injection, and Path Traversal prevention                     │
+│  • Null Byte and Malicious URL detection                                      │
+│  • Real-time security monitoring and logging                                  │
 │                                                                                 │
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```

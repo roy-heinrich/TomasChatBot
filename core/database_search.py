@@ -1209,7 +1209,7 @@ class DatabaseSearchEngine:
                                     results.append(item)
                                     seen_ids.add(item['id'])
                         except Exception as e:
-                                logger.warning(f"Search failed for '{word}': {e}")
+                            logger.warning(f"Search failed for '{word}': {e}")
                 
                 # 6. Score results (boost if NLU intent matches)
                 scored = []
