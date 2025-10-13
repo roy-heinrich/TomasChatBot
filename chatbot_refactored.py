@@ -96,7 +96,67 @@ class ChatBot:
         self.emotional_intelligence = EmotionalIntelligence()
         self.response_personalizer = ResponsePersonalizer()
         
+        # 🚨 AUTOMATIC CACHE MANAGEMENT: Prevent stale results
+        self._setup_automatic_cache_management()
+        
+        # Initialize automatic cache manager (deferred until first async call)
+        self._cache_manager_initialized = False
+        
         # logger.info("✅ ChatBot initialized with clean, modular architecture")  # Reduced for Railway
+    
+    def _setup_automatic_cache_management(self):
+        """Setup automatic cache management to prevent stale results"""
+        try:
+            # Set shorter TTL for grade-related queries to prevent stale results
+            if hasattr(self.database_search, 'cache_ttl'):
+                # Reduce TTL for grade queries to 30 minutes instead of 1 hour
+                self.database_search.cache_ttl = 1800  # 30 minutes
+            
+            # Setup automatic cache invalidation on startup
+            if hasattr(self.database_search, 'redis') and self.database_search.redis_available:
+                # Clear any existing stale cache on startup
+                self.database_search.redis.flushall()
+                logger.info("🗑️ Cleared all caches on startup to prevent stale results")
+            
+            logger.info("✅ Automatic cache management setup complete")
+        except Exception as e:
+            logger.warning(f"Cache management setup failed: {e}")
+    
+    def _validate_and_invalidate_grade_cache(self, query: str, search_results: List[Dict]):
+        """Validate search results and invalidate cache if wrong grade is returned"""
+        try:
+            import re
+            # Extract grade from query
+            grade_match = re.search(r'grade\s*(\d+)', query.lower())
+            if not grade_match:
+                return
+            
+            target_grade = grade_match.group(1)
+            
+            # Check if top result has the wrong grade
+            if search_results:
+                top_result = search_results[0]
+                combined_text = (top_result.get('keywords', '') + ' ' + 
+                               top_result.get('response', '')).lower()
+                
+                # Check if top result has the correct grade
+                has_correct_grade = f'grade {target_grade}' in combined_text
+                
+                # Check if top result has wrong grades
+                has_wrong_grade = any(
+                    f'grade {other}' in combined_text 
+                    for other in ['1', '2', '3', '4', '5', '6']
+                    if other != target_grade
+                )
+                
+                if not has_correct_grade and has_wrong_grade:
+                    logger.warning(f"🚨 Cache returned wrong grade for Grade {target_grade} query - invalidating")
+                    # Invalidate all caches for this grade
+                    if hasattr(self.database_search, 'redis') and self.database_search.redis_available:
+                        self.database_search.redis.flushall()
+                        logger.info("🗑️ All caches invalidated due to wrong grade results")
+        except Exception as e:
+            logger.warning(f"Cache validation failed: {e}")
     
     def _extract_user_name(self, conversation_history: List[Dict]) -> str:
         """Extract user name from conversation history using NLP entity extraction"""
@@ -361,6 +421,9 @@ class ChatBot:
             r'sino\s+ang\s+\w+\s+',         # "sino ang teacher" (Tagalog)
             r'kailan\s+ang\s+\w+\s+',        # "kailan ang exam" (Tagalog)
             r'paano\s+ang\s+\w+\s+',        # "paano ang enrollment" (Tagalog)
+            # Aklanon single question patterns
+            r'sino\s+du\s+\w+\s+it\s+\w+\s+grade\s+\d+',  # "sino du adviser it grade 6"
+            r'sino\s+du\s+\w+\s+it\s+\w+\s+nga\s+\w+\?\s+grade\s+\d+',  # "sino du adviser it akon nga unga? grade 6"
         ]
         
         # Enhanced detection for compound questions with "and" + numbers/grades
@@ -1055,6 +1118,16 @@ class ChatBot:
                    user_timezone: str = None, session_id: str = None) -> ChatResponse:
         """Main chat method - Groq-first approach for natural responses with multi-question support"""
         try:
+            # Initialize cache manager on first async call
+            if not self._cache_manager_initialized:
+                try:
+                    from automatic_cache_manager import setup_automatic_cache_management
+                    await setup_automatic_cache_management(self)
+                    self._cache_manager_initialized = True
+                except Exception as e:
+                    logger.warning(f"Cache manager initialization failed: {e}")
+                    self._cache_manager_initialized = True  # Don't retry
+            
             # Debug removed
             # 0. Enhanced input validation
             if not query or not query.strip():
@@ -1357,6 +1430,10 @@ class ChatBot:
                     
                     # Use three-tier search for better results
                     search_results = await self.database_search.search_prompts_three_tier(search_query, limit=10, intent=intent_name, conversation_history=conversation_history, nlu_result=nlu_result)
+                    
+                    # 🚨 AUTOMATIC: Invalidate cache if grade query returns wrong results
+                    if 'grade' in query.lower() and search_results:
+                        self._validate_and_invalidate_grade_cache(query, search_results)
                     
                     # 4. Simple logic: Use top database result if available
                     best_result = None

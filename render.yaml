@@ -1,36 +1,27 @@
-# Render.com deployment configuration for TOMAS Chatbot with Vector Search
 services:
   - type: web
     name: tomas-chatbot
     env: python
-    plan: free  # Back to free tier
-    buildCommand: |
-      pip install --upgrade pip
-      pip install -r requirements.txt
-      python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('averaged_perceptron_tagger')"
-    startCommand: |
-      python start.py
+    buildCommand: pip install -r requirements.txt
+    startCommand: python start.py
+    healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10.0
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_KEY
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
-      - key: HUGGINGFACE_API_KEY
-        sync: false
-      - key: LOG_LEVEL
-        value: INFO
-      - key: HF_HUB_DISABLE_SYMLINKS_WARNING
-        value: "1"
-      - key: TRANSFORMERS_CACHE
-        value: /opt/render/project/src/.cache
-      - key: HF_HOME
-        value: /opt/render/project/src/.cache/huggingface
-      - key: PGVECTOR_ENABLED
-        value: "true"
-
-# Database configuration removed for free tier
-# Use external Supabase database
+        value: 3.11.0
+      - key: NLTK_DATA
+        value: /opt/render/nltk_data
+      - key: PYTHONUNBUFFERED
+        value: 1
+      - key: PIP_TIMEOUT
+        value: 3000
+      - key: PIP_RETRIES
+        value: 15
+    # Add your environment variables here:
+    # - key: GROQ_API_KEY
+    #   value: your_groq_api_key
+    # - key: SUPABASE_URL
+    #   value: your_supabase_url
+    # - key: SUPABASE_KEY
+    #   value: your_supabase_key
+    # - key: REDIS_URL
+    #   value: your_redis_url

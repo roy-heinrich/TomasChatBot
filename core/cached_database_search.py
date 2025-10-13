@@ -207,7 +207,7 @@ class CachedDatabaseSearch(DatabaseSearchEngine):
         if self.cache_operations_count % self.memory_check_interval == 0:
             self._check_memory_usage()
         
-        # Auto-invalidate related caches if this was a grade-related query
+        # 🚨 AUTOMATIC CACHE INVALIDATION: Prevent stale results
         if any(word in query.lower() for word in ['grade', 'adviser', 'teacher', 'baitang']):
             # Extract grade number if present
             import re
@@ -216,8 +216,72 @@ class CachedDatabaseSearch(DatabaseSearchEngine):
                 grade_num = grade_match.group(1)
                 # Invalidate old cache entries for this grade (but not the one we just created)
                 self._invalidate_old_grade_cache(grade_num, cache_key)
+                
+                # 🚨 CRITICAL: Also invalidate OTHER grades to prevent cross-contamination
+                for other_grade in ['1', '2', '3', '4', '5', '6']:
+                    if other_grade != grade_num:
+                        self._invalidate_grade_cache(other_grade)
+        
+        # 🚨 AUTOMATIC: Invalidate cache when database changes are detected
+        if self._check_database_changes():
+            logger.info("🔄 Database changes detected - invalidating all caches")
+            self._invalidate_all_caches()
+        
+        # 🚨 AUTOMATIC: Periodic cache cleanup to prevent memory issues
+        if self.cache_operations_count % 50 == 0:  # Every 50 operations
+            self._cleanup_stale_cache_entries()
         
         return results
+    
+    def _invalidate_grade_cache(self, grade_num: str):
+        """Invalidate all cache entries for a specific grade"""
+        if not self.redis_available:
+            return
+        
+        try:
+            # Get all cache keys
+            keys = self.redis.keys('*')
+            grade_keys = [key for key in keys if f'grade {grade_num}' in key.lower()]
+            
+            if grade_keys:
+                self.redis.delete(*grade_keys)
+                logger.info(f"🗑️ Invalidated {len(grade_keys)} cache entries for Grade {grade_num}")
+        except Exception as e:
+            logger.warning(f"Cache invalidation failed: {e}")
+    
+    def _invalidate_all_caches(self):
+        """Invalidate all cache entries"""
+        if not self.redis_available:
+            return
+        
+        try:
+            self.redis.flushall()
+            logger.info("🗑️ All caches invalidated")
+        except Exception as e:
+            logger.warning(f"Full cache invalidation failed: {e}")
+    
+    def _cleanup_stale_cache_entries(self):
+        """Clean up stale cache entries to prevent memory issues"""
+        if not self.redis_available:
+            return
+        
+        try:
+            # Get all keys and check TTL
+            keys = self.redis.keys('*')
+            stale_keys = []
+            
+            for key in keys:
+                ttl = self.redis.ttl(key)
+                if ttl == -1:  # No expiration set
+                    stale_keys.append(key)
+                elif ttl < 60:  # Less than 1 minute left
+                    stale_keys.append(key)
+            
+            if stale_keys:
+                self.redis.delete(*stale_keys)
+                logger.info(f"🧹 Cleaned up {len(stale_keys)} stale cache entries")
+        except Exception as e:
+            logger.warning(f"Cache cleanup failed: {e}")
     
     def _check_database_changes(self) -> bool:
         """Check if database has changed since last check"""

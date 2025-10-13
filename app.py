@@ -13,13 +13,13 @@ except Exception as e:
 
 # Configure NLTK data paths for different deployment environments
 local_nltk_path = os.path.join(os.path.dirname(__file__), "nltk_data")
-render_nltk_path = "/opt/render/nltk_data"
 railway_nltk_path = "/app/nltk_data"
+render_nltk_path = "/opt/render/nltk_data"
 
-# Add paths in order of preference
+# Add paths in order of preference (Railway first, Render as backup)
 nltk.data.path.insert(0, local_nltk_path)  # Local development
-nltk.data.path.append(railway_nltk_path)  # Railway deployment
-nltk.data.path.append(render_nltk_path)   # Render deployment
+nltk.data.path.append(railway_nltk_path)  # Railway deployment (primary)
+nltk.data.path.append(render_nltk_path)   # Render deployment (backup)
 
 # Set environment variable
 if os.path.exists(local_nltk_path):
@@ -31,13 +31,14 @@ elif os.path.exists(render_nltk_path):
 
 print(f"✅ NLTK data paths configured:")
 print(f"   Local: {local_nltk_path}")
-print(f"   Railway: {railway_nltk_path}")
-print(f"   Render: {render_nltk_path}")
+print(f"   Railway: {railway_nltk_path} (PRIMARY)")
+print(f"   Render: {render_nltk_path} (BACKUP)")
 print(f"   Current NLTK paths: {nltk.data.path[:3]}...")
 
 import httpx
 import logging
 import json
+from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -211,7 +212,7 @@ async def sql_injection_middleware(request: Request, call_next):
             status_code=500
         )
 
-# ✅ Enhanced CORS config for production and development
+# ✅ Enhanced CORS config for Railway (PRIMARY) and Render (BACKUP) deployments
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -225,7 +226,8 @@ app.add_middleware(
         "http://127.0.0.1:8080", 
         "http://127.0.0.1:5000",
         "http://127.0.0.1:8000",
-        "https://tomaschatbot.onrender.com",
+        "https://*.railway.app",  # Railway deployment URLs (PRIMARY)
+        "https://tomaschatbot.onrender.com",  # Render deployment URL (BACKUP)
         "*"  # Allow all origins for development
     ],
     allow_credentials=True,
@@ -458,44 +460,56 @@ async def get_performance_metrics():
 # 🚀 NEW: Clear all caches endpoint
 @app.post("/admin/clear-cache")
 async def clear_all_caches():
+    """Clear all caches - emergency fix for stale results"""
     try:
-        # Get stats before clearing
-        response_stats_before = chatbot.response_cache.get_stats()
-        language_cache_size_before = len(getattr(chatbot, 'language_cache', {}))
+        # Clear Redis cache
+        if hasattr(chatbot.database_search, 'redis') and chatbot.database_search.redis_available:
+            chatbot.database_search.redis.flushall()
         
-        # Clear response cache
-        chatbot.response_cache.clear()
+        # Clear in-memory caches
+        if hasattr(chatbot.language_detector, 'language_cache'):
+            chatbot.language_detector.language_cache.clear()
         
-        # Clear language detection cache
-        if hasattr(chatbot, 'language_cache'):
-            chatbot.language_cache.clear()
+        if hasattr(chatbot.nlu_engine, 'cache'):
+            chatbot.nlu_engine.cache.clear()
         
-        # Get stats after clearing
-        response_stats_after = chatbot.response_cache.get_stats()
-        language_cache_size_after = len(getattr(chatbot, 'language_cache', {}))
-        
-        return JSONResponse(
-            content={
-                "success": True,
-                "message": "All caches cleared successfully",
-                "details": {
-                    "response_cache_before": response_stats_before,
-                    "response_cache_after": response_stats_after,
-                    "language_cache_entries_before": language_cache_size_before,
-                    "language_cache_entries_after": language_cache_size_after
-                },
-                "timestamp": "2025-09-21 18:00:00"
-            },
-            status_code=200
-        )
+        return {"status": "success", "message": "All caches cleared"}
     except Exception as e:
-        return JSONResponse(
-            content={
-                "success": False,
-                "message": f"Failed to clear caches: {str(e)}"
-            },
-            status_code=500
-        )
+        return {"status": "error", "message": str(e)}
+
+@app.get("/admin/cache-status")
+async def get_cache_status():
+    """Get cache status and health information"""
+    try:
+        cache_info = {
+            "redis_available": False,
+            "redis_keys": 0,
+            "language_cache_size": 0,
+            "nlu_cache_size": 0,
+            "last_cleanup": "Never"
+        }
+        
+        # Check Redis cache
+        if hasattr(chatbot.database_search, 'redis') and chatbot.database_search.redis_available:
+            cache_info["redis_available"] = True
+            cache_info["redis_keys"] = len(chatbot.database_search.redis.keys('*'))
+        
+        # Check in-memory caches
+        if hasattr(chatbot.language_detector, 'language_cache'):
+            cache_info["language_cache_size"] = len(chatbot.language_detector.language_cache)
+        
+        if hasattr(chatbot.nlu_engine, 'cache'):
+            cache_info["nlu_cache_size"] = len(chatbot.nlu_engine.cache)
+        
+        # Check last cleanup time
+        if hasattr(chatbot, 'cache_manager') and hasattr(chatbot.cache_manager, 'last_cleanup'):
+            cache_info["last_cleanup"] = datetime.fromtimestamp(chatbot.cache_manager.last_cleanup).isoformat()
+        
+        return cache_info
+        
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.get('/health')
 async def health_check():
     return {"status": "healthy", "message": "Chatbot API is running"}

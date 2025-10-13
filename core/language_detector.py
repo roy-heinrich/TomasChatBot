@@ -179,6 +179,9 @@ class LanguageDetector:
             # Aklanon question words and particles
             r'^(sino|du|it|hay|alin|kanino|kailan|bakit|paano)$',
             
+            # Aklanon specific words from the failing query
+            r'^(akon|nga|unga|makaron|imaw)$',
+            
             # NEW: Aklanon-specific particles and demonstratives
             r'^(ro|ra|raya|daya|roon|don|ra|da)$',  # Subject/topic markers and demonstratives
             

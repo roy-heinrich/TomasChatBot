@@ -1266,6 +1266,14 @@ class NLUEngine:
         if any(pattern in user_lower for pattern in school_programs_patterns):
             return NLUResult(Intent.SCHOOL_PROGRAMS, 0.85, [])
         
+        # Priority 19: Staff inquiry follow-ups (before general follow-ups)
+        staff_follow_up_patterns = [
+            "sino naman", "sino pa naman", "sino rin naman",  # Tagalog teacher follow-up
+            "who else", "who about", "who is the", "who are the"  # English teacher follow-up
+        ]
+        if any(pattern in user_lower for pattern in staff_follow_up_patterns):
+            return NLUResult(Intent.STAFF_INQUIRY, 0.85, [])
+        
         # Priority 20: General conversation flow intents
         follow_up_patterns = [
             "and what about", "what else", "anything else", "also", "plus",

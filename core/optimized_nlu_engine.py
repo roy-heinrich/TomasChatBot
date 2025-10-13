@@ -166,7 +166,33 @@ class OptimizedNLUEngine(NLUEngine):
         # Store in cache
         self._store_nlu_in_cache(cache_key, result)
         
+        # 🚨 AUTOMATIC: Invalidate related NLU caches for grade queries
+        if 'grade' in user_input.lower():
+            self._invalidate_grade_nlu_cache(user_input)
+        
         return result
+    
+    def _invalidate_grade_nlu_cache(self, user_input: str):
+        """Invalidate NLU cache entries for grade-related queries"""
+        if not self.redis_available:
+            return
+        
+        try:
+            import re
+            # Extract grade from input
+            grade_match = re.search(r'grade\s*(\d+)', user_input.lower())
+            if grade_match:
+                grade_num = grade_match.group(1)
+                
+                # Get all NLU cache keys
+                keys = self.redis.keys('nlu:*')
+                grade_keys = [key for key in keys if f'grade {grade_num}' in key.lower()]
+                
+                if grade_keys:
+                    self.redis.delete(*grade_keys)
+                    logger.info(f"🗑️ Invalidated {len(grade_keys)} NLU cache entries for Grade {grade_num}")
+        except Exception as e:
+            logger.warning(f"NLU cache invalidation failed: {e}")
     
     async def _analyze_intent_optimized(self, user_input: str, context: Dict = None) -> NLUResult:
         """Optimized intent analysis with pre-compiled patterns"""

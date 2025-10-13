@@ -217,11 +217,37 @@ class ImprovedScorer:
         return 'general'
     
     def _score_grade_match(self, query: str, keywords: str, response: str) -> int:
-        """Score grade-specific matches"""
+        """
+        Score grade-specific matches with ABSOLUTE PRIORITY
+        SAFE for all query types: specific grade, grade overview, and non-grade queries
+        """
         score = 0
         
-        # Extract grade from query
+        # 🎯 Detect if this is a grade overview query (asking about ALL grades)
+        query_lower = query.lower()
+        grade_overview_patterns = [
+            r'what grade',
+            r'which grade',
+            r'grade level',
+            r'ano.*grade',
+            r'anong grade',
+            r'available grade',
+            r'offered grade',
+            r'kindergarten.*grade',
+            r'grade.*offered',
+            r'grade.*available'
+        ]
+        
+        is_grade_overview = any(re.search(pattern, query_lower) for pattern in grade_overview_patterns)
+        
+        # 🎯 SAFE: If asking about grade levels in general, don't apply grade-specific scoring
+        if is_grade_overview:
+            return 0  # Let normal scoring handle it
+        
+        # Extract specific grade from query
         grade_match = re.search(r'grade\s+(\d+|one|two|three|four|five|six)', query)
+        
+        # 🎯 SAFE: If no specific grade in query, return 0 (no grade scoring at all)
         if not grade_match:
             return 0
         
@@ -230,22 +256,36 @@ class ImprovedScorer:
         # Check if keywords/response contain the same grade
         combined_text = keywords + ' ' + response
         
-        # Direct match
-        if f'grade {grade_value}' in combined_text:
-            score += 50
+        # 🚨 CRITICAL FIX: Make grade matches ABSOLUTELY DOMINANT
+        # Give such high scores that other factors become irrelevant
         
-        # Handle number/word conversion
+        # Direct match - MASSIVE boost for exact grade match
+        if f'grade {grade_value}' in combined_text:
+            score += 10000  # Increased from 500 to 10000 - now absolutely dominant
+        
+        # Handle number/word conversion (e.g., "6" <-> "six")
         number_map = {'1': 'one', '2': 'two', '3': 'three', '4': 'four', 
                       '5': 'five', '6': 'six'}
         
         if grade_value.isdigit() and grade_value in number_map:
             if f'grade {number_map[grade_value]}' in combined_text:
-                score += 50
+                score += 10000  # Increased from 500 to 10000
         elif grade_value in number_map.values():
             # Reverse lookup
             num = [k for k, v in number_map.items() if v == grade_value][0]
             if f'grade {num}' in combined_text:
-                score += 50
+                score += 10000  # Increased from 500 to 10000
+        
+        # 🚨 CRITICAL FIX: Make wrong grade penalties ABSOLUTELY DISQUALIFYING
+        # A wrong grade should make the result essentially unusable
+        for other_grade in ['1', '2', '3', '4', '5', '6']:
+            if other_grade != grade_value and f'grade {other_grade}' in combined_text:
+                score -= 9500  # Massive penalty - increased from 200 to 9500
+        
+        # Also check word forms
+        for other_grade_word in ['one', 'two', 'three', 'four', 'five', 'six']:
+            if other_grade_word != grade_value and f'grade {other_grade_word}' in combined_text:
+                score -= 9500  # Massive penalty - increased from 200 to 9500
         
         return score
     
@@ -530,7 +570,7 @@ class DatabaseSearchEngine:
         # Clean up common words that don't help with matching
         # Include Aklanon particles: 'du' (the), 'it' (this), 'hay' (is)
         # BUT PRESERVE GRADE NUMBERS (1, 2, 3, etc.)
-        words_to_remove = ['ang', 'ng', 'sa', 'para', 'in', 'who', 'what', 'where', 'when', 'why', 'how', 'kayo', 'kayO', 'du', 'it', 'hay', 'ba', 'may']
+        words_to_remove = ['ang', 'ng', 'sa', 'para', 'in', 'who', 'what', 'where', 'when', 'why', 'how', 'kayo', 'kayO', 'du', 'it', 'hay', 'ba', 'may', 'akon', 'nga', 'unga', 'makaron', 'imaw']
         translated_words = translated_query.split()
         cleaned_words = []
         for word in translated_words:
@@ -1226,7 +1266,7 @@ class DatabaseSearchEngine:
     async def search_prompts_three_tier(self, query: str, limit: int = 20, intent: str = None, 
                                       conversation_history: List[Dict] = None,
                                       nlu_result = None) -> List[Dict[str, Any]]:
-        """Search using three-tier search strategy"""
+        """Search using three-tier search strategy with SAFE grade-specific pre-filtering"""
         try:
             if not self.use_three_tier or not self.three_tier_search:
                 logger.warning("Three-tier search not available, falling back to traditional search")
@@ -1234,16 +1274,99 @@ class DatabaseSearchEngine:
             
             logger.info(f"🔍 Using three-tier search for: '{query}'")
             
+            # 🎯 SAFE GRADE DETECTION: Detect grade query type
+            query_lower = query.lower()
+            
+            # Check if this is a "grade overview" query (asking about ALL grades)
+            grade_overview_patterns = [
+                r'what grade',
+                r'which grade',
+                r'grade level',
+                r'ano.*grade',
+                r'anong grade',
+                r'available grade',
+                r'offered grade',
+                r'kindergarten.*grade',
+                r'grade.*offered',
+                r'grade.*available'
+            ]
+            
+            is_grade_overview = any(re.search(pattern, query_lower) for pattern in grade_overview_patterns)
+            
+            # Check if asking about a SPECIFIC grade
+            grade_match = re.search(r'grade\s+(\d+)', query_lower)
+            target_grade = grade_match.group(1) if grade_match else None
+            
+            # 🚨 CRITICAL: If asking about grade levels in general, don't filter by specific grade
+            if is_grade_overview:
+                target_grade = None  # Disable grade-specific filtering
+                logger.info("📚 Grade overview query detected - showing all grade information")
+            elif target_grade:
+                logger.info(f"🎯 Grade-specific query detected: Grade {target_grade}")
+            else:
+                logger.info("💬 Non-grade query detected - no filtering applied")
+            
             # Use three-tier search for single best result
             if limit == 1:
                 result = await self.three_tier_search.search(query, limit)
                 if result:
+                    # Apply pre-filtering for single result
+                    if target_grade:
+                        combined_text = (result.get('keywords', '') + ' ' + result.get('response', '')).lower()
+                        if f'grade {target_grade}' not in combined_text:
+                            # Wrong grade - check for other grades and filter out
+                            has_other_grade = any(
+                                f'grade {other}' in combined_text 
+                                for other in ['1', '2', '3', '4', '5', '6']
+                                if other != target_grade
+                            )
+                            if has_other_grade:
+                                logger.warning(f"⚠️ Three-tier result has wrong grade, filtering out")
+                                return []
                     return [result]
                 else:
                     return []
             
             # Use three-tier search for multiple results
             results = await self.three_tier_search.search_multiple(query, limit)
+            
+            # 🚨 NEW: SAFE PRE-FILTERING for three-tier results
+            if target_grade:
+                logger.info(f"🎯 Applying Grade {target_grade} pre-filtering to three-tier results")
+                
+                # First pass: Keep only results that match the target grade
+                grade_matched_results = []
+                for result in results:
+                    combined_text = (result.get('keywords', '') + ' ' + 
+                                   result.get('response', '')).lower()
+                    
+                    if f'grade {target_grade}' in combined_text:
+                        grade_matched_results.append(result)
+                
+                # If we found grade-specific results, ONLY use those
+                if grade_matched_results:
+                    results = grade_matched_results
+                    logger.info(f"✅ Pre-filtered three-tier to {len(results)} Grade {target_grade} results")
+                else:
+                    # No exact matches - filter out OTHER grades to avoid contamination
+                    logger.warning(f"⚠️ No Grade {target_grade} results in three-tier, filtering conflicts")
+                    non_conflicting = []
+                    for result in results:
+                        combined_text = (result.get('keywords', '') + ' ' + 
+                                       result.get('response', '')).lower()
+                        
+                        # Exclude results with DIFFERENT grades
+                        has_other_grade = any(
+                            f'grade {other}' in combined_text 
+                            for other in ['1', '2', '3', '4', '5', '6']
+                            if other != target_grade
+                        )
+                        
+                        if not has_other_grade:
+                            non_conflicting.append(result)
+                    
+                    results = non_conflicting
+                    logger.info(f"✅ Filtered three-tier to {len(results)} non-conflicting results")
             
             # Convert to expected format
             formatted_results = []
@@ -1268,7 +1391,9 @@ class DatabaseSearchEngine:
     async def search_prompts(self, query: str, limit: int = 20, intent: str = None, 
                         use_semantic: bool = True, conversation_history: List[Dict] = None,
                         nlu_result = None) -> List[Dict[str, Any]]:
-        """Smart scoring with NLU-driven synonym expansion"""
+        """
+        Smart scoring with NLU-driven synonym expansion and SAFE grade-specific pre-filtering
+        """
         try:
             # 1. Translate query for better database matching
             translated_query = self._translate_query_for_search(query)
@@ -1281,6 +1406,44 @@ class DatabaseSearchEngine:
             
             # 2. Enhance query with conversation context
             enhanced_query = self._enhance_query_with_context(translated_query, conversation_history)
+            
+            # DEBUG: Check for None returns
+            logger.info(f"Search debug - enhanced_query type: {type(enhanced_query)}, value: {enhanced_query}")
+            if enhanced_query is None:
+                logger.warning("⚠️ enhanced_query returned None - fixing...")
+                enhanced_query = translated_query
+            
+            # 🎯 SAFE GRADE DETECTION: Detect grade query type
+            query_lower = enhanced_query.lower()
+            
+            # Check if this is a "grade overview" query (asking about ALL grades)
+            grade_overview_patterns = [
+                r'what grade',
+                r'which grade',
+                r'grade level',
+                r'ano.*grade',
+                r'anong grade',
+                r'available grade',
+                r'offered grade',
+                r'kindergarten.*grade',
+                r'grade.*offered',
+                r'grade.*available'
+            ]
+            
+            is_grade_overview = any(re.search(pattern, query_lower) for pattern in grade_overview_patterns)
+            
+            # Check if asking about a SPECIFIC grade
+            grade_match = re.search(r'grade\s+(\d+)', query_lower)
+            target_grade = grade_match.group(1) if grade_match else None
+            
+            # 🚨 CRITICAL: If asking about grade levels in general, don't filter by specific grade
+            if is_grade_overview:
+                target_grade = None  # Disable grade-specific filtering
+                logger.info("📚 Grade overview query detected - showing all grade information")
+            elif target_grade:
+                logger.info(f"🎯 Grade-specific query detected: Grade {target_grade}")
+            else:
+                logger.info("💬 Non-grade query detected - no filtering applied")
             
             # DEBUG: Check for None returns
             logger.info(f"Search debug - enhanced_query type: {type(enhanced_query)}, value: {enhanced_query}")
@@ -1431,7 +1594,51 @@ class DatabaseSearchEngine:
                     except Exception as e:
                         logger.warning(f"Direct drill search failed: {e}")
                 
-                # 6. Score results (boost if NLU intent matches)
+                # 🚨 NEW: SAFE PRE-FILTERING - Only runs if query mentions a specific grade
+                if target_grade:
+                    logger.info(f"🎯 Applying Grade {target_grade} pre-filtering")
+                    
+                    # First pass: Keep only results that match the target grade
+                    grade_matched_results = []
+                    for result in results:
+                        combined_text = (result.get('keywords', '') + ' ' + 
+                                       result.get('response', '')).lower()
+                        
+                        if f'grade {target_grade}' in combined_text:
+                            grade_matched_results.append(result)
+                    
+                    # If we found grade-specific results, ONLY use those
+                    if grade_matched_results:
+                        results = grade_matched_results
+                        logger.info(f"✅ Pre-filtered to {len(results)} Grade {target_grade} results")
+                    else:
+                        # No exact matches - filter out OTHER grades to avoid contamination
+                        logger.warning(f"⚠️ No Grade {target_grade} results found, filtering conflicts")
+                        non_conflicting = []
+                        for result in results:
+                            combined_text = (result.get('keywords', '') + ' ' + 
+                                           result.get('response', '')).lower()
+                            
+                            # Exclude results with DIFFERENT grades
+                            has_other_grade = any(
+                                f'grade {other}' in combined_text 
+                                for other in ['1', '2', '3', '4', '5', '6']
+                                if other != target_grade
+                            )
+                            
+                            if not has_other_grade:
+                                non_conflicting.append(result)
+                        
+                        results = non_conflicting
+                        logger.info(f"✅ Filtered to {len(results)} non-conflicting results")
+                else:
+                    # 🎯 NON-GRADE QUERY or GRADE OVERVIEW: No filtering at all
+                    if is_grade_overview:
+                        logger.info("📚 Grade overview query - no filtering applied")
+                    else:
+                        logger.info("💬 Non-grade query - no filtering applied")
+                
+                # 6. Score results (grade scoring is safe - returns 0 for non-grade queries)
                 scored = []
                 for result in results:
                     score = self._calculate_score(result, enhanced_query)
