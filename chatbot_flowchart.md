@@ -24,6 +24,16 @@
 │                    │                                                           │
 │                    ▼                                                           │
 │  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                    QUERY PRE-PROCESSING                                │   │
+│  │  • Query Type Classification (emergency, grade_specific, general)     │   │
+│  │  • Grade Extraction and Isolation                                     │   │
+│  │  • Language Detection (cached)                                        │   │
+│  │  • Intent Classification (cached)                                      │   │
+│  │  • Emergency Bypass for Instant Response                              │   │
+│  └─────────────────┬───────────────────────────────────────────────────────┘   │
+│                    │                                                           │
+│                    ▼                                                           │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
 │  │                        INPUT PREPROCESSING                             │   │
 │  │  • Typo Correction                                                     │   │
 │  │  • Text Normalization                                                  │   │
@@ -72,6 +82,8 @@
 │  ┌─────────────────────────────────────────────────────────────────────────┐   │
 │  │                    DATABASE SEARCH                                     │   │
 │  │  • Redis Cache Check (TTL: 1 hour)                                    │   │
+│  │  • Connection Pool (Transaction Mode)                                 │   │
+│  │  • Three-Tier Search (FTS+BM25+Fuzzy)                                 │   │
 │  │  • ImprovedScorer Algorithm                                            │   │
 │  │  • Semantic Similarity Matching                                        │   │
 │  │  • Context-specific Boosting                                           │   │
@@ -138,7 +150,9 @@
 │  │  • Store NLU Results in Redis                                          │   │
 │  │  • Store Database Results in Redis                                     │   │
 │  │  • Store Translation Results in Redis                                  │   │
+│  │  • Store Pre-processing Results in Redis                               │   │
 │  │  • Update Cache Statistics                                             │   │
+│  │  • Automatic Cache Management (Grade-specific invalidation)            │   │
 │  └─────────────────┬───────────────────────────────────────────────────────┘   │
 │                    │                                                           │
 │                    ▼                                                           │
@@ -365,6 +379,107 @@
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## Connection Pooling Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            CONNECTION POOLING FLOW                             │
+│                                                                                 │
+│  ┌─────────────┐                                                               │
+│  │ Database    │                                                               │
+│  │ Request     │                                                               │
+│  └─────┬───────┘                                                               │
+│        │                                                                       │
+│        ▼                                                                       │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                    CONNECTION POOL CHECK                               │   │
+│  │  • Check Pool Availability                                            │   │
+│  │  • Transaction Mode (Primary)                                         │   │
+│  │  • Session Mode (Fallback)                                            │   │
+│  │  • Pool Health Monitoring                                             │   │
+│  └─────────────────┬───────────────────────────────────────────────────────┘   │
+│                    │                                                           │
+│                    ▼                                                           │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                    CONNECTION ACQUISITION                              │   │
+│  │  • Borrow Connection from Pool                                         │   │
+│  │  • Execute Database Query                                             │   │
+│  │  • Monitor Response Time                                              │   │
+│  │  • Update Pool Statistics                                             │   │
+│  └─────────────────┬───────────────────────────────────────────────────────┘   │
+│                    │                                                           │
+│                    ▼                                                           │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                    CONNECTION RETURN                                   │   │
+│  │  • Return Connection to Pool                                          │   │
+│  │  • Update Hit/Miss Statistics                                         │   │
+│  │  • Calculate Pool Efficiency                                          │   │
+│  │  • Health Check and Monitoring                                        │   │
+│  └─────────────────┬───────────────────────────────────────────────────────┘   │
+│                    │                                                           │
+│                    ▼                                                           │
+│  ┌─────────────┐                                                               │
+│  │ Database    │                                                               │
+│  │ Response    │                                                               │
+│  └─────────────┘                                                               │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Query Pre-processing Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                          QUERY PRE-PROCESSING FLOW                             │
+│                                                                                 │
+│  ┌─────────────┐                                                               │
+│  │ User Query  │                                                               │
+│  │ Received    │                                                               │
+│  └─────┬───────┘                                                               │
+│        │                                                                       │
+│        ▼                                                                       │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                    PRE-PROCESSING CACHE CHECK                          │   │
+│  │  • Check Cache for Previous Results                                    │   │
+│  │  • Validate Cache TTL                                                 │   │
+│  │  • Grade Isolation Check                                              │   │
+│  └─────────────────┬───────────────────────────────────────────────────────┘   │
+│                    │                                                           │
+│                    ▼                                                           │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                    QUERY ANALYSIS                                      │   │
+│  │  • Language Detection (English, Tagalog, Aklanon)                     │   │
+│  │  • Intent Classification (40+ intents)                                │   │
+│  │  • Grade Extraction (1-6)                                             │   │
+│  │  • Query Type Classification (emergency, grade_specific, general)     │   │
+│  └─────────────────┬───────────────────────────────────────────────────────┘   │
+│                    │                                                           │
+│                    ▼                                                           │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                    EMERGENCY CHECK                                     │   │
+│  │  • Emergency Query Detection                                           │   │
+│  │  • Instant Response Bypass                                            │   │
+│  │  • 911 Protocol Activation                                            │   │
+│  └─────────────────┬───────────────────────────────────────────────────────┘   │
+│                    │                                                           │
+│                    ▼                                                           │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                    CACHE STORAGE                                       │   │
+│  │  • Store Pre-processing Results                                       │   │
+│  │  • Grade-specific Cache Keys                                          │   │
+│  │  • Update Cache Statistics                                            │   │
+│  │  • TTL Management (30 minutes)                                        │   │
+│  └─────────────────┬───────────────────────────────────────────────────────┘   │
+│                    │                                                           │
+│                    ▼                                                           │
+│  ┌─────────────┐                                                               │
+│  │ Pre-processed│                                                               │
+│  │ Query Data  │                                                               │
+│  └─────────────┘                                                               │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Key Features Highlighted in Flowcharts
 
 ### **Security & Validation**
@@ -374,10 +489,13 @@
 - Emergency detection with context analysis
 
 ### **Performance & Caching**
-- Redis caching at multiple stages (NLU, Database, Translation)
+- Redis caching at multiple stages (NLU, Database, Translation, Pre-processing)
 - Intelligent cache hit/miss handling
 - Fallback to in-memory cache when Redis unavailable
 - TTL-based cache expiration
+- Connection pooling with Transaction Mode (3-5x efficiency)
+- Query pre-processing cache with grade isolation
+- Automatic cache management with grade-specific invalidation
 
 ### **AI & Intelligence**
 - Multi-provider AI with intelligent fallback
@@ -390,11 +508,17 @@
 - Entity extraction and relationship detection
 - Conversation memory and context preservation
 - Emergency detection and crisis response
+- Query pre-processing with grade isolation
+- FTS search with number preservation (Grade 1-6)
+- Three-tier search strategy (FTS+BM25+Fuzzy)
 
 ### **Error Handling & Fallbacks**
 - Graceful degradation when providers fail
 - Multiple fallback layers (Redis → In-Memory → Direct)
 - Context-aware keyword responses as final fallback
 - Comprehensive error recovery mechanisms
+- Connection pool fallback (Transaction → Session Mode)
+- Grade-specific cache invalidation and recovery
+- FTS search contamination prevention and fixes
 
-These flowcharts provide a comprehensive visual representation of how the TOMAS chatbot processes user input, handles emergencies, manages caching, and ensures reliable response generation through multiple fallback systems.
+These flowcharts provide a comprehensive visual representation of how the TOMAS chatbot processes user input, handles emergencies, manages caching, and ensures reliable response generation through multiple fallback systems. The latest improvements include database connection pooling, query pre-processing cache, and FTS search contamination fixes that significantly enhance performance and reliability.

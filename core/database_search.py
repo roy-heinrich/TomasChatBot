@@ -5,6 +5,7 @@ Handles database search operations with reliable scoring
 import logging
 from typing import List, Dict, Optional, Any
 from supabase import create_client, Client
+from .supabase_pool import execute_supabase_query, get_supabase_client
 import re
 from difflib import SequenceMatcher
 

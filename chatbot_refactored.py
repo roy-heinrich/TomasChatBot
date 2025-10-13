@@ -30,6 +30,7 @@ from core.optimized_nlu_engine import OptimizedNLUEngine
 from entity_extractor import AdvancedEntityExtractor, ExtractedEntity
 from core.security import sql_protector
 from core.enhanced_security import enhanced_security
+from core.query_preprocessor import preprocess_query, invalidate_grade_preprocessing_cache
 
 # Import advanced AI modules
 from core.conversation_analyzer import ConversationAnalyzer, ConversationContext
@@ -1113,6 +1114,33 @@ class ChatBot:
             return False
         
         return True
+    
+    async def _handle_emergency_query(self, query: str, preprocessed) -> ChatResponse:
+        """Handle emergency queries with immediate response"""
+        try:
+            # Immediate emergency response
+            emergency_response = "🚨 MEDICAL EMERGENCY DETECTED! Tawagan ang 911 o ang inyong lokal na emergency services kaagad."
+            
+            return ChatResponse(
+                response=[emergency_response],
+                entities=[],
+                detected_language=preprocessed.detected_language,
+                language_confidence=1.0,
+                is_split=False,
+                message_count=1,
+                intent="emergency"
+            )
+        except Exception as e:
+            logger.error(f"Emergency handling failed: {e}")
+            return ChatResponse(
+                response=["🚨 EMERGENCY DETECTED! Please call 911 or your local emergency services immediately."],
+                entities=[],
+                detected_language="en",
+                language_confidence=1.0,
+                is_split=False,
+                message_count=1,
+                intent="emergency"
+            )
 
     async def chat(self, query: str, conversation_history: List[Dict] = None, 
                    user_timezone: str = None, session_id: str = None) -> ChatResponse:
@@ -1146,6 +1174,16 @@ class ChatBot:
                     message_count=1,
                     intent="security_block"
                 )
+            
+            # 🚀 QUERY PRE-PROCESSING CACHE (Grade-Aware)
+            preprocessed = await preprocess_query(query)
+            logger.info(f"🔍 Preprocessed: {preprocessed.query_type} (grade: {preprocessed.extracted_grade}, confidence: {preprocessed.confidence:.2f})")
+            
+            # Use preprocessed results to optimize processing
+            if preprocessed.query_type == 'emergency':
+                # Emergency queries get immediate processing
+                logger.info("🚨 Emergency query detected - bypassing normal processing")
+                return await self._handle_emergency_query(query, preprocessed)
             
             # Emergency detection is handled by NLU engine
             # 0.1. Typo correction
@@ -1434,6 +1472,10 @@ class ChatBot:
                     # 🚨 AUTOMATIC: Invalidate cache if grade query returns wrong results
                     if 'grade' in query.lower() and search_results:
                         self._validate_and_invalidate_grade_cache(query, search_results)
+                        
+                        # Also invalidate preprocessing cache for the grade
+                        if hasattr(preprocessed, 'extracted_grade') and preprocessed.extracted_grade:
+                            invalidate_grade_preprocessing_cache(preprocessed.extracted_grade)
                     
                     # 4. Simple logic: Use top database result if available
                     best_result = None

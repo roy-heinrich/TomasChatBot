@@ -49,6 +49,8 @@ from chatbot_refactored import ChatBot
 from pydantic import BaseModel
 from core.security import sql_protector
 from core.enhanced_security import enhanced_security
+from core.supabase_pool import connection_pool, get_pool_stats, check_pool_health
+from core.query_preprocessor import get_preprocessing_cache_stats
 
 # Configure logging to reduce verbosity
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
@@ -146,6 +148,22 @@ if GROQ_API_KEY:
         logger.warning("⚠️ GROQ_API_KEY should start with 'gsk_'")
 
 chatbot = ChatBot(groq_key=GROQ_API_KEY)
+
+# Initialize connection pool
+async def initialize_connection_pool():
+    """Initialize the Supabase connection pool"""
+    try:
+        success = await connection_pool.initialize()
+        if success:
+            logger.info("✅ Supabase connection pool initialized")
+        else:
+            logger.error("❌ Failed to initialize connection pool")
+    except Exception as e:
+        logger.error(f"❌ Connection pool initialization error: {e}")
+
+# Initialize on startup
+import asyncio
+asyncio.create_task(initialize_connection_pool())
 
 # -----------------------
 # FastAPI app
@@ -512,7 +530,55 @@ async def get_cache_status():
 
 @app.get('/health')
 async def health_check():
-    return {"status": "healthy", "message": "Chatbot API is running"}
+    """Health check endpoint"""
+    try:
+        # Check connection pool health
+        pool_healthy = await check_pool_health()
+        pool_stats = await get_pool_stats()
+        
+        return {
+            "status": "healthy" if pool_healthy else "degraded",
+            "message": "Chatbot API is running",
+            "connection_pool": {
+                "healthy": pool_healthy,
+                "stats": pool_stats
+            }
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "message": f"Health check failed: {str(e)}"
+        }
+
+@app.get('/admin/connection-pool-stats')
+async def get_connection_pool_stats():
+    """Get connection pool statistics"""
+    try:
+        stats = await get_pool_stats()
+        return {
+            "status": "success",
+            "connection_pool_stats": stats
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+@app.get('/admin/preprocessing-cache-stats')
+async def get_preprocessing_cache_stats():
+    """Get query preprocessing cache statistics"""
+    try:
+        stats = get_preprocessing_cache_stats()
+        return {
+            "status": "success",
+            "preprocessing_cache_stats": stats
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
 
 # Dashboard endpoints
 @app.get("/metrics")

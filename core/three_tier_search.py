@@ -122,9 +122,9 @@ class ThreeTierSearch:
         # Remove escaped characters and backslashes
         cleaned = re.sub(r'\\', '', cleaned)
         
-        # Remove single characters and very short words
+        # Remove single characters and very short words, but preserve numbers
         words = cleaned.split()
-        valid_words = [word for word in words if len(word) > 1]
+        valid_words = [word for word in words if len(word) > 1 or word.isdigit()]
         
         if not valid_words:
             return ""
