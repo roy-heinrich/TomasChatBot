@@ -175,6 +175,20 @@ class NLUEngine:
                 questions = questions[:-1]
             return True, questions
         
+        # Check for personal statements that shouldn't be split
+        personal_statement_patterns = [
+            r'i\s+have\s+.*?and\s+.*?(?:grade|level|year)',  # "i have a daughter and shes in grade 4"
+            r'my\s+\w+\s+.*?and\s+.*?(?:grade|level|year)',  # "my child is in grade 3 and 4"
+            r'we\s+have\s+.*?and\s+.*?(?:grade|level|year)',  # "we have a child and he's in grade 5"
+            r'our\s+\w+\s+.*?and\s+.*?(?:grade|level|year)', # "our daughter and she's in grade 2"
+        ]
+        
+        is_personal_statement = any(re.search(pattern, cleaned_input, re.IGNORECASE) for pattern in personal_statement_patterns)
+        
+        # If it's a personal statement, don't split
+        if is_personal_statement:
+            return False, [user_input]
+        
         # Check for other separators that might indicate multiple questions
         for pattern in self.question_separators:
             if re.search(pattern, cleaned_input, re.IGNORECASE):

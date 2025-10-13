@@ -425,6 +425,13 @@ class ChatBot:
             # Aklanon single question patterns
             r'sino\s+du\s+\w+\s+it\s+\w+\s+grade\s+\d+',  # "sino du adviser it grade 6"
             r'sino\s+du\s+\w+\s+it\s+\w+\s+nga\s+\w+\?\s+grade\s+\d+',  # "sino du adviser it akon nga unga? grade 6"
+            # Personal statements with "and" that should NOT be split
+            r'i\s+have\s+\w+\s+and\s+\w+\s+',  # "i have a daughter and shes"
+            r'i\s+am\s+\w+\s+and\s+\w+\s+',    # "i am a parent and my child"
+            r'my\s+\w+\s+is\s+\w+\s+and\s+\w+\s+',  # "my child is in grade and"
+            r'my\s+\w+\s+and\s+\w+\s+',        # "my daughter and shes"
+            r'we\s+have\s+\w+\s+and\s+\w+\s+', # "we have a child and"
+            r'our\s+\w+\s+is\s+\w+\s+and\s+\w+\s+', # "our child is in grade and"
         ]
         
         # Enhanced detection for compound questions with "and" + numbers/grades
@@ -448,10 +455,22 @@ class ChatBot:
         is_single_question = any(re.search(pattern, query, re.IGNORECASE) for pattern in single_question_patterns)
         
         # Debug: Print question count for troubleshooting
-        # print(f"DEBUG: Query='{query}', Question count={question_count}, Is single question={is_single_question}, Is compound grade={is_compound_grade_question}")
+        # print(f"DEBUG: Query='{query}', Question count={question_count}, Is single question={is_single_question}, Is compound grade={is_compound_grade_question}, Is personal statement={is_personal_statement}")
+        
+        # Additional check: Look for personal statements that shouldn't be split
+        # These are statements about the user's personal situation, not multiple questions
+        personal_statement_patterns = [
+            r'i\s+have\s+.*?and\s+.*?(?:grade|level|year)',  # "i have a daughter and shes in grade 4"
+            r'my\s+\w+\s+.*?and\s+.*?(?:grade|level|year)',  # "my child is in grade 3 and 4"
+            r'we\s+have\s+.*?and\s+.*?(?:grade|level|year)',  # "we have a child and he's in grade 5"
+            r'our\s+\w+\s+.*?and\s+.*?(?:grade|level|year)', # "our daughter and she's in grade 2"
+        ]
+        
+        is_personal_statement = any(re.search(pattern, query, re.IGNORECASE) for pattern in personal_statement_patterns)
         
         # If we have multiple question indicators, try to split
-        if question_count >= 2 and not is_single_question:
+        # But don't split if it's a personal statement or single question
+        if question_count >= 2 and not is_single_question and not is_personal_statement:
             # First try simple separators
             simple_separators = [
                 r'\s+and\s+',  # "and" with spaces
@@ -1366,6 +1385,63 @@ class ChatBot:
                 # Debug: Check if name was actually stored
                 stored_name = self.conversation_memory.get_user_name(session_id)
                 # logger.info(f"🧠 Memory verification - Stored name: '{stored_name}'")  # Commented out debug logs
+            
+            # Special case: Handle child information queries with context
+            if session_id and conversation_history:
+                # Check if user is asking about their child's grade
+                child_grade_query_patterns = [
+                    # English patterns
+                    r"what\s+grade\s+(?:is\s+)?(?:my\s+)?(?:daughter|son|child|kid)",
+                    r"(?:my\s+)?(?:daughter|son|child|kid)\s+(?:is\s+)?(?:in\s+)?what\s+grade",
+                    r"what\s+grade\s+level\s+(?:is\s+)?(?:my\s+)?(?:daughter|son|child|kid)",
+                    
+                    # Tagalog patterns
+                    r"ano\s+ang\s+baitang\s+(?:ng\s+)?(?:anak|bata)\s+ko",  # "Ano ang baitang ng anak ko"
+                    r"anong\s+grade\s+(?:ang\s+)?(?:anak|bata)\s+ko",  # "Anong grade ang anak ko"
+                    r"anong\s+baitang\s+(?:ang\s+)?(?:anak|bata)\s+ko",  # "Anong baitang ang anak ko"
+                    r"(?:anak|bata)\s+ko\s+(?:ay\s+)?(?:sa\s+)?anong\s+(?:baitang|grade)",  # "Anak ko ay sa anong baitang"
+                    r"si\s+(\w+)\s+(?:ay\s+)?(?:sa\s+)?anong\s+(?:baitang|grade)",  # "Si Maria ay sa anong baitang"
+                    
+                    # Aklanon patterns
+                    r"ano\s+ang\s+baitang\s+(?:ng\s+)?(?:unga|anak)\s+ko",  # "Ano ang baitang ng unga ko"
+                    r"anong\s+grade\s+(?:ang\s+)?(?:unga|anak)\s+ko",  # "Anong grade ang unga ko"
+                    r"anong\s+baitang\s+(?:ang\s+)?(?:unga|anak)\s+ko",  # "Anong baitang ang unga ko"
+                    r"(?:unga|anak)\s+ko\s+(?:ay\s+)?(?:sa\s+)?anong\s+(?:baitang|grade)",  # "Unga ko ay sa anong baitang"
+                    r"du\s+(\w+)\s+(?:ay\s+)?(?:sa\s+)?anong\s+(?:baitang|grade)",  # "Du Maria ay sa anong baitang"
+                ]
+                
+                query_lower = query.lower()
+                is_child_grade_query = any(re.search(pattern, query_lower, re.IGNORECASE) for pattern in child_grade_query_patterns)
+                
+                if is_child_grade_query:
+                    # Try to get child information from memory
+                    child_info = self.conversation_memory._extract_child_information(session_id)
+                    if child_info and "grade" in child_info.lower():
+                        # Extract grade from child info
+                        import re
+                        grade_match = re.search(r'grade\s+(\d+)', child_info.lower())
+                        if grade_match:
+                            grade = grade_match.group(1)
+                            return ChatResponse(
+                                response=[f"Based on our previous conversation, your child is in grade {grade}."],
+                                entities=entities,
+                                detected_language=detected_lang,
+                                language_confidence=confidence,
+                                is_split=False,
+                                message_count=1,
+                                intent="child_inquiry"
+                            )
+                    else:
+                        # No child grade information found in memory
+                        return ChatResponse(
+                            response=["I don't have information about your child's grade level from our previous conversations. Could you please tell me what grade your child is in?"],
+                            entities=entities,
+                            detected_language=detected_lang,
+                            language_confidence=confidence,
+                            is_split=False,
+                            message_count=1,
+                            intent="child_inquiry"
+                        )
             
             # Special case: Handle name-related queries directly
             # First, check for English name queries

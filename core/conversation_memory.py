@@ -38,6 +38,135 @@ class ConversationMemory:
         self.session_topics: Dict[str, List[str]] = {}  # session_id -> topics
         self._lock = threading.Lock()  # Thread safety for concurrent access
         
+    def extract_child_name(self, conversation_history: List[Dict]) -> Optional[str]:
+        """Extract child name from conversation history"""
+        try:
+            if not conversation_history:
+                return None
+            
+            import re
+            
+            # Look for child name patterns in recent messages
+            child_patterns = [
+                # English patterns
+                r"my\s+(?:daughter|son|child|kid)\s+(?:is\s+)?(?:named\s+)?(\w+)",
+                r"i\s+have\s+a\s+(?:daughter|son|child|kid)\s+(?:named\s+)?(\w+)",
+                r"my\s+(\w+)\s+(?:is\s+)?(?:my\s+)?(?:daughter|son|child|kid)",
+                r"(\w+)\s+(?:is\s+)?(?:my\s+)?(?:daughter|son|child|kid)",
+                
+                # Tagalog patterns
+                r"ang\s+(?:anak|bata)\s+ko\s+(?:ay\s+si\s+)?(\w+)",  # "Ang anak ko ay si Maria"
+                r"ako\s+may\s+(?:anak|bata)\s+(?:na\s+)?(?:si\s+)?(\w+)",  # "Ako may anak na si Maria"
+                r"si\s+(\w+)\s+(?:ay\s+)?(?:anak|bata)\s+ko",  # "Si Maria ay anak ko"
+                r"(\w+)\s+(?:ay\s+)?(?:anak|bata)\s+ko",  # "Maria ay anak ko"
+                r"ang\s+(\w+)\s+(?:ay\s+)?(?:anak|bata)\s+ko",  # "Ang Maria ay anak ko"
+                r"may\s+(?:anak|bata)\s+ako\s+(?:na\s+)?(?:si\s+)?(\w+)",  # "May anak ako na si Maria"
+                r"(\w+)\s+(?:ang\s+)?(?:anak|bata)\s+ko",  # "Maria ang anak ko"
+                
+                # Aklanon patterns
+                r"ang\s+(?:unga|anak)\s+ko\s+(?:ay\s+si\s+)?(\w+)",  # "Ang unga ko ay si Maria"
+                r"ako\s+may\s+(?:unga|anak)\s+(?:na\s+)?(?:si\s+)?(\w+)",  # "Ako may unga na si Maria"
+                r"si\s+(\w+)\s+(?:ay\s+)?(?:unga|anak)\s+ko",  # "Si Maria ay unga ko"
+                r"(\w+)\s+(?:ay\s+)?(?:unga|anak)\s+ko",  # "Maria ay unga ko"
+                r"ang\s+(\w+)\s+(?:ay\s+)?(?:unga|anak)\s+ko",  # "Ang Maria ay unga ko"
+                r"may\s+(?:unga|anak)\s+ako\s+(?:na\s+)?(?:si\s+)?(\w+)",  # "May unga ako na si Maria"
+                r"(\w+)\s+(?:ang\s+)?(?:unga|anak)\s+ko",  # "Maria ang unga ko"
+                r"du\s+(\w+)\s+(?:ay\s+)?(?:unga|anak)\s+ko",  # "Du Maria ay unga ko"
+                r"(\w+)\s+(?:du\s+)?(?:unga|anak)\s+ko",  # "Maria du unga ko"
+                
+                # Grade-specific patterns
+                r"my\s+(?:daughter|son|child|kid)\s+.*?grade\s+\d+.*?(?:is\s+)?(?:named\s+)?(\w+)",
+                r"(\w+)\s+.*?grade\s+\d+",
+            ]
+            
+            for message in reversed(conversation_history[-5:]):  # Check last 5 messages
+                if isinstance(message, str):
+                    content = message.lower()
+                elif isinstance(message, dict):
+                    if message.get("role") == "user":
+                        content = message.get("content", "").lower()
+                    else:
+                        continue
+                else:
+                    continue
+                
+                if content:
+                    for pattern in child_patterns:
+                        match = re.search(pattern, content, re.IGNORECASE)
+                        if match:
+                            child_name = match.group(1).strip()
+                            # Basic validation - avoid common words
+                            if len(child_name) > 2 and child_name not in ['the', 'and', 'is', 'in', 'at', 'to', 'for']:
+                                return child_name.title()
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Child name extraction failed: {e}")
+            return None
+    
+    def extract_child_grade(self, conversation_history: List[Dict]) -> Optional[str]:
+        """Extract child grade information from conversation history"""
+        try:
+            if not conversation_history:
+                return None
+            
+            import re
+            
+            # Look for grade patterns in recent messages
+            grade_patterns = [
+                # English patterns
+                r"(?:my\s+(?:daughter|son|child|kid)|she|he)\s+(?:is\s+)?(?:in\s+)?grade\s+(\d+)",
+                r"grade\s+(\d+)",
+                r"(\d+)(?:st|nd|rd|th)\s+grade",
+                
+                # Tagalog patterns
+                r"(?:anak|bata)\s+ko\s+(?:ay\s+)?(?:sa\s+)?(?:baitang|grade)\s+(\d+)",  # "Anak ko ay sa baitang 4"
+                r"baitang\s+(\d+)",  # "Baitang 4"
+                r"(\d+)\s+(?:baitang|grade)",  # "4 baitang"
+                r"ang\s+(?:anak|bata)\s+ko\s+(?:ay\s+)?(?:sa\s+)?(?:baitang|grade)\s+(\d+)",  # "Ang anak ko ay sa baitang 4"
+                r"si\s+(\w+)\s+(?:ay\s+)?(?:sa\s+)?(?:baitang|grade)\s+(\d+)",  # "Si Maria ay sa baitang 4"
+                r"(\w+)\s+(?:ay\s+)?(?:sa\s+)?(?:baitang|grade)\s+(\d+)",  # "Maria ay sa baitang 4"
+                
+                # Aklanon patterns
+                r"(?:unga|anak)\s+ko\s+(?:ay\s+)?(?:sa\s+)?(?:baitang|grade)\s+(\d+)",  # "Unga ko ay sa baitang 4"
+                r"ang\s+(?:unga|anak)\s+ko\s+(?:ay\s+)?(?:sa\s+)?(?:baitang|grade)\s+(\d+)",  # "Ang unga ko ay sa baitang 4"
+                r"si\s+(\w+)\s+(?:ay\s+)?(?:sa\s+)?(?:baitang|grade)\s+(\d+)",  # "Si Maria ay sa baitang 4"
+                r"(\w+)\s+(?:ay\s+)?(?:sa\s+)?(?:baitang|grade)\s+(\d+)",  # "Maria ay sa baitang 4"
+                r"du\s+(\w+)\s+(?:ay\s+)?(?:sa\s+)?(?:baitang|grade)\s+(\d+)",  # "Du Maria ay sa baitang 4"
+                r"(\w+)\s+(?:du\s+)?(?:ay\s+)?(?:sa\s+)?(?:baitang|grade)\s+(\d+)",  # "Maria du ay sa baitang 4"
+            ]
+            
+            for message in reversed(conversation_history[-5:]):  # Check last 5 messages
+                if isinstance(message, str):
+                    content = message.lower()
+                elif isinstance(message, dict):
+                    if message.get("role") == "user":
+                        content = message.get("content", "").lower()
+                    else:
+                        continue
+                else:
+                    continue
+                
+                if content:
+                    for pattern in grade_patterns:
+                        match = re.search(pattern, content, re.IGNORECASE)
+                        if match:
+                            grade = match.group(1).strip()
+                            # Validate grade number
+                            try:
+                                grade_num = int(grade)
+                                if 1 <= grade_num <= 12:  # Valid grade range
+                                    return grade
+                            except ValueError:
+                                continue
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Child grade extraction failed: {e}")
+            return None
+
     def extract_user_name(self, conversation_history: List[Dict]) -> Optional[str]:
         """Enhanced user name extraction from conversation history"""
         try:
@@ -127,15 +256,17 @@ class ConversationMemory:
         
         # Topic keywords mapping
         topic_keywords = {
-            "school_info": ["school", "grades", "curriculum", "subjects", "classes"],
-            "staff_info": ["teacher", "head teacher", "principal", "adviser", "staff"],
-            "location": ["where", "location", "address", "office", "building"],
-            "financial": ["fees", "tuition", "payment", "cost", "money"],
-            "enrollment": ["enroll", "admission", "register", "application"],
-            "schedule": ["schedule", "time", "hours", "when", "calendar"],
-            "uniform": ["uniform", "clothes", "dress code", "attire"],
-            "safety": ["safety", "emergency", "drill", "security", "rules"],
-            "activities": ["activities", "events", "programs", "clubs", "sports"]
+            "school_info": ["school", "grades", "curriculum", "subjects", "classes", "paaralan", "kurikulum"],
+            "staff_info": ["teacher", "head teacher", "principal", "adviser", "staff", "guro", "titser", "punong-guro"],
+            "location": ["where", "location", "address", "office", "building", "saan", "lugar", "opisina"],
+            "financial": ["fees", "tuition", "payment", "cost", "money", "bayad", "gastos", "halaga"],
+            "enrollment": ["enroll", "admission", "register", "application", "mag-enroll", "patala", "aplikasyon"],
+            "schedule": ["schedule", "time", "hours", "when", "calendar", "oras", "takdang-araw", "kailan"],
+            "uniform": ["uniform", "clothes", "dress code", "attire", "uniporme", "damit", "kasuotan"],
+            "safety": ["safety", "emergency", "drill", "security", "rules", "kaligtasan", "ligtas", "patakaran"],
+            "activities": ["activities", "events", "programs", "clubs", "sports", "gawain", "palaro", "programa"],
+            "child_information": ["daughter", "son", "child", "kid", "anak", "bata", "unga"],
+            "grade_level": ["grade", "baitang", "level", "antas"]
         }
         
         # Extract topics based on keywords
@@ -291,6 +422,35 @@ class ConversationMemory:
             for topic, topic_info in user_memory.topics.items():
                 if "child" in topic or "grade" in topic or "student" in topic:
                     child_info.append(topic_info.topic.replace("_", " "))
+            
+            # Also check conversation messages for child information
+            if hasattr(user_memory, 'conversation_messages'):
+                child_name = None
+                child_grade = None
+                
+                # Extract child name and grade from conversation messages
+                for msg in user_memory.conversation_messages:
+                    if isinstance(msg, dict) and msg.get("role") == "user":
+                        content = msg.get("content", "").lower()
+                        
+                        # Extract child name
+                        if not child_name:
+                            child_name = self.extract_child_name([msg])
+                        
+                        # Extract child grade
+                        if not child_grade:
+                            child_grade = self.extract_child_grade([msg])
+                
+                # Build comprehensive child information
+                if child_name or child_grade:
+                    info_parts = []
+                    if child_name:
+                        info_parts.append(f"child named {child_name}")
+                    if child_grade:
+                        info_parts.append(f"in grade {child_grade}")
+                    
+                    if info_parts:
+                        child_info.append(" ".join(info_parts))
             
             return ", ".join(child_info) if child_info else None
             
