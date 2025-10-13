@@ -312,7 +312,9 @@ class ChatBot:
             r'\?',  # Question marks
             r'\b(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has)\b',
             r'\b(ano|saan|kailan|sino|paano|bakit|alin|pwed|maaari|gusto|kailangan)\b',  # Tagalog
-            r'\b(ginausoy|hinahanap|gusto ko|kailangan ko|pwede|maaari)\b'  # Aklanon
+            r'\b(ginausoy|hinahanap|gusto ko|kailangan ko|pwede|maaari)\b',  # Aklanon
+            r'\b(hay du|hay tag|hay du nga|hay tag nga)\b',  # Aklanon follow-up
+            r'\b(ano naman|ano pa naman|ano rin naman|ano pa rin)\b'  # Tagalog follow-up
         ]
         
         # Count question indicators

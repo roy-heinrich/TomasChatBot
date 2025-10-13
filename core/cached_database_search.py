@@ -75,6 +75,7 @@ class CachedDatabaseSearch(DatabaseSearchEngine):
     
     def _create_cache_key(self, query: str, intent: str = None, limit: int = None, 
                           conversation_history: List[Dict] = None, nlu_result = None) -> str:
+        """Create cache key with grade-specific isolation to prevent context contamination"""
         """Create a unique cache key for the query"""
         # Normalize query for consistent caching
         normalized_query = query.lower().strip()
@@ -86,16 +87,18 @@ class CachedDatabaseSearch(DatabaseSearchEngine):
         if limit:
             key_parts.append(f"limit:{limit}")
         
-        # Include conversation context (simplified to avoid key explosion)
-        if conversation_history:
-            # Only include recent conversation topics, not full history
+        # 🚨 CRITICAL FIX: Don't include conversation context for grade-specific queries
+        # This prevents cache contamination between different grade queries
+        import re
+        if conversation_history and not re.search(r'grade\s*\d+', normalized_query):
+            # Only include recent conversation topics for non-grade queries
             recent_topics = []
             for msg in conversation_history[-3:]:  # Last 3 messages only
                 if isinstance(msg, dict) and 'content' in msg:
                     # Extract key topics, not full content
                     content = msg['content'].lower()
-                    if any(word in content for word in ['grade', 'teacher', 'principal', 'adviser']):
-                        recent_topics.append('has_grade_context')
+                    if any(word in content for word in ['teacher', 'principal', 'adviser']):
+                        recent_topics.append('has_staff_context')
                         break
             if recent_topics:
                 key_parts.append('ctx:' + ':'.join(recent_topics))

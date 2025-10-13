@@ -1159,6 +1159,15 @@ class DatabaseSearchEngine:
         if not conversation_history:
             return query
         
+        # 🚨 CRITICAL FIX: Don't use context for grade-specific queries
+        # This prevents mixing up grades from previous conversations
+        query_lower = query.lower()
+        
+        # If current query contains a specific grade, don't use context
+        # This prevents "Grade 4" context from affecting "Grade 6" queries
+        if re.search(r'grade\s*\d+', query_lower):
+            return query
+        
         # Look at the MOST RECENT user message for context (not all recent messages)
         # This ensures we use the latest topic, not accumulate all topics
         recent_user_messages = []
@@ -1180,14 +1189,15 @@ class DatabaseSearchEngine:
             
         content = most_recent_message.get("content", "").lower()
         
+        # 🚨 CRITICAL FIX: Don't use context if previous message had a different grade
+        # This prevents cross-contamination between grade-specific queries
+        prev_grade_match = re.search(r'grade\s*(\d+)', content)
+        if prev_grade_match:
+            # Previous message had a grade, don't use context to avoid confusion
+            return query
+        
         # Extract context from the most recent message only
         context_words = []
-        
-        # Look for grade references in the most recent message
-        grade_match = re.search(r'grade\s*(\d+)', content)
-        if grade_match:
-            grade_num = grade_match.group(1)
-            context_words.append(f"grade {grade_num}")
         
         # Look for teacher/adviser references in the most recent message
         if any(word in content for word in ['adviser', 'advisor', 'teacher', 'guro']):

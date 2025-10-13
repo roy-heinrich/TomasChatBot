@@ -145,6 +145,10 @@ class NLUEngine:
             r'also\s+',  # "also" as separator
             r'what\s+about\s+',  # "what about" as separator
             r'how\s+about\s+',  # "how about" as separator
+            r'hay\s+du\s+',  # "hay du" as separator (Aklanon)
+            r'hay\s+tag\s+',  # "hay tag" as separator (Aklanon)
+            r'ano\s+naman\s+',  # "ano naman" as separator (Tagalog)
+            r'ano\s+pa\s+naman\s+',  # "ano pa naman" as separator (Tagalog)
         ]
         self.groq_client = None
         
@@ -1266,7 +1270,9 @@ class NLUEngine:
         follow_up_patterns = [
             "and what about", "what else", "anything else", "also", "plus",
             "how about", "what about", "ano pa", "ano rin", "at ano pa",
-            "amo pa", "ano pa nga", "diin pa", "unsa pa"
+            "amo pa", "ano pa nga", "diin pa", "unsa pa",
+            "hay du", "hay tag", "hay du nga", "hay tag nga",  # Aklanon follow-up
+            "ano naman", "ano pa naman", "ano rin naman", "ano pa rin"  # Tagalog follow-up
         ]
         if any(pattern in user_lower for pattern in follow_up_patterns):
             return NLUResult(Intent.FOLLOW_UP_QUESTION, 0.75, [])
