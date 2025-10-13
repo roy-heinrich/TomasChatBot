@@ -368,219 +368,84 @@ class ChatBot:
         query = query.strip()
         query = self._correct_common_typos(query)
         
-        # Common question patterns
-        question_indicators = [
-            r'\?',  # Question marks
-            r'\b(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has)\b',
-            r'\b(ano|saan|kailan|sino|paano|bakit|alin|pwed|maaari|gusto|kailangan)\b',  # Tagalog
-            r'\b(ginausoy|hinahanap|gusto ko|kailangan ko|pwede|maaari)\b',  # Aklanon
-            r'\b(hay du|hay tag|hay du nga|hay tag nga)\b',  # Aklanon follow-up
-            r'\b(ano naman|ano pa naman|ano rin naman|ano pa rin)\b'  # Tagalog follow-up
+        
+        # 🚨 CRITICAL FIX: Default to NOT splitting unless there's clear evidence
+        # This prevents false positives like "i have a daughter and shes in grade 4?"
+        
+        # First, check for obvious single statements that should NEVER be split
+        single_statement_patterns = [
+            # Personal statements with "and" - these are single statements, not multiple questions
+            r'i\s+have\s+.*?and\s+.*?',  # "i have a daughter and shes in grade 4"
+            r'my\s+\w+\s+.*?and\s+.*?',  # "my child is in grade 3 and 4"
+            r'we\s+have\s+.*?and\s+.*?',  # "we have a child and he's in grade 5"
+            r'our\s+\w+\s+.*?and\s+.*?', # "our daughter and she's in grade 2"
+            # Tagalog personal statements
+            r'ako\s+may\s+.*?at\s+.*?',  # "ako may anak at nasa baitang 4"
+            r'ang\s+\w+\s+ko\s+.*?at\s+.*?',  # "ang anak ko ay si Maria at nasa baitang 4"
+            # Aklanon personal statements
+            r'ako\s+may\s+.*?at\s+.*?',  # "ako may unga at nasa baitang 4"
+            r'ang\s+\w+\s+ko\s+.*?at\s+.*?',  # "ang unga ko ay si Maria at nasa baitang 4"
+            # Help requests that shouldn't be split
+            r'can\s+you\s+help\s+.*?',  # "can you help me find where the office is"
+            r'please\s+help\s+.*?',  # "please help me find"
+            r'help\s+me\s+.*?',  # "help me find"
         ]
         
-        # Count question indicators
-        question_count = 0
-        for pattern in question_indicators:
-            matches = re.findall(pattern, query, re.IGNORECASE)
-            question_count += len(matches)
+        is_single_statement = any(re.search(pattern, query, re.IGNORECASE) for pattern in single_statement_patterns)
         
-        # Special handling for comma-separated questions
-        # If we have commas and question words, it's likely multiple questions
-        comma_count = query.count(',')
-        if comma_count > 0 and question_count >= 2:
-            # Boost the question count for comma-separated patterns
-            question_count += comma_count
+        # If it's clearly a single statement, don't split
+        if is_single_statement:
+            return False, [query]
         
-        # Enhanced detection for space-separated questions
-        # Look for patterns like "What is X? where is Y" (question mark followed by lowercase)
-        space_separated_pattern = r'\?\s+[a-z]'
-        if re.search(space_separated_pattern, query, re.IGNORECASE):
-            question_count += 1
+        # Only proceed with multiquestion detection if there are multiple question marks
+        question_marks = query.count('?')
         
-        # Look for multiple question words in sequence - but be more careful
-        # Only count as multiple if they're clearly separate questions, not part of one question
-        # Pattern: question word + content + question word + content (with significant separation)
-        sequential_questions = r'\b(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has|ano|saan|kailan|sino|paano|bakit|alin|pwed|maaari|gusto|kailangan)\b.*?(?:\?|\.|,|;).*?\b(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has|ano|saan|kailan|sino|paano|bakit|alin|pwed|maaari|gusto|kailangan)\b'
-        if re.search(sequential_questions, query, re.IGNORECASE):
-            question_count += 1
-        
-        # Debug: Print question count for troubleshooting
-        # print(f"DEBUG: Query='{query}', Question count={question_count}")
-        
-        # Special case: Don't split questions that are clearly single questions
-        # Check for common single question patterns that shouldn't be split
-        single_question_patterns = [
-            r'does\s+\w+\s+\w+\s+have\s+',  # "does the grade five have"
-            r'do\s+\w+\s+\w+\s+have\s+',    # "do the students have"
-            r'is\s+the\s+\w+\s+\w+\s+(open|closed|available|ready)',     # "is the school open" (more specific)
-            r'are\s+the\s+\w+\s+\w+\s+(here|ready|available)',    # "are the students here" (more specific)
-            r'can\s+the\s+\w+\s+\w+\s+(help|assist)',    # "can the school help" (more specific)
-            r'will\s+the\s+\w+\s+\w+\s+(open|close)',   # "will the school open" (more specific)
-            r'does\s+the\s+\w+\s+\w+\s+',   # "does the grade five"
-            r'saan\s+ang\s+\w+\s+',         # "saan ang guidance office" (Tagalog)
-            r'ano\s+ang\s+\w+\s+',          # "ano ang school" (Tagalog)
-            r'sino\s+ang\s+\w+\s+',         # "sino ang teacher" (Tagalog)
-            r'kailan\s+ang\s+\w+\s+',        # "kailan ang exam" (Tagalog)
-            r'paano\s+ang\s+\w+\s+',        # "paano ang enrollment" (Tagalog)
-            # Aklanon single question patterns
-            r'sino\s+du\s+\w+\s+it\s+\w+\s+grade\s+\d+',  # "sino du adviser it grade 6"
-            r'sino\s+du\s+\w+\s+it\s+\w+\s+nga\s+\w+\?\s+grade\s+\d+',  # "sino du adviser it akon nga unga? grade 6"
-            # Personal statements with "and" that should NOT be split
-            r'i\s+have\s+\w+\s+and\s+\w+\s+',  # "i have a daughter and shes"
-            r'i\s+am\s+\w+\s+and\s+\w+\s+',    # "i am a parent and my child"
-            r'my\s+\w+\s+is\s+\w+\s+and\s+\w+\s+',  # "my child is in grade and"
-            r'my\s+\w+\s+and\s+\w+\s+',        # "my daughter and shes"
-            r'we\s+have\s+\w+\s+and\s+\w+\s+', # "we have a child and"
-            r'our\s+\w+\s+is\s+\w+\s+and\s+\w+\s+', # "our child is in grade and"
-        ]
-        
-        # Enhanced detection for compound questions with "and" + numbers/grades
-        # Pattern: "who is the adviser of grade 3 and 4" should be split
-        compound_grade_patterns = [
-            r'\b(adviser|teacher|instructor|principal|director)\s+of\s+(grade|level|year)\s+\d+\s+and\s+\d+',
-            r'\b(adviser|teacher|instructor|principal|director)\s+of\s+(grade|level|year)\s+\d+\s+at\s+\d+',
-            r'\b(adviser|teacher|instructor|principal|director)\s+of\s+(grade|level|year)\s+\d+\s+,\s*\d+',
-            r'\b(adviser|teacher|instructor|principal|director)\s+of\s+(grade|level|year)\s+\d+\s+pati\s+\d+',
-        ]
-        
-        # Check for compound grade questions
-        is_compound_grade_question = any(re.search(pattern, query, re.IGNORECASE) for pattern in compound_grade_patterns)
-        
-        if is_compound_grade_question:
-            # Force splitting for compound grade questions
-            question_count += 2
-            # Debug: Print detection for troubleshooting
-            # print(f"DEBUG: Compound grade question detected: '{query}'")
-        
-        is_single_question = any(re.search(pattern, query, re.IGNORECASE) for pattern in single_question_patterns)
-        
-        # Debug: Print question count for troubleshooting
-        # print(f"DEBUG: Query='{query}', Question count={question_count}, Is single question={is_single_question}, Is compound grade={is_compound_grade_question}, Is personal statement={is_personal_statement}")
-        
-        # Additional check: Look for personal statements that shouldn't be split
-        # These are statements about the user's personal situation, not multiple questions
-        personal_statement_patterns = [
-            r'i\s+have\s+.*?and\s+.*?(?:grade|level|year)',  # "i have a daughter and shes in grade 4"
-            r'my\s+\w+\s+.*?and\s+.*?(?:grade|level|year)',  # "my child is in grade 3 and 4"
-            r'we\s+have\s+.*?and\s+.*?(?:grade|level|year)',  # "we have a child and he's in grade 5"
-            r'our\s+\w+\s+.*?and\s+.*?(?:grade|level|year)', # "our daughter and she's in grade 2"
-        ]
-        
-        is_personal_statement = any(re.search(pattern, query, re.IGNORECASE) for pattern in personal_statement_patterns)
-        
-        # If we have multiple question indicators, try to split
-        # But don't split if it's a personal statement or single question
-        if question_count >= 2 and not is_single_question and not is_personal_statement:
-            # First try simple separators
-            simple_separators = [
-                r'\s+and\s+',  # "and" with spaces
-                r'\s+at\s+',   # "at" (Tagalog "and")
-                r'\s+,\s+',    # Comma with spaces (more specific)
-                r'\s+\.\s+',   # Period with spaces
-                r'\s+;\s*',    # Semicolon
-                r'\s+also\s+', # "also"
-                r'\s+din\s+', # "din" (Tagalog "also")
-                r'\s+pati\s+', # "pati" (Tagalog "including")
-                r'\s+plus\s+', # "plus"
-                r'\s+at\s+saka\s+', # "at saka" (Tagalog "and also")
-                r'\s*,\s*',    # Comma with optional spaces (fallback)
-                r'\?\s+',      # Question mark followed by space (for "What is X? where is Y")
-            ]
+        # If we have multiple question marks, then we can consider splitting
+        if question_marks > 1:
+            questions = [q.strip() for q in query.split('?') if q.strip()]
+            # Remove the last empty element if it exists
+            if questions and not questions[-1]:
+                questions = questions[:-1]
             
-            questions = [query]  # Start with original query
-            
-            # Try simple separators first
-            for separator in simple_separators:
-                new_questions = []
+            # Only return as multiple questions if we have at least 2 meaningful questions
+            if len(questions) >= 2:
+                # Filter out very short questions
+                filtered_questions = []
                 for q in questions:
-                    parts = re.split(separator, q, flags=re.IGNORECASE)
-                    if len(parts) > 1:
-                        # Check if each part looks like a question
-                        for part in parts:
-                            part = part.strip()
-                            if len(part) > 10:  # Minimum length for a question
-                                # Check if it has question characteristics
-                                has_question_mark = '?' in part
-                                has_question_word = any(re.search(pattern, part, re.IGNORECASE) for pattern in question_indicators[1:])
-                                
-                                if has_question_mark or has_question_word:
-                                    new_questions.append(part)
-                                else:
-                                    # If no clear question indicators, keep as is
-                                    new_questions.append(part)
-                    else:
-                        new_questions.append(q)
-                questions = new_questions
-                
-                # If we found multiple questions, stop here
-                if len(questions) > 1:
-                    break
-            
-            # Special handling for compound grade questions
-            if len(questions) == 1 and is_compound_grade_question:
-                # print(f"DEBUG: Attempting to split compound grade question: '{query}'")
-                # Split compound grade questions like "who is the adviser of grade 3 and 4"
-                grade_split_pattern = r'\b(adviser|teacher|instructor|principal|director)\s+of\s+(grade|level|year)\s+(\d+)\s+(and|at|,|pati)\s+(\d+)'
-                match = re.search(grade_split_pattern, query, re.IGNORECASE)
-                if match:
-                    role = match.group(1)
-                    level_type = match.group(2)
-                    first_grade = match.group(3)
-                    second_grade = match.group(5)
-                    
-                    # Create two separate questions
-                    question1 = f"who is the {role} of {level_type} {first_grade}?"
-                    question2 = f"who is the {role} of {level_type} {second_grade}?"
-                    questions = [question1, question2]
-                    # print(f"DEBUG: Split into: {questions}")
-                # else:
-                    # print(f"DEBUG: Pattern did not match for splitting")
-            
-            # If simple separators didn't work, try intelligent question word splitting
-            if len(questions) == 1:
-                # Look for patterns like "What is X who is Y what is Z"
-                question_word_pattern = r'\b(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has|ano|saan|kailan|sino|paano|bakit|alin|pwed|maaari|gusto|kailangan)\b'
-                
-                # Find all question word positions
-                matches = list(re.finditer(question_word_pattern, query, re.IGNORECASE))
-                
-                if len(matches) >= 2:
-                    # Split at question word boundaries
-                    new_questions = []
-                    for i, match in enumerate(matches):
-                        start = match.start()
-                        if i == 0:
-                            # First question starts from beginning
-                            end = matches[i + 1].start() if i + 1 < len(matches) else len(query)
-                        else:
-                            # Subsequent questions start from this match
-                            end = matches[i + 1].start() if i + 1 < len(matches) else len(query)
-                        
-                        question_part = query[start:end].strip()
-                        if len(question_part) > 10:  # Minimum length
-                            new_questions.append(question_part)
-                    
-                    if len(new_questions) >= 2:
-                        questions = new_questions
-            
-            # Filter out very short questions and clean up
-            filtered_questions = []
-            for q in questions:
-                q = q.strip()
-                if len(q) > 15:  # Minimum meaningful question length
-                    # Remove leading/trailing punctuation
-                    q = re.sub(r'^[.,;:\s]+|[.,;:\s]+$', '', q)
-                    if q:
+                    q = q.strip()
+                    if len(q) > 10:  # Minimum meaningful question length
                         filtered_questions.append(q)
-            
-            # Limit to 5 questions maximum
-            if len(filtered_questions) > 5:
-                filtered_questions = filtered_questions[:5]
-            
-            # Only consider it multiple questions if we have 2-5 valid questions
-            if 2 <= len(filtered_questions) <= 5:
-                return True, filtered_questions
+                
+                if len(filtered_questions) >= 2:
+                    return True, filtered_questions
         
+        # Enhanced detection for genuine multiple questions connected by "and"
+        # Only split if both parts look like complete questions
+        genuine_multiquestion_patterns = [
+            # Pattern: "what is X and where is Y" - both parts are complete questions
+            r'(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has)\s+.*?\s+and\s+(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has)\s+.*?',
+            # Pattern: "who is X and who is Y" - both parts are complete questions
+            r'(who|what|where|when|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has)\s+.*?\s+and\s+(who|what|where|when|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has)\s+.*?',
+        ]
+        
+        for pattern in genuine_multiquestion_patterns:
+            if re.search(pattern, query, re.IGNORECASE):
+                # Split by "and" and check if both parts are meaningful questions
+                parts = re.split(r'\s+and\s+', query, flags=re.IGNORECASE)
+                if len(parts) >= 2:
+                    filtered_parts = []
+                    for part in parts:
+                        part = part.strip()
+                        if len(part) > 15:  # Minimum length for a complete question
+                            # Check if it starts with a question word
+                            question_starters = ['what', 'where', 'when', 'who', 'how', 'why', 'which', 'can', 'could', 'would', 'should', 'is', 'are', 'do', 'does', 'did', 'will', 'have', 'has']
+                            if any(part.lower().startswith(starter + ' ') for starter in question_starters):
+                                filtered_parts.append(part)
+                    
+                    if len(filtered_parts) >= 2:
+                        return True, filtered_parts
+        
+        # Default: treat as single question/statement
         return False, [query]
     
     def _process_multiple_questions(self, questions: List[str], conversation_history: List[Dict] = None, 
@@ -970,6 +835,15 @@ class ChatBot:
         corrected_words = []
         
         for word in words:
+            # Preserve punctuation by separating it from the word
+            word_match = re.match(r'^(\w+)([^\w]*)$', word)
+            if word_match:
+                base_word = word_match.group(1)
+                punctuation = word_match.group(2)
+            else:
+                base_word = word
+                punctuation = ''
+            
             # Clean the word (remove punctuation for matching)
             clean_word = re.sub(r'[^\w]', '', word.lower())
             
@@ -997,13 +871,13 @@ class ChatBot:
             
             # Use the best match if found, otherwise keep original
             if best_match and best_ratio > self._calculate_dynamic_threshold(clean_word, best_match):
-                # Preserve original capitalization pattern
+                # Preserve original capitalization pattern and punctuation
                 if word.isupper():
-                    corrected_words.append(best_match.upper())
+                    corrected_words.append(best_match.upper() + punctuation)
                 elif word.istitle():
-                    corrected_words.append(best_match.title())
+                    corrected_words.append(best_match.title() + punctuation)
                 else:
-                    corrected_words.append(best_match)
+                    corrected_words.append(best_match + punctuation)
             else:
                 corrected_words.append(word)
         
@@ -1411,6 +1285,7 @@ class ChatBot:
                 ]
                 
                 query_lower = query.lower()
+                import re
                 is_child_grade_query = any(re.search(pattern, query_lower, re.IGNORECASE) for pattern in child_grade_query_patterns)
                 
                 if is_child_grade_query:
@@ -1418,7 +1293,6 @@ class ChatBot:
                     child_info = self.conversation_memory._extract_child_information(session_id)
                     if child_info and "grade" in child_info.lower():
                         # Extract grade from child info
-                        import re
                         grade_match = re.search(r'grade\s+(\d+)', child_info.lower())
                         if grade_match:
                             grade = grade_match.group(1)

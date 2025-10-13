@@ -164,56 +164,86 @@ class NLUEngine:
         # Clean the input
         cleaned_input = user_input.strip()
         
-        # Count question marks
-        question_marks = cleaned_input.count('?')
+        # 🚨 CRITICAL FIX: Default to NOT splitting unless there's clear evidence
+        # This prevents false positives like "i have a daughter and shes in grade 4?"
         
-        # If there are multiple question marks, split by them
+        # First, check for obvious single statements that should NEVER be split
+        single_statement_patterns = [
+            # Personal statements with "and" - these are single statements, not multiple questions
+            r'i\s+have\s+.*?and\s+.*?',  # "i have a daughter and shes in grade 4"
+            r'my\s+\w+\s+.*?and\s+.*?',  # "my child is in grade 3 and 4"
+            r'we\s+have\s+.*?and\s+.*?',  # "we have a child and he's in grade 5"
+            r'our\s+\w+\s+.*?and\s+.*?', # "our daughter and she's in grade 2"
+            # Tagalog personal statements
+            r'ako\s+may\s+.*?at\s+.*?',  # "ako may anak at nasa baitang 4"
+            r'ang\s+\w+\s+ko\s+.*?at\s+.*?',  # "ang anak ko ay si Maria at nasa baitang 4"
+            # Aklanon personal statements
+            r'ako\s+may\s+.*?at\s+.*?',  # "ako may unga at nasa baitang 4"
+            r'ang\s+\w+\s+ko\s+.*?at\s+.*?',  # "ang unga ko ay si Maria at nasa baitang 4"
+            # Help requests that shouldn't be split
+            r'can\s+you\s+help\s+.*?',  # "can you help me find where the office is"
+            r'please\s+help\s+.*?',  # "please help me find"
+            r'help\s+me\s+.*?',  # "help me find"
+        ]
+        
+        is_single_statement = any(re.search(pattern, cleaned_input, re.IGNORECASE) for pattern in single_statement_patterns)
+        
+        # If it's clearly a single statement, don't split
+        if is_single_statement:
+            return False, [user_input]
+        
+        # Only proceed with multiquestion detection if there are multiple question marks
+        question_marks = cleaned_input.count('?')
+        if question_marks <= 1:
+            # No multiple question marks = likely single question/statement
+            return False, [user_input]
+        
+        # If we have multiple question marks, then we can consider splitting
         if question_marks > 1:
             questions = [q.strip() for q in cleaned_input.split('?') if q.strip()]
             # Remove the last empty element if it exists
             if questions and not questions[-1]:
                 questions = questions[:-1]
-            return True, questions
+            
+            # Only return as multiple questions if we have at least 2 meaningful questions
+            if len(questions) >= 2:
+                # Filter out very short questions
+                filtered_questions = []
+                for q in questions:
+                    q = q.strip()
+                    if len(q) > 10:  # Minimum meaningful question length
+                        filtered_questions.append(q)
+                
+                if len(filtered_questions) >= 2:
+                    return True, filtered_questions
         
-        # Check for personal statements that shouldn't be split
-        personal_statement_patterns = [
-            r'i\s+have\s+.*?and\s+.*?(?:grade|level|year)',  # "i have a daughter and shes in grade 4"
-            r'my\s+\w+\s+.*?and\s+.*?(?:grade|level|year)',  # "my child is in grade 3 and 4"
-            r'we\s+have\s+.*?and\s+.*?(?:grade|level|year)',  # "we have a child and he's in grade 5"
-            r'our\s+\w+\s+.*?and\s+.*?(?:grade|level|year)', # "our daughter and she's in grade 2"
+        # Enhanced detection for genuine multiple questions connected by "and"
+        # Only split if both parts look like complete questions
+        genuine_multiquestion_patterns = [
+            # Pattern: "what is X and where is Y" - both parts are complete questions
+            r'(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has)\s+.*?\s+and\s+(what|where|when|who|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has)\s+.*?',
+            # Pattern: "who is X and who is Y" - both parts are complete questions
+            r'(who|what|where|when|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has)\s+.*?\s+and\s+(who|what|where|when|how|why|which|can|could|would|should|is|are|do|does|did|will|have|has)\s+.*?',
         ]
         
-        is_personal_statement = any(re.search(pattern, cleaned_input, re.IGNORECASE) for pattern in personal_statement_patterns)
-        
-        # If it's a personal statement, don't split
-        if is_personal_statement:
-            return False, [user_input]
-        
-        # Check for other separators that might indicate multiple questions
-        for pattern in self.question_separators:
+        for pattern in genuine_multiquestion_patterns:
             if re.search(pattern, cleaned_input, re.IGNORECASE):
-                # Split by the pattern
-                parts = re.split(pattern, cleaned_input, flags=re.IGNORECASE)
-                questions = [part.strip() for part in parts if part.strip()]
-                if len(questions) > 1:
-                    return True, questions
-        
-        # Check for common multi-question patterns
-        multi_question_patterns = [
-            r'what\s+is\s+.*\s+and\s+where\s+is',  # "what is X and where is Y"
-            r'who\s+is\s+.*\s+and\s+what\s+is',   # "who is X and what is Y"
-            r'when\s+is\s+.*\s+and\s+where\s+is', # "when is X and where is Y"
-            r'how\s+many\s+.*\s+and\s+what\s+are', # "how many X and what are Y"
-        ]
-        
-        for pattern in multi_question_patterns:
-            if re.search(pattern, cleaned_input, re.IGNORECASE):
-                # Split by "and" or similar conjunctions
+                # Split by "and" and check if both parts are meaningful questions
                 parts = re.split(r'\s+and\s+', cleaned_input, flags=re.IGNORECASE)
-                questions = [part.strip() for part in parts if part.strip()]
-                if len(questions) > 1:
-                    return True, questions
+                if len(parts) >= 2:
+                    filtered_parts = []
+                    for part in parts:
+                        part = part.strip()
+                        if len(part) > 15:  # Minimum length for a complete question
+                            # Check if it starts with a question word
+                            question_starters = ['what', 'where', 'when', 'who', 'how', 'why', 'which', 'can', 'could', 'would', 'should', 'is', 'are', 'do', 'does', 'did', 'will', 'have', 'has']
+                            if any(part.lower().startswith(starter + ' ') for starter in question_starters):
+                                filtered_parts.append(part)
+                    
+                    if len(filtered_parts) >= 2:
+                        return True, filtered_parts
         
+        # Default: treat as single question/statement
         return False, [user_input]
     
     def _initialize_nltk_components(self):

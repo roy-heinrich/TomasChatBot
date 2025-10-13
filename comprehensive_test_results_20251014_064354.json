@@ -1,0 +1,163 @@
+{
+  "Core Functionality": {
+    "basic_query": {
+      "success": true,
+      "response_length": 210,
+      "time": 0
+    },
+    "intent_classification": {
+      "success": true,
+      "intent": "child_introduction",
+      "confidence": "N/A"
+    },
+    "entity_extraction": {
+      "success": [
+        {
+          "entity_type": "grade_level",
+          "value": "Grade 4",
+          "confidence": 0.9
+        },
+        {
+          "entity_type": "PARENT_CHILD",
+          "value": "My daughter",
+          "confidence": 0.8
+        }
+      ],
+      "entities_found": 2
+    }
+  },
+  "Multilingual Support": {
+    "english_support": {
+      "success": true,
+      "detected_language": "en",
+      "response_preview": "The school office is open from 8 am to 5 pm, Monda"
+    },
+    "tagalog_support": {
+      "success": true,
+      "detected_language": "tl",
+      "response_preview": "Ang paaralan ay bukas mula 8:00 am hanggang 5:00 p"
+    },
+    "aklanon_support": {
+      "success": true,
+      "detected_language": "tl",
+      "response_preview": "Ang adviser ng grade 5 ay si Mrs. Thedy Mae P. Rui"
+    },
+    "mixed_language": {
+      "success": true,
+      "detected_language": "tl",
+      "response_preview": "Wala pa pong principal ang Tomas SM. Bautista Elem"
+    }
+  },
+  "Memory & Context": {
+    "name_memory": {
+      "success": true,
+      "response_preview": "Ang pangalan mo ay John. Kumusta ka? Maari kitang "
+    },
+    "child_memory": {
+      "success": true,
+      "response_preview": "Based on our previous conversation, your child is "
+    },
+    "conversation_context": {
+      "success": true,
+      "response_preview": "Hi John, I remember you have a child in grade 4 an"
+    }
+  },
+  "Database Search": {
+    "principal_search": {
+      "success": true,
+      "response_length": 262,
+      "response_preview": "The guidance office is actually located beside the"
+    },
+    "grade_teacher_search": {
+      "success": true,
+      "response_preview": "The teacher for grade 5 is Mrs. Thedy Mae P. Ruiz."
+    },
+    "activities_search": {
+      "success": true,
+      "response_length": 220,
+      "response_preview": "The school has several major annual activities tha"
+    },
+    "fuzzy_matching": {
+      "success": true,
+      "response_preview": "The guidance office is actually located beside the"
+    }
+  },
+  "Security Features": {
+    "sql_injection_protection": {
+      "success": true,
+      "response_preview": "I'm sorry, but I cannot process that type of reque"
+    },
+    "xss_protection": {
+      "success": true,
+      "response_preview": "I'm sorry, but I cannot process that type of reque"
+    }
+  },
+  "Special Features": {
+    "multi_question": {
+      "success": true,
+      "response_count": 5
+    },
+    "emergency_detection": {
+      "success": true,
+      "response_preview": "🚨 MEDICAL EMERGENCY DETECTED! Tawagan ang 911 o an"
+    },
+    "grade_validation": {
+      "success": true,
+      "response_preview": "Grade 20 is not a valid grade level. Elementary sc"
+    }
+  },
+  "Response Quality": {
+    "natural_language": {
+      "success": true,
+      "word_count": 28,
+      "has_period": true,
+      "response_preview": "Kumusta, John! Ang Tomas SM. Bautista Elementary S"
+    },
+    "grammar_correctness": {
+      "success": true,
+      "has_punctuation": true,
+      "no_double_spaces": true,
+      "response_preview": "The school offers classes from Kindergarten up to "
+    },
+    "helpfulness": {
+      "success": true,
+      "response_preview": "Hi John! I'm TOMAS, the digital assistant for Toma"
+    }
+  },
+  "Error Handling": {
+    "invalid_query": {
+      "success": true,
+      "response_preview": "It seems like your question wasn't clear. If you h"
+    },
+    "long_query": {
+      "success": true,
+      "response_preview": "I'm sorry, but I cannot process that type of reque"
+    }
+  },
+  "Performance": {
+    "response_time": {
+      "success": true,
+      "response_time": 1.1300063133239746,
+      "response_preview": "The guidance office is actually beside the princip"
+    },
+    "memory_efficiency": {
+      "success": true,
+      "response_preview": "The guidance office is actually located beside the"
+    }
+  },
+  "Real-World Scenarios": {
+    "parent_inquiry": {
+      "success": true,
+      "response_preview": "For grade 3, the adviser is Mrs. Michelle V. Pastr"
+    },
+    "student_inquiry": {
+      "success": true,
+      "response_preview": "Hi John, I remember you have a child in grade 4, a"
+    },
+    "multilingual_parent": {
+      "success": true,
+      "detected_language": "tl",
+      "response_preview": "Kumusta, John! Sa ngayon, noneng principal ang paa"
+    }
+  }
+}
