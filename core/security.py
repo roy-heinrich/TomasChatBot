@@ -16,10 +16,20 @@ class SQLInjectionProtector:
     """Simple SQL injection protection focused only on blocking malicious SQL patterns"""
     
     def __init__(self):
-        # SQL injection patterns - comprehensive but focused
+        # SQL injection patterns - context-aware to reduce false positives
         self.sql_patterns = [
-            # Basic SQL keywords
-            r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|UNION|SCRIPT)\b)",
+            # Context-aware SQL keywords (require SQL context, not standalone words)
+            r"(\bSELECT\s+.*\s+FROM\b)",  # SELECT ... FROM (SQL context)
+            r"(\bINSERT\s+INTO\b)",       # INSERT INTO (SQL context)
+            r"(\bINSERT\s+.*\s+VALUES\b)", # INSERT ... VALUES (SQL context)
+            r"(\bUPDATE\s+.*\s+SET\b)",   # UPDATE ... SET (SQL context)
+            r"(\bDELETE\s+FROM\b)",        # DELETE FROM (SQL context)
+            r"(\bDROP\s+(TABLE|DATABASE|INDEX|VIEW)\b)",  # DROP with object type
+            r"(\bCREATE\s+(TABLE|DATABASE|INDEX|VIEW)\b)", # CREATE with object type
+            r"(\bALTER\s+(TABLE|DATABASE)\b)",             # ALTER with object type
+            r"(\bEXEC\s*\()",             # EXEC( (stored procedure)
+            r"(\bUNION\s+SELECT\b)",      # UNION SELECT (SQL injection pattern)
+            r"(\bSCRIPT\s*\()",           # SCRIPT( (potentially malicious)
             
             # Boolean-based SQL injection - Enhanced patterns
             r"(\b(OR|AND)\s+\d+\s*=\s*\d+)",
@@ -29,9 +39,8 @@ class SQLInjectionProtector:
             r"(\bOR\s+'.*'\s*=\s*'.*'\b)",
             r"(\bAND\s+'.*'\s*=\s*'.*'\b)",
             
-            # Simple boolean patterns (the missing ones!)
+            # Simple boolean patterns (SQL injection specific)
             r"(\d+'\s*=\s*'\d+)",  # '1'='1'
-            r"(\d+'\s*=\s*'\d+)",  # '1'='1' (alternative)
             r"(\d+'\s*OR\s*'\d+)",  # '1' OR '1'
             r"(\d+'\s*AND\s*'\d+)",  # '1' AND '1'
             r"(\d+'\s*=\s*'\d+'\s*OR)",  # '1'='1' OR
@@ -39,29 +48,15 @@ class SQLInjectionProtector:
             r"(\d+'\s*OR\s*'\d+'\s*=\s*'\d+)",  # '1' OR '1'='1'
             r"(\d+'\s*AND\s*'\d+'\s*=\s*'\d+)",  # '1' AND '1'='1'
             
-            # Single quote patterns
-            r"(\d+'\s*=\s*'\d+)",  # '1'='1'
-            r"(\d+'\s*OR\s*'\d+)",  # '1' OR '1'
-            r"(\d+'\s*AND\s*'\d+)",  # '1' AND '1'
-            
             # Classic SQL injection patterns
             r"(\d+'\s*=\s*'\d+'\s*OR\s*'\d+'\s*=\s*'\d+)",  # '1'='1' OR '1'='1'
             r"(\d+'\s*=\s*'\d+'\s*AND\s*'\d+'\s*=\s*'\d+)",  # '1'='1' AND '1'='1'
             
             # Union-based SQL injection
-            r"(\bUNION\s+SELECT\b)",
             r"(\bUNION\s+ALL\s+SELECT\b)",
             
-            # Table manipulation
-            r"(\bDROP\s+TABLE\b)",
-            r"(\bINSERT\s+INTO\b)",
-            r"(\bDELETE\s+FROM\b)",
-            r"(\bUPDATE\s+.*\s+SET\b)",
-            
             # Stored procedures and functions
-            r"(\bEXEC\s*\()",
             r"(\bEXECUTE\s*\()",
-            r"(\bSCRIPT\s*\()",
             
             # SQL comments
             r"(--|\#|\/\*|\*\/)",
@@ -144,6 +139,21 @@ class SQLInjectionProtector:
             '<a href=', '<div', '<span', '<p>', '<br>', 'style=', 'target=',
             'background-color:', 'color:', 'padding:', 'border-radius:'
         ]):
+            return False
+        
+        # Skip checking if it contains common English contexts for SQL keywords
+        english_contexts = [
+            'select from', 'select option', 'select menu', 'select button',
+            'click select', 'please select', 'you can select', 'select achievements',
+            'select the', 'select a', 'select an', 'select your', 'select one',
+            'drop down', 'drop off', 'drop by', 'drop in',
+            'create account', 'create profile', 'create new', 'create a',
+            'insert coin', 'insert card', 'insert here', 'insert your', 'insert a',
+            'update your', 'update profile', 'update information', 'update settings',
+            'delete your', 'delete account', 'delete file', 'delete message'
+        ]
+        
+        if any(context in text_lower for context in english_contexts):
             return False
         
         # Check against all compiled patterns

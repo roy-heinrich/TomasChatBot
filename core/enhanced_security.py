@@ -14,21 +14,26 @@ class EnhancedSecurityValidator:
     """Enhanced security validation with comprehensive input protection"""
     
     def __init__(self):
-        # SQL injection patterns (from existing security.py)
+        # Context-aware SQL injection patterns (reduced false positives)
         self.sql_patterns = [
-            r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC|UNION|SCRIPT)\b)",
+            # Context-aware SQL keywords (require SQL context, not standalone words)
+            r"(\bSELECT\s+.*\s+FROM\b)",  # SELECT ... FROM (SQL context)
+            r"(\bINSERT\s+INTO\b)",       # INSERT INTO (SQL context)
+            r"(\bINSERT\s+.*\s+VALUES\b)", # INSERT ... VALUES (SQL context)
+            r"(\bUPDATE\s+.*\s+SET\b)",   # UPDATE ... SET (SQL context)
+            r"(\bDELETE\s+FROM\b)",        # DELETE FROM (SQL context)
+            r"(\bDROP\s+(TABLE|DATABASE|INDEX|VIEW)\b)",  # DROP with object type
+            r"(\bCREATE\s+(TABLE|DATABASE|INDEX|VIEW)\b)", # CREATE with object type
+            r"(\bALTER\s+(TABLE|DATABASE)\b)",             # ALTER with object type
+            r"(\bEXEC\s*\()",             # EXEC( (stored procedure)
+            r"(\bUNION\s+SELECT\b)",      # UNION SELECT (SQL injection pattern)
+            r"(\bSCRIPT\s*\()",           # SCRIPT( (potentially malicious)
+            
+            # Boolean-based SQL injection patterns
             r"(\b(OR|AND)\s+\d+\s*=\s*\d+)",
             r"(\bOR\s+1\s*=\s*1\b)",
             r"(\bAND\s+1\s*=\s*1\b)",
             r"(\d+'\s*=\s*'\d+)",
-            r"(\bUNION\s+SELECT\b)",
-            r"(\bDROP\s+TABLE\b)",
-            r"(\bINSERT\s+INTO\b)",
-            r"(\bDELETE\s+FROM\b)",
-            r"(\bUPDATE\s+.*\s+SET\b)",
-            r"(\bEXEC\s*\()",
-            r"(\bEXECUTE\s*\()",
-            r"(\bSCRIPT\s*\()",
             r"(--|\#|\/\*|\*\/)",
             r"(\bSLEEP\s*\()",
             r"(\bWAITFOR\s+DELAY\b)",
@@ -310,6 +315,21 @@ class EnhancedSecurityValidator:
             '<a href=', '<div', '<span', '<p>', '<br>', 'style=', 'target=',
             'background-color:', 'color:', 'padding:', 'border-radius:'
         ]):
+            return False
+        
+        # Skip checking if it contains common English contexts for SQL keywords
+        english_contexts = [
+            'select from', 'select option', 'select menu', 'select button',
+            'click select', 'please select', 'you can select', 'select achievements',
+            'select the', 'select a', 'select an', 'select your', 'select one',
+            'drop down', 'drop off', 'drop by', 'drop in',
+            'create account', 'create profile', 'create new', 'create a',
+            'insert coin', 'insert card', 'insert here', 'insert your', 'insert a',
+            'update your', 'update profile', 'update information', 'update settings',
+            'delete your', 'delete account', 'delete file', 'delete message'
+        ]
+        
+        if any(context in text_lower for context in english_contexts):
             return False
         
         for pattern in self.compiled_sql_patterns:
