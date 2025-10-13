@@ -468,13 +468,15 @@ class EnhancedSecurityValidator:
         return sanitized
     
     def validate_conversation_history(self, conversation_history: List[Dict]) -> Tuple[bool, str]:
-        """Validate conversation history"""
+        """Validate conversation history structure only - NOT content security"""
         if not isinstance(conversation_history, list):
             return False, "Conversation history must be a list"
         
         if len(conversation_history) > self.max_conversation_history:
             return False, f"Too many messages in conversation history (max {self.max_conversation_history})"
         
+        # Only validate structure, not content security
+        # Content security should only be checked on the current query
         for i, message in enumerate(conversation_history):
             if not isinstance(message, dict):
                 return False, f"Message {i} must be a dictionary"
@@ -482,10 +484,14 @@ class EnhancedSecurityValidator:
             if 'content' not in message:
                 return False, f"Message {i} missing 'content' field"
             
+            # Only check for basic structure, not SQL injection
             content = message['content']
-            is_valid, error_msg, _ = self.validate_input(content, "conversation_history")
-            if not is_valid:
-                return False, f"Message {i}: {error_msg}"
+            if not isinstance(content, str):
+                return False, f"Message {i} content must be a string"
+            
+            # Only check length, not content security
+            if len(content) > self.max_input_length:
+                return False, f"Message {i} content too long (max {self.max_input_length} characters)"
         
         return True, "Conversation history is valid"
 

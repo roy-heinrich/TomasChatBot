@@ -165,25 +165,20 @@ class SQLInjectionProtector:
         return False
     
     def validate_request(self, request_data: dict) -> tuple[bool, str]:
-        """Validate request data for SQL injection attempts"""
+        """Validate request data for SQL injection attempts - CURRENT QUERY ONLY"""
         try:
-            # Check query field
+            # Check query field (current query only)
             query = request_data.get("query", "")
             if self.is_sql_injection(query):
                 return False, "SQL injection attempt detected in query"
             
-            # Check conversation history
-            conversation_history = request_data.get("conversation_history", [])
-            if isinstance(conversation_history, list):
-                for message in conversation_history:
-                    if isinstance(message, dict):
-                        content = message.get("content", "")
-                        if self.is_sql_injection(content):
-                            return False, "SQL injection attempt detected in conversation history"
+            # CRITICAL FIX: Don't check conversation history for SQL injection
+            # This prevents legitimate queries from being blocked due to malicious history
+            # Conversation history is for context only, not security validation
             
-            # Check other string fields
+            # Check other string fields (but not conversation history)
             for key, value in request_data.items():
-                if isinstance(value, str) and self.is_sql_injection(value):
+                if key != "conversation_history" and isinstance(value, str) and self.is_sql_injection(value):
                     return False, f"SQL injection attempt detected in field: {key}"
             
             return True, "Request is safe"
