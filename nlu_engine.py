@@ -93,6 +93,7 @@ class Intent(Enum):
     # Emergency and Safety Intents - for critical situations
     MEDICAL_EMERGENCY = "medical_emergency"  # Medical emergencies requiring immediate attention
     SAFETY_EMERGENCY = "safety_emergency"  # School safety emergencies
+    SAFETY_INQUIRY = "safety_inquiry"  # Safety questions (drills, procedures, etc.)
     
     # Conversation Flow Intents - for better multi-turn conversations
     ENROLLMENT_DOCUMENTS = "enrollment_documents"  # Specific document requirements
@@ -494,8 +495,8 @@ class NLUEngine:
         # High-confidence emergency patterns
         # Enhanced patterns for better emergency detection
         serious_emergency_patterns = [
-            # Direct emergency statements
-            r'\b(emergency|ambulance|911|call 911|call emergency)\b',
+            # Direct emergency statements (removed standalone "emergency" to prevent false positives)
+            r'\b(ambulance|911|call 911|call emergency)\b',
             r'\b(medical emergency|urgent medical|urgent help needed)\b',
             r'\b(life threatening|critical condition|critical situation)\b',
             
@@ -602,8 +603,8 @@ class NLUEngine:
         # Only check for high-confidence emergency keywords (not just medical terms)
         # Enhanced with more direct emergency phrases
         high_confidence_emergency_keywords = [
-            # Direct emergency terms
-            'emergency', 'ambulance', '911', 'call 911', 'medical emergency',
+            # Direct emergency terms (removed standalone 'emergency' to prevent false positives)
+            'ambulance', '911', 'call 911', 'medical emergency',
             
             # Direct physical conditions
             'can\'t breathe', 'unconscious', 'bleeding', 'severe pain', 'heart attack',
@@ -685,7 +686,7 @@ class NLUEngine:
         
         # Direct emergency detection for critical phrases (highest priority)
         critical_emergency_phrases = [
-            "heart attack", "stroke", "can't breathe", "emergency", "911",
+            "heart attack", "stroke", "can't breathe", "911",
             "help me now", "medical emergency", "critical condition", "dying"
         ]
         
@@ -1095,7 +1096,7 @@ class NLUEngine:
         # Priority 7.5: Safety inquiries (moved up to prevent misclassification)
         safety_words = ["earthquake", "fire", "drill", "safety", "emergency", "disaster", "evacuation", "alarm", "protocol", "procedure", "preparedness", "drills"]
         if any(word in user_lower for word in safety_words):
-            return NLUResult(Intent.SCHOOL_INFO, 0.8, [])
+            return NLUResult(Intent.SAFETY_INQUIRY, 0.9, [])
         
         # Priority 8: Staff inquiries (moved up to Priority 2.5)
         

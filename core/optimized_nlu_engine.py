@@ -51,7 +51,10 @@ class OptimizedNLUEngine(NLUEngine):
         
         # Pre-compile commonly used patterns
         self.compiled_patterns = {
-            'emergency_keywords': re.compile(r'\b(?:heart attack|stroke|bleeding|unconscious|dying|emergency|ambulance|911|urgent)\b', re.IGNORECASE),
+            # More specific emergency patterns - only direct medical emergencies (removed standalone "emergency")
+            'emergency_keywords': re.compile(r'\b(?:heart attack|stroke|bleeding|unconscious|dying|ambulance|911|urgent medical|medical emergency|can\'t breathe|not breathing|choking|i\'m having|i am having|need urgent|critical condition)\b', re.IGNORECASE),
+            # Safety inquiry patterns - should NOT trigger emergency (comprehensive matching)
+            'safety_inquiry_patterns': re.compile(r'\b(?:fire drill|earthquake drill|safety drill|emergency drill|evacuation drill|drill|safety|preparedness|protocol|procedure|emergency procedures|safety procedures|emergency drills|fire drills|earthquake drills|safety drills|evacuation drills|conduct.*drill|practice.*drill|have.*drill)\b', re.IGNORECASE),
             'greeting_patterns': re.compile(r'\b(?:hi+|hello+|hey+|good morning|good afternoon|good evening|greetings|kumusta|kamusta)\b', re.IGNORECASE),
             'question_patterns': re.compile(r'\b(?:what|who|when|where|why|how|which|can|could|would|should|is|are|do|does|did)\b', re.IGNORECASE),
             'name_patterns': re.compile(r'\b(?:i\'m|im|i am|my name is|call me)\s+(\w+)\b', re.IGNORECASE),
@@ -199,7 +202,16 @@ class OptimizedNLUEngine(NLUEngine):
         # Use pre-compiled patterns for faster matching
         user_lower = user_input.lower()
         
-        # Quick emergency check using compiled pattern
+        # PRIORITY: Check for safety inquiries FIRST (before emergency detection)
+        if self.compiled_patterns['safety_inquiry_patterns'].search(user_lower):
+            from nlu_engine import Intent
+            return NLUResult(
+                intent=Intent.SAFETY_INQUIRY,  # Safety inquiries are their own category
+                confidence=0.9,
+                entities=[]
+            )
+        
+        # Quick emergency check using compiled pattern (only after safety check)
         if self.compiled_patterns['emergency_keywords'].search(user_lower):
             return await self._quick_emergency_detection(user_input, context)
         
@@ -219,6 +231,14 @@ class OptimizedNLUEngine(NLUEngine):
         from nlu_engine import Intent
         
         user_lower = user_input.lower()
+        
+        # CRITICAL: Double-check for safety inquiries (should not be emergencies)
+        if self.compiled_patterns['safety_inquiry_patterns'].search(user_lower):
+            return NLUResult(
+                intent=Intent.SAFETY_INQUIRY,  # Safety inquiries are their own category
+                confidence=0.9,
+                entities=[]
+            )
         
         # Check for figurative expressions first
         figurative_expressions = [

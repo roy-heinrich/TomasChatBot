@@ -42,10 +42,10 @@ class QueryPreprocessor:
             r'(\d+)\s*grado': 'grade_specific'
         }
         
-        # Emergency patterns (highest priority)
+        # Emergency patterns (highest priority) - more specific to avoid false positives
         self.emergency_patterns = [
-            r'emergency', r'heart attack', r'bleeding', r'fire', r'accident',
-            r'911', r'help', r'urgent', r'critical', r'danger'
+            r'heart attack', r'bleeding', r'accident', r'911', r'urgent', r'critical', r'danger',
+            r'medical emergency', r'can\'t breathe', r'unconscious', r'severe pain'
         ]
         
         # General query patterns
