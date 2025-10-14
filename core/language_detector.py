@@ -130,7 +130,8 @@ class LanguageDetector:
             r'^(what|where|when|why|how|who|which)$',           # English question words
             r'^(is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|can|could|should|may|might)$',  # English verbs
             r'^(support|aide|teacher|student|school|principal|admin|staff|learning|education|sports|activities|held)$',  # Common English school terms
-            r'^(im|gonna|die|laughing|laugh|funny|joke|joking|kidding|serious|not|really|just|like|love|hate|want|need|get|go|come|see|know|think|feel|say|tell|ask|give|take|make|do|have|will|would|could|should|may|might|can|must|shall)$'  # Common English words and contractions
+            r'^(im|gonna|die|laughing|laugh|funny|joke|joking|kidding|serious|not|really|just|like|love|hate|want|need|get|go|come|see|know|think|feel|say|tell|ask|give|take|make|do|have|will|would|could|should|may|might|can|must|shall)$',  # Common English words and contractions
+            r'^(yes|no|ok|okay|sure|maybe|alright|fine|good|bad|great|awesome|cool|nice|thanks|thank|please|sorry|excuse|hello|hi|hey|bye|goodbye|welcome|help|info|information|question|answer|problem|issue|solution|idea|suggestion|advice|tip|hint|clue|detail|example|sample|test|try|check|verify|confirm|agree|disagree|understand|confused|clear|unclear|specific|general|exact|approximate|correct|wrong|right|left|up|down|here|there|this|that|these|those|some|any|all|none|many|few|much|little|more|less|most|least|first|last|next|previous|before|after|during|while|since|until|because|if|then|else|when|where|why|how|what|who|which|whose)$'  # Common English response words and basic vocabulary
         ]
         
         return any(re.match(pattern, word) for pattern in english_patterns)

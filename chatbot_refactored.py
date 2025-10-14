@@ -1416,8 +1416,22 @@ class ChatBot:
                     search_query = self._apply_smart_enhancement(query, emotional_analysis, intent_name)
                     # logger.info(f"💭 Enhanced search query: '{search_query}' (emotion: {emotional_analysis.primary_emotion if emotional_analysis else 'none'})")
                     
-                    # Use three-tier search for better results (now with fixed scoring)
-                    search_results = await self.database_search.search_prompts_three_tier(search_query, limit=10, intent=intent_name, conversation_history=conversation_history, nlu_result=nlu_result)
+                    # 🎯 ENHANCEMENT: Handle simple responses with context awareness
+                    context = None  # Initialize context variable
+                    if self._is_simple_response(query):
+                        context = await self._handle_simple_response(query, conversation_history, session_id)
+                        if context:
+                            # Skip database search for simple responses with context
+                            search_results = []
+                            best_result = None
+                        else:
+                            # Fallback to regular search
+                            search_results = await self._handle_multiple_grade_search(search_query, intent_name, conversation_history, nlu_result)
+                            best_result = search_results[0] if search_results else None
+                    else:
+                        # Regular search for complex queries
+                        search_results = await self._handle_multiple_grade_search(search_query, intent_name, conversation_history, nlu_result)
+                        best_result = search_results[0] if search_results else None
                     
                     # 🚨 AUTOMATIC: Invalidate cache if grade query returns wrong results
                     if 'grade' in query.lower() and search_results:
@@ -1475,6 +1489,9 @@ class ChatBot:
             
             # 5. Generate response using Groq with context-aware analysis
             # Debug removed
+            if not context:
+                context = "No specific information available in database for this query"
+            
             if best_result:
                 # logger.info("📚 Using database context for response generation")
                 # Provide complete database information as context
@@ -1486,6 +1503,27 @@ class ChatBot:
                 else:
                     logger.warning(f"⚠️ Best result is not a dict: {type(best_result)} - {best_result}")
                     context = f"Database Information: {best_result}"
+                
+                # 🎯 ENHANCEMENT: For multiple grade queries, include all relevant results
+                if 'grade' in query.lower() and ('and' in query.lower() or '&' in query.lower()):
+                    # Check if we have multiple grade results
+                    grade_results = []
+                    for result in search_results:
+                        if isinstance(result, dict):
+                            # Check both response and keywords for grade information
+                            response_text = result.get('response', '').lower()
+                            keywords_text = result.get('keywords', '').lower()
+                            if 'grade' in keywords_text or any(f'grade {i}' in keywords_text for i in range(1, 7)):
+                                grade_results.append(result)
+                    
+                    if len(grade_results) > 1:
+                        # Build comprehensive context with all grade information
+                        context = "Database Information for Multiple Grades:\n"
+                        for i, result in enumerate(grade_results):
+                            keywords = result.get('keywords', '')
+                            response = result.get('response', '')
+                            context += f"Grade {i+1}: {keywords} - {response}\n"
+                        context = context.strip()
                 
                 # 🎯 FIX: Add explicit clarification for grade level questions
                 if 'grade' in query.lower() and 'grade level' in context.lower():
@@ -2325,3 +2363,112 @@ class ChatBot:
             return f"{query} help support assistance"
         else:
             return query  # No enhancement for other emotions
+    
+    async def _handle_multiple_grade_search(self, search_query: str, intent_name: str, conversation_history: list, nlu_result) -> list:
+        """Handle searches that might involve multiple grades"""
+        import re
+        
+        # Check if query contains multiple grades
+        grade_patterns = [
+            r'grade\s+(\d+)\s+and\s+(\d+)',  # "grade 1 and 5"
+            r'grade\s+(\d+)\s+&\s+(\d+)',     # "grade 1 & 5"
+            r'grade\s+(\d+)\s+,\s+(\d+)',     # "grade 1, 5"
+            r'grades?\s+(\d+)\s+and\s+(\d+)', # "grades 1 and 5"
+            r'(\d+)\s+and\s+(\d+)',           # "1 and 5"
+        ]
+        
+        multiple_grades = []
+        for pattern in grade_patterns:
+            match = re.search(pattern, search_query.lower())
+            if match:
+                multiple_grades = [match.group(1), match.group(2)]
+                break
+        
+        if multiple_grades:
+            # Search for each grade individually and combine results
+            all_results = []
+            seen_ids = set()
+            
+            for grade in multiple_grades:
+                # Create specific search queries for each grade
+                grade_queries = [
+                    f"grade {grade} teacher",
+                    f"grade {grade} adviser", 
+                    f"grade {grade}",
+                    f"{grade}th grade teacher",
+                    f"{grade}th grade adviser"
+                ]
+                
+                for grade_query in grade_queries:
+                    results = await self.database_search.search_prompts_three_tier(
+                        grade_query, limit=3, intent=intent_name, 
+                        conversation_history=conversation_history, nlu_result=nlu_result
+                    )
+                    
+                    # Add unique results
+                    for result in results:
+                        if result.get('id') not in seen_ids:
+                            all_results.append(result)
+                            seen_ids.add(result.get('id'))
+            
+            # If we found results, return them
+            if all_results:
+                return all_results[:10]  # Limit to 10 results
+        
+        # Fallback to regular three-tier search
+        return await self.database_search.search_prompts_three_tier(
+            search_query, limit=10, intent=intent_name, 
+            conversation_history=conversation_history, nlu_result=nlu_result
+        )
+    
+    def _is_simple_response(self, query: str) -> bool:
+        """Check if query is a simple response word"""
+        simple_responses = {
+            'yes', 'no', 'ok', 'okay', 'sure', 'maybe', 'alright', 'fine', 
+            'good', 'bad', 'great', 'awesome', 'cool', 'nice', 'thanks', 
+            'thank', 'please', 'sorry', 'hello', 'hi', 'hey', 'bye', 
+            'goodbye', 'welcome', 'help'
+        }
+        return query.lower().strip() in simple_responses
+    
+    async def _handle_simple_response(self, query: str, conversation_history: list, session_id: str) -> str:
+        """Handle simple responses with context awareness"""
+        query_lower = query.lower().strip()
+        
+        # Check conversation history for context
+        if conversation_history and len(conversation_history) > 0:
+            # Get the last few messages for context
+            recent_messages = conversation_history[-3:] if len(conversation_history) >= 3 else conversation_history
+            
+            # Look for patterns in recent conversation
+            for message in reversed(recent_messages):
+                if hasattr(message, 'content'):
+                    content = message.content.lower()
+                    
+                    # Check if we asked a yes/no question
+                    if any(phrase in content for phrase in ['do you', 'would you', 'can you', 'will you', 'are you', 'is it', 'does it']):
+                        if query_lower in ['yes', 'sure', 'ok', 'okay', 'alright']:
+                            return "Great! I'm glad I could help. Is there anything else you'd like to know about our school?"
+                        elif query_lower in ['no', 'maybe']:
+                            return "No problem! If you change your mind or have any other questions about our school, feel free to ask anytime."
+                    
+                    # Check if we provided information
+                    elif any(phrase in content for phrase in ['teacher', 'grade', 'school', 'schedule', 'hours', 'principal', 'office']):
+                        if query_lower in ['yes', 'sure', 'ok', 'okay', 'alright', 'good', 'great', 'awesome', 'cool', 'nice']:
+                            return "Perfect! I'm happy I could help you with that information. Is there anything else you'd like to know about our school?"
+                        elif query_lower in ['no', 'maybe']:
+                            return "No worries! If you have any other questions about our school, I'm here to help."
+        
+        # No context found - provide helpful response
+        if query_lower in ['yes', 'sure', 'ok', 'okay', 'alright']:
+            return "I'm here to help! What would you like to know about Tomas SM Bautista Elementary School? You can ask about teachers, schedules, school hours, or any other school-related information."
+        elif query_lower in ['no', 'maybe']:
+            return "No problem! If you have any questions about our school later, feel free to ask. I'm here to help with information about teachers, schedules, school hours, and more."
+        elif query_lower in ['thanks', 'thank']:
+            return "You're welcome! I'm happy to help. Is there anything else you'd like to know about our school?"
+        elif query_lower in ['hello', 'hi', 'hey']:
+            return "Hello! Welcome to Tomas SM Bautista Elementary School chatbot. How can I help you today? You can ask about teachers, schedules, school hours, or any other school information."
+        elif query_lower in ['help']:
+            return "I'm here to help! You can ask me about:\n• Teachers and their grades\n• School schedules and hours\n• School activities and programs\n• Contact information\n• Enrollment details\n\nWhat would you like to know?"
+        else:
+            return None  # No specific context found
