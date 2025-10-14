@@ -65,7 +65,11 @@ class LanguageDetector:
         
         # Only override if we have a strong confidence in the NLP result
         if best_language[1] > 0.6:  # 60% confidence threshold
-            return best_language[0]
+            detected_lang = best_language[0]
+            # Map Aklanon to Tagalog for response consistency
+            if detected_lang == "akl":
+                return "tl"
+            return detected_lang
         
         # Fallback to langid result if NLP confidence is low
         if lang == "tl" and confidence > 0.4:

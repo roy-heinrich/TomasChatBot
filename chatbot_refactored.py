@@ -1416,7 +1416,7 @@ class ChatBot:
                     search_query = self._apply_smart_enhancement(query, emotional_analysis, intent_name)
                     # logger.info(f"💭 Enhanced search query: '{search_query}' (emotion: {emotional_analysis.primary_emotion if emotional_analysis else 'none'})")
                     
-                    # Use three-tier search for better results
+                    # Use three-tier search for better results (now with fixed scoring)
                     search_results = await self.database_search.search_prompts_three_tier(search_query, limit=10, intent=intent_name, conversation_history=conversation_history, nlu_result=nlu_result)
                     
                     # 🚨 AUTOMATIC: Invalidate cache if grade query returns wrong results
@@ -1494,11 +1494,13 @@ class ChatBot:
                 # 🎯 REMOVED: Grade validation bypass - let all responses go through natural response generator
                 # This ensures grade responses are natural and conversational, not robotic
                 
-                # 🎯 FIX: Enhance context for Tagalog queries
-                if detected_lang in ['tl', 'akl']:
-                    # Add more comprehensive context for Tagalog queries
-                    if len(context) < 200:  # If context is too short, add more information
-                        context += "\n\nADDITIONAL CONTEXT: Answer in natural, grammatically correct Tagalog. Be conversational but professional. Use proper Tagalog grammar and natural sentence structure."
+                # 🎯 FIX: Enhance context for language-specific responses
+                if response_lang == 'tl':
+                    # Add explicit instruction for Tagalog responses
+                    context += "\n\nCRITICAL: You MUST respond in Tagalog. Use proper Tagalog grammar and natural sentence structure. Be conversational but professional."
+                elif response_lang == 'en':
+                    # Add explicit instruction for English responses
+                    context += "\n\nCRITICAL: You MUST respond in English. Use proper English grammar and natural sentence structure. Be conversational but professional."
             else:
                 # Context-aware NLU determined not to use database context
                 # logger.info("🎯 Context-aware NLU: Not using database context")

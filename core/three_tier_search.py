@@ -87,15 +87,25 @@ class ThreeTierSearch:
             ).execute()
             
             if result.data:
-                doc = result.data[0]
-                return {
-                    'id': doc.get('id'),
-                    'keywords': doc.get('keywords', ''),
-                    'response': doc.get('response', ''),
-                    'score': 95.0,  # High FTS match
-                    'match_type': 'fts',
-                    'tier': 1
-                }
+                # Calculate scores for all results and pick the best one
+                best_result = None
+                best_score = 0
+                
+                for doc in result.data:
+                    relevance_score = self._calculate_fts_relevance_score(query, doc)
+                    if relevance_score > best_score:
+                        best_score = relevance_score
+                        best_result = doc
+                
+                if best_result:
+                    return {
+                        'id': best_result.get('id'),
+                        'keywords': best_result.get('keywords', ''),
+                        'response': best_result.get('response', ''),
+                        'score': best_score,  # Dynamic relevance score
+                        'match_type': 'fts',
+                        'tier': 1
+                    }
             
             return None
             
@@ -225,22 +235,79 @@ class ThreeTierSearch:
             ).execute()
             
             results = []
-            for i, doc in enumerate(result.data[:limit]):  # Limit results manually
+            for i, doc in enumerate(result.data):  # Process all results first
+                # Calculate relevance-based score instead of fixed score
+                relevance_score = self._calculate_fts_relevance_score(query, doc)
                 results.append({
                     'id': doc.get('id'),
                     'keywords': doc.get('keywords', ''),
                     'response': doc.get('response', ''),
-                    'score': 95.0,  # High FTS score
+                    'score': relevance_score,  # Dynamic relevance score
                     'match_type': 'fts',
                     'tier': 1
                 })
             
-            return results
+            # Sort by score (highest first) and return top results
+            results.sort(key=lambda x: x['score'], reverse=True)
+            return results[:limit]
             
         except Exception as e:
             logger.warning(f"FTS multiple search failed: {e}")
             # Return empty list instead of crashing
             return []
+    
+    def _calculate_fts_relevance_score(self, query: str, doc: Dict[str, Any]) -> float:
+        """Calculate relevance-based score for FTS results"""
+        try:
+            import re
+            from difflib import SequenceMatcher
+            
+            query_lower = query.lower()
+            keywords = doc.get('keywords', '').lower()
+            response = doc.get('response', '').lower()
+            
+            # Calculate keyword match score
+            keyword_words = keywords.split()
+            query_words = query_lower.split()
+            
+            keyword_matches = 0
+            for q_word in query_words:
+                for k_word in keyword_words:
+                    if q_word in k_word or k_word in q_word:
+                        keyword_matches += 1
+                        break
+            
+            keyword_score = (keyword_matches / len(query_words)) * 50 if query_words else 0
+            
+            # Calculate response relevance score
+            response_score = 0
+            if response:
+                # Check for exact phrase matches
+                if query_lower in response:
+                    response_score += 30
+                
+                # Check for word overlap
+                response_words = response.split()
+                response_matches = 0
+                for q_word in query_words:
+                    for r_word in response_words:
+                        if q_word in r_word or r_word in q_word:
+                            response_matches += 1
+                            break
+                
+                response_score += (response_matches / len(query_words)) * 20 if query_words else 0
+            
+            # Base score for FTS match
+            base_score = 60
+            
+            # Total score (max 100)
+            total_score = min(base_score + keyword_score + response_score, 100)
+            
+            return total_score
+            
+        except Exception as e:
+            logger.warning(f"FTS relevance calculation failed: {e}")
+            return 60.0  # Default score
     
     async def _get_bm25_results(self, query: str, limit: int) -> List[Dict[str, Any]]:
         """Get BM25 results for multiple search"""
