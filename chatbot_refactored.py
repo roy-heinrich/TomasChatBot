@@ -633,7 +633,7 @@ class ChatBot:
             
             # 5. Database search with multi-question context and conversation history
             intent_name = nlu_result.intent.name.lower() if nlu_result and nlu_result.intent else None
-            search_results = await self.database_search.search_prompts(question, limit=10, intent=intent_name, conversation_history=conversation_history)
+            search_results = await self.database_search.search_prompts_three_tier(question, limit=10, intent=intent_name, conversation_history=conversation_history, nlu_result=nlu_result)
             
             # 6. Simple context analysis - use database results if available
             context_analysis = type('ContextAnalysis', (), {
@@ -1416,17 +1416,45 @@ class ChatBot:
                     search_query = self._apply_smart_enhancement(query, emotional_analysis, intent_name)
                     # logger.info(f"💭 Enhanced search query: '{search_query}' (emotion: {emotional_analysis.primary_emotion if emotional_analysis else 'none'})")
                     
-                    # 🎯 ENHANCEMENT: Handle simple responses with context awareness
+                    # 🎯 ENHANCEMENT: Handle different query types with context awareness
                     context = None  # Initialize context variable
+                    search_results = []
+                    best_result = None
+                    
                     if self._is_simple_response(query):
+                        # Handle simple responses (yes, no, ok, etc.)
                         context = await self._handle_simple_response(query, conversation_history, session_id)
                         if context:
-                            # Skip database search for simple responses with context
-                            search_results = []
-                            best_result = None
+                            # Return simple response directly without AI processing
+                            return ChatResponse(
+                                response=[context],
+                                entities=entities,
+                                detected_language=detected_lang,
+                                language_confidence=confidence,
+                                is_split=False,
+                                message_count=1,
+                                intent='simple_response'
+                            )
                         else:
                             # Fallback to regular search
                             search_results = await self._handle_multiple_grade_search(search_query, intent_name, conversation_history, nlu_result)
+                            best_result = search_results[0] if search_results else None
+                    elif self._is_vague_query(query):
+                        # Handle vague queries with suggestions
+                        search_results = await self._handle_multiple_grade_search(search_query, intent_name, conversation_history, nlu_result)
+                        suggestions = await self._generate_query_suggestions(query, search_results)
+                        if suggestions:
+                            # Return suggestions directly without AI processing
+                            return ChatResponse(
+                                response=[f"I'm not sure what you're looking for with '{query}'. Here are some suggestions:\n\n{suggestions}\n\nPlease ask a more specific question and I'll be happy to help!"],
+                                entities=entities,
+                                detected_language=detected_lang,
+                                language_confidence=confidence,
+                                is_split=False,
+                                message_count=1,
+                                intent='vague_query'
+                            )
+                        else:
                             best_result = search_results[0] if search_results else None
                     else:
                         # Regular search for complex queries
@@ -2472,3 +2500,140 @@ class ChatBot:
             return "I'm here to help! You can ask me about:\n• Teachers and their grades\n• School schedules and hours\n• School activities and programs\n• Contact information\n• Enrollment details\n\nWhat would you like to know?"
         else:
             return None  # No specific context found
+    
+    def _is_vague_query(self, query: str) -> bool:
+        """Check if query is vague or unclear"""
+        query_lower = query.lower().strip()
+        
+        # Very short queries (1-2 words) that aren't simple responses
+        words = query_lower.split()
+        if len(words) <= 2 and not self._is_simple_response(query):
+            return True
+        
+        # Vague patterns
+        vague_patterns = [
+            r'^(what|who|where|when|why|how)\s*$',  # Single question words
+            r'^(tell me|i want|i need|help me)\s*$',  # Incomplete requests
+            r'^(about|info|information)\s*$',  # Too general
+            r'^(school|teacher|student|grade)\s*$',  # Single topic words
+            r'^(something|anything|everything)\s*$',  # Vague pronouns
+        ]
+        
+        import re
+        for pattern in vague_patterns:
+            if re.match(pattern, query_lower):
+                return True
+        
+        return False
+    
+    async def _generate_query_suggestions(self, query: str, search_results: list) -> str:
+        """Generate helpful suggestions for vague queries"""
+        query_lower = query.lower().strip()
+        words = query_lower.split()
+        
+        suggestions = []
+        
+        # Analyze the query to understand what they might be looking for
+        if len(words) == 1:
+            word = words[0]
+            
+            if word in ['what', 'who', 'where', 'when', 'why', 'how']:
+                suggestions = [
+                    "• What are the school hours?",
+                    "• Who is the principal?",
+                    "• Where is the school located?",
+                    "• When does school start?",
+                    "• Why choose our school?",
+                    "• How do I enroll my child?"
+                ]
+            elif word in ['teacher', 'teachers']:
+                suggestions = [
+                    "• Who is the teacher for grade 1?",
+                    "• Who are the teachers for grades 1-6?",
+                    "• Who is the principal?",
+                    "• Who is the head teacher?"
+                ]
+            elif word in ['grade', 'grades']:
+                suggestions = [
+                    "• What grade levels are offered?",
+                    "• Who is the teacher for grade 1?",
+                    "• Who is the teacher for grade 5?",
+                    "• What are the grade requirements?"
+                ]
+            elif word in ['school']:
+                suggestions = [
+                    "• What are the school hours?",
+                    "• Where is the school located?",
+                    "• What programs does the school offer?",
+                    "• How do I contact the school?"
+                ]
+            elif word in ['student', 'students']:
+                suggestions = [
+                    "• What grade levels are offered?",
+                    "• What are the school hours?",
+                    "• What programs are available?",
+                    "• How do I enroll my child?"
+                ]
+            elif word in ['help']:
+                suggestions = [
+                    "• What are the school hours?",
+                    "• Who is the principal?",
+                    "• What grade levels are offered?",
+                    "• How do I contact the school?",
+                    "• What programs does the school offer?"
+                ]
+        
+        elif len(words) == 2:
+            # Two-word combinations
+            if 'tell' in words and 'me' in words:
+                suggestions = [
+                    "• Tell me about the school hours",
+                    "• Tell me who the teachers are",
+                    "• Tell me about the school programs",
+                    "• Tell me how to contact the school"
+                ]
+            elif 'i' in words and 'want' in words:
+                suggestions = [
+                    "• I want to know the school hours",
+                    "• I want to know who the teachers are",
+                    "• I want to know about enrollment",
+                    "• I want to contact the school"
+                ]
+            elif 'i' in words and 'need' in words:
+                suggestions = [
+                    "• I need to know the school hours",
+                    "• I need to know who the teachers are",
+                    "• I need to know about enrollment",
+                    "• I need to contact the school"
+                ]
+        
+        # If we have search results, use them to generate more specific suggestions
+        if search_results and not suggestions:
+            suggestions = []
+            for i, result in enumerate(search_results[:3]):
+                keywords = result.get('keywords', '')
+                if keywords:
+                    # Extract key topics from keywords
+                    topics = keywords.split(',')[:2]  # Take first 2 topics
+                    for topic in topics:
+                        topic = topic.strip()
+                        if topic and len(topic) > 3:  # Avoid very short topics
+                            suggestions.append(f"• {topic}")
+                            if len(suggestions) >= 4:
+                                break
+        
+        # Default suggestions if nothing else works
+        if not suggestions:
+            suggestions = [
+                "• What are the school hours?",
+                "• Who is the principal?",
+                "• What grade levels are offered?",
+                "• How do I contact the school?",
+                "• What programs does the school offer?"
+            ]
+        
+        # Format the suggestions
+        if suggestions:
+            return "You might be looking for:\n" + "\n".join(suggestions[:5])  # Limit to 5 suggestions
+        else:
+            return None

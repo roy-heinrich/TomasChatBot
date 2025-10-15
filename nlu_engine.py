@@ -1020,13 +1020,18 @@ class NLUEngine:
         matching_patterns = [pattern for pattern in contact_escalation_patterns if pattern in user_lower]
         
         # Also check for admin-related patterns with flexible spacing
+        # 🚨 FIX: Make admin pattern more specific to avoid false positives with "office"
         admin_patterns = ["admin", "kausapin", "gusto ko", "nga"]
         if any(pattern in user_lower for pattern in admin_patterns) and ("admin" in user_lower or "kausapin" in user_lower):
-            matching_patterns.append("admin_contact_flexible")
+            # 🚨 FIX: Exclude office-related queries from admin contact escalation
+            if not any(office_word in user_lower for office_word in ["office", "hours", "open", "time", "schedule"]):
+                matching_patterns.append("admin_contact_flexible")
         
         # 🚨 CRITICAL: Catch any admin contact request regardless of exact wording
+        # 🚨 FIX: Exclude office-related queries from admin contact escalation
         if "admin" in user_lower and any(word in user_lower for word in ["kausapin", "gusto", "nga", "lang"]):
-            matching_patterns.append("admin_contact_any")
+            if not any(office_word in user_lower for office_word in ["office", "hours", "open", "time", "schedule"]):
+                matching_patterns.append("admin_contact_any")
         
         if matching_patterns:
             # logger.info(f"🎯 CONTACT ESCALATION DETECTED: patterns={matching_patterns}")
@@ -1171,6 +1176,8 @@ class NLUEngine:
         # Priority 11: School information - expanded patterns but lower priority than location
         school_words = [
             "curriculum", "program", "subjects", "classes", "school hours",
+            "office hours", "office open", "office time", "office schedule",  # 🚨 ADD: Office hours patterns
+            "what time", "when does", "opening time", "closing time",  # 🚨 ADD: Time-related patterns
             "looking for", "we need information", "help me understand",
             "available programs", "what programs", "what classes", "school offers",
             # School name and identification queries

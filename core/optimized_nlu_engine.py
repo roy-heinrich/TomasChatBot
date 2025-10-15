@@ -59,7 +59,7 @@ class OptimizedNLUEngine(NLUEngine):
             'question_patterns': re.compile(r'\b(?:what|who|when|where|why|how|which|can|could|would|should|is|are|do|does|did)\b', re.IGNORECASE),
             'name_patterns': re.compile(r'\b(?:i\'m|im|i am|my name is|call me)\s+(\w+)\b', re.IGNORECASE),
             'grade_patterns': re.compile(r'\b(?:grade|g)\s*(\d+)\b', re.IGNORECASE),
-            'contact_patterns': re.compile(r'\b(?:contact|speak|talk|call|message|admin|office)\b', re.IGNORECASE)
+            'contact_patterns': re.compile(r'\b(?:contact|speak|talk|call|message|admin)\b', re.IGNORECASE)
         }
     
     def _create_nlu_cache_key(self, user_input: str, context: Dict = None) -> str:

@@ -6,7 +6,8 @@ __pycache__
 composer.lock
 composer.json
 chatbot_widget.php
-
+/templates
+/Hidden_Files
 Manage_Chatbot.php
 
 chatbot_test_runner.html
