@@ -1444,33 +1444,38 @@ class NLUEngine:
                            "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", 
                            "evening", "greetings", "hiya", "wassup", "howdy"]
         
-        # Use word boundary matching to prevent substring matches
+        # Check for elongated greetings (hi, hii, hiii, hiiii, etc.)
         import re
-        greeting_pattern = r'\b(' + '|'.join(re.escape(greet) for greet in greeting_keywords) + r')\b'
-        if re.search(greeting_pattern, user_lower):
-            confidence = 0.8  # Base confidence for greeting detection
-            
-            # Check for name introduction first (more specific patterns)
-            if any(pattern in user_lower for pattern in ["my name is", "i am called", "i'm called", "im called", "ako si", "ngaean ko si", "ngaean ko"]):
-                intent = Intent.GREETING_WITH_NAME
-                confidence = 0.95
-            
-            # Detect greeting style/mood for dynamic personalization
-            elif any(word in user_lower for word in ["awesome", "great", "fantastic", "wonderful", "amazing", "excited", "!!!", "super", "really good"]):
-                intent = Intent.GREETING_EXCITED
-                confidence = 0.9
-            elif any(word in user_lower for word in ["sir", "ma'am", "please", "good day", "greetings", "salutations", "formal"]):
-                intent = Intent.GREETING_FORMAL
-                confidence = 0.9
-            elif any(word in user_lower for word in ["hiya", "wassup", "howdy", "hey there", "casual"]):
-                intent = Intent.GREETING_CASUAL
-                confidence = 0.9
-            elif any(word in user_lower for word in ["back", "again", "return", "here again", "returning"]):
-                intent = Intent.GREETING_RETURNING_USER
-                confidence = 0.9
-            else:
-                intent = Intent.GREETING_SIMPLE
-                confidence = 0.8
+        elongated_greeting_pattern = r'\b(h+i+|h+e+l+l+o+|h+e+y+)\b'
+        if re.search(elongated_greeting_pattern, user_lower):
+            confidence = 0.9  # High confidence for elongated greetings
+            intent = Intent.GREETING_EXCITED  # Elongated greetings are usually excited
+        else:
+            # Use word boundary matching to prevent substring matches
+            greeting_pattern = r'\b(' + '|'.join(re.escape(greet) for greet in greeting_keywords) + r')\b'
+            if re.search(greeting_pattern, user_lower):
+                confidence = 0.8  # Base confidence for greeting detection
+                
+                # Check for name introduction first (more specific patterns)
+                if any(pattern in user_lower for pattern in ["my name is", "i am called", "i'm called", "im called", "ako si", "ngaean ko si", "ngaean ko"]):
+                    intent = Intent.GREETING_WITH_NAME
+                    confidence = 0.95
+                
+                # Detect greeting style/mood for dynamic personalization
+                elif any(word in user_lower for word in ["awesome", "great", "fantastic", "wonderful", "amazing", "excited", "!!!", "super", "really good"]):
+                    intent = Intent.GREETING_EXCITED
+                    confidence = 0.9
+                elif any(word in user_lower for word in ["sir", "ma'am", "please", "good day", "greetings", "salutations", "formal"]):
+                    intent = Intent.GREETING_FORMAL
+                    confidence = 0.9
+                elif any(word in user_lower for word in ["hiya", "wassup", "howdy", "hey there", "casual"]):
+                    intent = Intent.GREETING_CASUAL
+                    confidence = 0.9
+                elif any(word in user_lower for word in ["back", "again", "return", "here again", "returning"]):
+                    intent = Intent.GREETING_RETURNING_USER
+                    confidence = 0.9
+                else:
+                    intent = Intent.GREETING_SIMPLE
         
         return {"intent": intent, "confidence": confidence}
     

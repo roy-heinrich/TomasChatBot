@@ -415,7 +415,7 @@ class ChatBot:
                     q = q.strip()
                     if len(q) > 10:  # Minimum meaningful question length
                         filtered_questions.append(q)
-                
+            
                 if len(filtered_questions) >= 2:
                     return True, filtered_questions
         
@@ -2451,13 +2451,23 @@ class ChatBot:
     
     def _is_simple_response(self, query: str) -> bool:
         """Check if query is a simple response word"""
+        import re
+        
+        query_lower = query.lower().strip()
+        
+        # Check for elongated greetings first
+        elongated_greeting_pattern = r'^(h+i+|h+e+l+l+o+|h+e+y+)$'
+        if re.match(elongated_greeting_pattern, query_lower):
+            return True
+        
+        # Check for regular simple responses
         simple_responses = {
             'yes', 'no', 'ok', 'okay', 'sure', 'maybe', 'alright', 'fine', 
             'good', 'bad', 'great', 'awesome', 'cool', 'nice', 'thanks', 
             'thank', 'please', 'sorry', 'hello', 'hi', 'hey', 'bye', 
             'goodbye', 'welcome', 'help'
         }
-        return query.lower().strip() in simple_responses
+        return query_lower in simple_responses
     
     async def _handle_simple_response(self, query: str, conversation_history: list, session_id: str) -> str:
         """Handle simple responses with context awareness"""
@@ -2499,7 +2509,13 @@ class ChatBot:
         elif query_lower in ['help']:
             return "I'm here to help! You can ask me about:\n• Teachers and their grades\n• School schedules and hours\n• School activities and programs\n• Contact information\n• Enrollment details\n\nWhat would you like to know?"
         else:
-            return None  # No specific context found
+            # Check for elongated greetings
+            import re
+            elongated_greeting_pattern = r'^(h+i+|h+e+l+l+o+|h+e+y+)$'
+            if re.match(elongated_greeting_pattern, query_lower):
+                return "Hello! Welcome to Tomas SM Bautista Elementary School chatbot. How can I help you today? You can ask about teachers, schedules, school hours, or any other school information."
+            else:
+                return None  # No specific context found
     
     def _is_vague_query(self, query: str) -> bool:
         """Check if query is vague or unclear"""

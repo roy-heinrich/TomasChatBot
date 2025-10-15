@@ -55,7 +55,7 @@ class OptimizedNLUEngine(NLUEngine):
             'emergency_keywords': re.compile(r'\b(?:heart attack|stroke|bleeding|unconscious|dying|ambulance|911|urgent medical|medical emergency|can\'t breathe|not breathing|choking|i\'m having|i am having|need urgent|critical condition)\b', re.IGNORECASE),
             # Safety inquiry patterns - should NOT trigger emergency (comprehensive matching)
             'safety_inquiry_patterns': re.compile(r'\b(?:fire drill|earthquake drill|safety drill|emergency drill|evacuation drill|drill|safety|preparedness|protocol|procedure|emergency procedures|safety procedures|emergency drills|fire drills|earthquake drills|safety drills|evacuation drills|conduct.*drill|practice.*drill|have.*drill)\b', re.IGNORECASE),
-            'greeting_patterns': re.compile(r'\b(?:hi+|hello+|hey+|good morning|good afternoon|good evening|greetings|kumusta|kamusta)\b', re.IGNORECASE),
+            'greeting_patterns': re.compile(r'\b(?:h+i+|h+e+l+l+o+|h+e+y+|good morning|good afternoon|good evening|greetings|kumusta|kamusta)\b', re.IGNORECASE),
             'question_patterns': re.compile(r'\b(?:what|who|when|where|why|how|which|can|could|would|should|is|are|do|does|did)\b', re.IGNORECASE),
             'name_patterns': re.compile(r'\b(?:i\'m|im|i am|my name is|call me)\s+(\w+)\b', re.IGNORECASE),
             'grade_patterns': re.compile(r'\b(?:grade|g)\s*(\d+)\b', re.IGNORECASE),
@@ -286,15 +286,27 @@ class OptimizedNLUEngine(NLUEngine):
     async def _quick_greeting_detection(self, user_input: str, context: Dict = None) -> NLUResult:
         """Fast greeting detection using compiled patterns"""
         from nlu_engine import Intent
+        import re
+        
+        user_lower = user_input.lower()
         
         # Check if this is a greeting + question combination
-        if self._is_greeting_with_question(user_input.lower()):
+        if self._is_greeting_with_question(user_lower):
             # Don't return greeting intent, let other intents be detected
             # Fall back to full analysis for complex cases
             return await super()._analyze_single_intent(user_input, context)
         
+        # Check for elongated greetings (hi, hii, hiii, hiiii, etc.)
+        elongated_greeting_pattern = r'\b(h+i+|h+e+l+l+o+|h+e+y+)\b'
+        if re.search(elongated_greeting_pattern, user_lower):
+            return NLUResult(
+                intent=Intent.GREETING_EXCITED,
+                confidence=0.9,
+                entities=[]
+            )
+        
         # Check for name introduction
-        name_match = self.compiled_patterns['name_patterns'].search(user_input.lower())
+        name_match = self.compiled_patterns['name_patterns'].search(user_lower)
         
         if name_match:
             from entity_extractor import ExtractedEntity
