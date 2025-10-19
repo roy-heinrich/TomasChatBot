@@ -1,7 +1,6 @@
 import os
 import nltk
-
-# Load environment variables from .env file
+from typing import Optional, Any, List, Dict
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -147,6 +146,11 @@ if GROQ_API_KEY:
     if not GROQ_API_KEY.startswith('gsk_'):
         logger.warning("⚠️ GROQ_API_KEY should start with 'gsk_'")
 
+# Validate GROQ_API_KEY before creating ChatBot
+if not GROQ_API_KEY:
+    logger.error("❌ GROQ_API_KEY is required but not set!")
+    raise ValueError("GROQ_API_KEY must be set")
+
 chatbot = ChatBot(groq_key=GROQ_API_KEY)
 
 # Initialize connection pool
@@ -161,9 +165,22 @@ async def initialize_connection_pool():
     except Exception as e:
         logger.error(f"❌ Connection pool initialization error: {e}")
 
-# Initialize on startup
+# Initialize connection pool on startup
 import asyncio
-asyncio.create_task(initialize_connection_pool())
+
+def initialize_on_startup():
+    """Initialize connection pool synchronously"""
+    try:
+        # Create a new event loop for initialization
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(initialize_connection_pool())
+        loop.close()
+    except Exception as e:
+        logger.warning(f"Connection pool initialization failed: {e}")
+
+# Initialize on startup
+initialize_on_startup()
 
 # -----------------------
 # FastAPI app
@@ -269,8 +286,8 @@ app.add_middleware(
 class ChatRequest(BaseModel):
     query: str
     conversation_history: list = []
-    user_timezone: str = None  # Optional timezone parameter
-    session_id: str = None  # Optional session ID for user tracking
+    user_timezone: Optional[str] = None  # Optional timezone parameter
+    session_id: Optional[str] = None  # Optional session ID for user tracking
 
 # -----------------------
 # Supabase fetch helper
@@ -279,12 +296,13 @@ async def fetch_supabase_context() -> str:
     import asyncio
     loop = asyncio.get_event_loop()
 
-    def fetch_sync():
-        result = supabase.table("chatbot_prompts").select("keywords, response").execute()
+    def fetch_sync() -> str:
+        result: Any = supabase.table("chatbot_prompts").select("keywords, response").execute()
         context = ""
-        if result.data:
+        if hasattr(result, 'data') and result.data and isinstance(result.data, list):
             for row in result.data:
-                context += f"Keywords: {row['keywords']}\nResponse: {row['response']}\n\n"
+                if isinstance(row, dict):
+                    context += f"Keywords: {row.get('keywords', '')}\nResponse: {row.get('response', '')}\n\n"
         return context
 
     return await loop.run_in_executor(None, fetch_sync)
@@ -346,8 +364,8 @@ async def chat_endpoint(data: ChatRequest):
         chat_response = await chatbot.chat(
             query, 
             conversation_history=data.conversation_history,
-            user_timezone=data.user_timezone,
-            session_id=data.session_id
+            user_timezone=data.user_timezone or "",
+            session_id=data.session_id or ""
         )
         
         # Log response details
@@ -481,15 +499,20 @@ async def clear_all_caches():
     """Clear all caches - emergency fix for stale results"""
     try:
         # Clear Redis cache
-        if hasattr(chatbot.database_search, 'redis') and chatbot.database_search.redis_available:
+        if hasattr(chatbot.database_search, 'redis') and chatbot.database_search.redis_available and chatbot.database_search.redis:
             chatbot.database_search.redis.flushall()
         
         # Clear in-memory caches
         if hasattr(chatbot.language_detector, 'language_cache'):
             chatbot.language_detector.language_cache.clear()
         
-        if hasattr(chatbot.nlu_engine, 'cache'):
-            chatbot.nlu_engine.cache.clear()
+        # Clear NLU cache if it exists
+        # Note: OptimizedNLUEngine may not have a cache attribute
+        try:
+            if hasattr(chatbot.nlu_engine, 'clear_nlu_cache'):
+                chatbot.nlu_engine.clear_nlu_cache()
+        except AttributeError:
+            pass  # Cache not available
         
         return {"status": "success", "message": "All caches cleared"}
     except Exception as e:
@@ -508,20 +531,32 @@ async def get_cache_status():
         }
         
         # Check Redis cache
-        if hasattr(chatbot.database_search, 'redis') and chatbot.database_search.redis_available:
+        if hasattr(chatbot.database_search, 'redis') and chatbot.database_search.redis_available and chatbot.database_search.redis:
             cache_info["redis_available"] = True
-            cache_info["redis_keys"] = len(chatbot.database_search.redis.keys('*'))
+            try:
+                keys: Any = chatbot.database_search.redis.keys('*')
+                if keys is not None and hasattr(keys, '__len__') and not isinstance(keys, str):
+                    cache_info["redis_keys"] = len(keys)
+                else:
+                    cache_info["redis_keys"] = 0
+            except Exception:
+                cache_info["redis_keys"] = 0
         
         # Check in-memory caches
         if hasattr(chatbot.language_detector, 'language_cache'):
             cache_info["language_cache_size"] = len(chatbot.language_detector.language_cache)
         
-        if hasattr(chatbot.nlu_engine, 'cache'):
-            cache_info["nlu_cache_size"] = len(chatbot.nlu_engine.cache)
+        # Check NLU cache if it exists
+        try:
+            if hasattr(chatbot.nlu_engine, 'get_nlu_cache_stats'):
+                nlu_stats = chatbot.nlu_engine.get_nlu_cache_stats()
+                cache_info["nlu_cache_size"] = nlu_stats.get('cached_intents', 0)
+        except AttributeError:
+            pass  # Cache not available
         
         # Check last cleanup time
-        if hasattr(chatbot, 'cache_manager') and hasattr(chatbot.cache_manager, 'last_cleanup'):
-            cache_info["last_cleanup"] = datetime.fromtimestamp(chatbot.cache_manager.last_cleanup).isoformat()
+        # Note: cache_manager may not be available in all ChatBot instances
+        cache_info["last_cleanup"] = "Not available"
         
         return cache_info
         
@@ -566,7 +601,7 @@ async def get_connection_pool_stats():
         }
 
 @app.get('/admin/preprocessing-cache-stats')
-async def get_preprocessing_cache_stats():
+async def get_preprocessing_cache_stats_endpoint():
     """Get query preprocessing cache statistics"""
     try:
         stats = get_preprocessing_cache_stats()
@@ -687,11 +722,15 @@ async def cache_status():
             cache_info["redis_available"] = chatbot.database_search.redis_available
             cache_info["cache_ttl"] = getattr(chatbot.database_search, 'cache_ttl', None)
             
-            if chatbot.database_search.redis_available:
+            if chatbot.database_search.redis_available and chatbot.database_search.redis:
                 try:
-                    keys = chatbot.database_search.redis.keys("search:*")
-                    cache_info["cache_entries"] = len(keys)
-                    cache_info["message"] = f"Redis cache active with {len(keys)} entries"
+                    keys: Any = chatbot.database_search.redis.keys("search:*")
+                    if keys is not None and hasattr(keys, '__len__') and not isinstance(keys, str):
+                        cache_info["cache_entries"] = len(keys)
+                        cache_info["message"] = f"Redis cache active with {len(keys)} entries"
+                    else:
+                        cache_info["cache_entries"] = 0
+                        cache_info["message"] = "Redis cache active with 0 entries"
                 except:
                     cache_info["message"] = "Redis cache active but unable to count entries"
             else:

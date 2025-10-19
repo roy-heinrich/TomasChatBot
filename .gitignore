@@ -1,4 +1,3 @@
-docs/
 .env
 .venv/
 __pycache__
@@ -9,6 +8,7 @@ chatbot_widget.php
 /templates
 /Hidden_Files
 Manage_Chatbot.php
+.vscode/
 
 chatbot_test_runner.html
 setup_env.py
@@ -29,3 +29,4 @@ Comprehensive_Test_server.py
 Comprehensive_Test_dashboard.html
 chatbot_feature_matrix.py
 iso25010_evaluation_1760215688.json
+test_chatbot.html
