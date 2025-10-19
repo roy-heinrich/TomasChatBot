@@ -165,27 +165,26 @@ async def initialize_connection_pool():
     except Exception as e:
         logger.error(f"❌ Connection pool initialization error: {e}")
 
-# Initialize connection pool on startup
-import asyncio
+# Connection pool will be initialized on FastAPI startup event
 
-def initialize_on_startup():
-    """Initialize connection pool synchronously"""
+# -----------------------
+# FastAPI app with lifespan
+# -----------------------
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize connection pool on startup"""
     try:
-        # Create a new event loop for initialization
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(initialize_connection_pool())
-        loop.close()
+        await initialize_connection_pool()
     except Exception as e:
         logger.warning(f"Connection pool initialization failed: {e}")
+    
+    yield  # App runs here
+    
+    # Cleanup code can go here if needed
 
-# Initialize on startup
-initialize_on_startup()
-
-# -----------------------
-# FastAPI app
-# -----------------------
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 # -----------------------
 # SQL Injection Protection Middleware
