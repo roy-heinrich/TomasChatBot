@@ -41,6 +41,7 @@ from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi import Depends
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -50,6 +51,7 @@ from core.security import sql_protector
 from core.enhanced_security import enhanced_security
 from core.supabase_pool import connection_pool, get_pool_stats, check_pool_health
 from core.query_preprocessor import get_preprocessing_cache_stats
+from core.endpoint_security import endpoint_security_middleware, require_admin_access
 
 # Configure logging to reduce verbosity
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
@@ -185,6 +187,14 @@ async def lifespan(app: FastAPI):
     # Cleanup code can go here if needed
 
 app = FastAPI(lifespan=lifespan)
+
+# -----------------------
+# Endpoint Security Middleware (FIRST - before other middlewares)
+# -----------------------
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    """Protect admin endpoints with API key authentication"""
+    return await endpoint_security_middleware(request, call_next)
 
 # -----------------------
 # SQL Injection Protection Middleware
@@ -431,7 +441,7 @@ async def clear_context():
 
 
 # 🚀 NEW: Admin logs endpoint
-@app.get("/admin/logs")
+@app.get("/admin/logs", dependencies=[Depends(require_admin_access)])
 async def get_logs():
     try:
         # Read recent logs from log file or memory
@@ -459,7 +469,7 @@ async def get_logs():
         )
 
 # 🚀 NEW: Performance metrics endpoint
-@app.get("/admin/metrics")
+@app.get("/admin/metrics", dependencies=[Depends(require_admin_access)])
 async def get_performance_metrics():
     try:
         # Get metrics from our optimized chatbot
@@ -493,7 +503,7 @@ async def get_performance_metrics():
 
 
 # 🚀 NEW: Clear all caches endpoint
-@app.post("/admin/clear-cache")
+@app.post("/admin/clear-cache", dependencies=[Depends(require_admin_access)])
 async def clear_all_caches():
     """Clear all caches - emergency fix for stale results"""
     try:
@@ -517,7 +527,7 @@ async def clear_all_caches():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-@app.get("/admin/cache-status")
+@app.get("/admin/cache-status", dependencies=[Depends(require_admin_access)])
 async def get_cache_status():
     """Get cache status and health information"""
     try:
@@ -584,7 +594,7 @@ async def health_check():
             "message": f"Health check failed: {str(e)}"
         }
 
-@app.get('/admin/connection-pool-stats')
+@app.get('/admin/connection-pool-stats', dependencies=[Depends(require_admin_access)])
 async def get_connection_pool_stats():
     """Get connection pool statistics"""
     try:
@@ -599,7 +609,7 @@ async def get_connection_pool_stats():
             "message": str(e)
         }
 
-@app.get('/admin/preprocessing-cache-stats')
+@app.get('/admin/preprocessing-cache-stats', dependencies=[Depends(require_admin_access)])
 async def get_preprocessing_cache_stats_endpoint():
     """Get query preprocessing cache statistics"""
     try:
