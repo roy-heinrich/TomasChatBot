@@ -298,6 +298,22 @@ Provide a natural, helpful response based on the analysis:"""
         
         return f"{greeting} {introduction}"
     
+    def _generate_appreciation_response(self, query: str, lang: str, user_name: str) -> str:
+        """Generate appropriate response for gratitude/appreciation"""
+        
+        if lang in ["tl", "akl"]:
+            # Tagalog/Aklanon response
+            if user_name:
+                return f"Walang anuman, {user_name}! Masayang makatulong. Kung may iba pang katanungan, huwag mag-atubiling magtanong!"
+            else:
+                return "Walang anuman! Masayang makatulong. Kung may iba pang katanungan, huwag mag-atubiling magtanong!"
+        else:
+            # English response
+            if user_name:
+                return f"You're welcome, {user_name}! Happy to help. Let me know if you need anything else!"
+            else:
+                return "You're welcome! Happy to help. Let me know if you need anything else!"
+    
     async def generate_response(self, query: str, context: str, lang: str, 
                               conversation_history: List[Dict] = None, 
                               nlu_info: Dict = None, user_name: str = "", 
@@ -310,6 +326,10 @@ Provide a natural, helpful response based on the analysis:"""
             # Special handling for greetings - provide proper introduction
             if nlu_info and nlu_info.get('intent') in ['greeting_simple', 'greeting_with_name', 'greeting_casual', 'greeting_formal', 'greeting_excited', 'greeting_returning_user']:
                 return self._generate_greeting_response(query, lang, user_name, nlu_info)
+            
+            # Special handling for gratitude/appreciation - simple acknowledgment
+            if nlu_info and nlu_info.get('intent') in ['appreciation', 'APPRECIATION']:
+                return self._generate_appreciation_response(query, lang, user_name)
             
             # Build the system prompt
             system_prompt = self.get_system_prompt(lang, user_name, nlu_info, entities, confidence)

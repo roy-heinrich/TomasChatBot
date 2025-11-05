@@ -67,6 +67,7 @@ class LanguageDetector:
         if best_language[1] > 0.6:  # 60% confidence threshold
             detected_lang = best_language[0]
             # Map Aklanon to Tagalog for response consistency
+            # (Most Aklanon speakers understand Tagalog)
             if detected_lang == "akl":
                 return "tl"
             return detected_lang

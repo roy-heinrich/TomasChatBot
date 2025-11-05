@@ -1115,17 +1115,22 @@ class ChatBot:
             if session_id and not conversation_history:
                 conversation_history = self.conversation_memory.get_conversation_history(session_id)
             
-            # Check for mixed-language input
-            if confidence < 0.7:
-                # logger.info("🔍 Low confidence language detection - may be mixed language")  # Commented out debug logs
-                # Use context-aware translation for mixed languages
+            # IMPROVED: For short queries or follow-up questions, prioritize conversation context
+            is_short_query = len(query.split()) < 4  # Short queries like "how about grade 5"
+            is_follow_up = any(word in query.lower() for word in ["how about", "what about", "and", "also"])
+            
+            # Check for mixed-language input OR short follow-up queries
+            if confidence < 0.7 or (is_short_query and is_follow_up):
+                # logger.info("🔍 Low confidence language detection or short follow-up query - using conversation context")
+                # Use context-aware translation for mixed languages or follow-up queries
                 if conversation_history:
                     context_lang, context_confidence = self._detect_context_language(conversation_history)
-                    if context_confidence > confidence:
+                    # For follow-up queries, always prefer conversation context
+                    if (is_short_query and is_follow_up) or context_confidence > confidence:
                         detected_lang = context_lang
                         response_lang = self._map_to_response_language(detected_lang)
-                        confidence = context_confidence
-                        # logger.info(f"🌍 Context-based language detection: {detected_lang} → {response_lang} (confidence: {confidence:.2f})")  # Commented out debug logs
+                        confidence = max(context_confidence, 0.8)  # Boost confidence for context-based detection
+                        # logger.info(f"🌍 Context-based language detection: {detected_lang} → {response_lang} (confidence: {confidence:.2f})")
             
             # 2. Get NLU analysis for intent with enhanced context
             nlu_context = {
@@ -1661,7 +1666,7 @@ class ChatBot:
                     # logger.info(f"😊 {nlu_result.intent.value} detected - handling emotional expression")  # Commented out debug logs
                     # For emotional expressions, provide empathetic response
                     context = "User is expressing their emotional state"
-                elif nlu_result and nlu_result.intent.value == 'appreciation':
+                elif nlu_result and nlu_result.intent.value in ['appreciation', 'APPRECIATION']:
                     # logger.info(f"🙏 {nlu_result.intent.value} detected - handling appreciation/thanks")  # Commented out debug logs
                     # For appreciation/thanks, provide friendly acknowledgment
                     context = "User is expressing appreciation or thanks"
@@ -2520,6 +2525,11 @@ class ChatBot:
     def _is_vague_query(self, query: str) -> bool:
         """Check if query is vague or unclear"""
         query_lower = query.lower().strip()
+        
+        # Check for appreciation patterns first - these are NOT vague
+        appreciation_patterns = ['thank you', 'thanks', 'thank u', 'thx', 'ty', 'tysm', 'salamat', 'maraming salamat', 'damo nga salamat', 'salamat gid']
+        if any(pattern in query_lower for pattern in appreciation_patterns):
+            return False
         
         # Very short queries (1-2 words) that aren't simple responses
         words = query_lower.split()

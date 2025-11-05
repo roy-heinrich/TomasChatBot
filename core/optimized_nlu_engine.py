@@ -56,6 +56,7 @@ class OptimizedNLUEngine(NLUEngine):
             # Safety inquiry patterns - should NOT trigger emergency (comprehensive matching)
             'safety_inquiry_patterns': re.compile(r'\b(?:fire drill|earthquake drill|safety drill|emergency drill|evacuation drill|drill|safety|preparedness|protocol|procedure|emergency procedures|safety procedures|emergency drills|fire drills|earthquake drills|safety drills|evacuation drills|conduct.*drill|practice.*drill|have.*drill)\b', re.IGNORECASE),
             'greeting_patterns': re.compile(r'\b(?:h+i+|h+e+l+l+o+|h+e+y+|good morning|good afternoon|good evening|greetings|kumusta|kamusta)\b', re.IGNORECASE),
+            'gratitude_patterns': re.compile(r'\b(?:thank you|thanks|thank u|thx|ty|tysm|salamat|maraming salamat|damo nga salamat|salamat gid)\b', re.IGNORECASE),
             'question_patterns': re.compile(r'\b(?:what|who|when|where|why|how|which|can|could|would|should|is|are|do|does|did)\b', re.IGNORECASE),
             'name_patterns': re.compile(r'\b(?:i\'m|im|i am|my name is|call me)\s+(\w+)\b', re.IGNORECASE),
             'grade_patterns': re.compile(r'\b(?:grade|g)\s*(\d+)\b', re.IGNORECASE),
@@ -218,6 +219,15 @@ class OptimizedNLUEngine(NLUEngine):
         # Quick greeting check
         if self.compiled_patterns['greeting_patterns'].search(user_lower):
             return await self._quick_greeting_detection(user_input, context)
+        
+        # Quick gratitude check
+        if self.compiled_patterns['gratitude_patterns'].search(user_lower):
+            from nlu_engine import Intent
+            return NLUResult(
+                intent=Intent.APPRECIATION,
+                confidence=0.9,
+                entities=[]
+            )
         
         # Quick contact escalation check
         if self.compiled_patterns['contact_patterns'].search(user_lower):

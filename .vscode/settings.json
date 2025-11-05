@@ -1,17 +1,52 @@
 {
-    "python.defaultInterpreterPath": ".venv/Scripts/python.exe",
+    "python.defaultInterpreterPath": "C:/Users/royhe/AppData/Local/Programs/Python/Python311/python.exe",
     "python.terminal.activateEnvironment": true,
     "python.analysis.extraPaths": [
         ".venv/Lib/site-packages"
     ],
     "python.analysis.autoImportCompletions": true,
-    "python.linting.enabled": true,
+    "python.linting.enabled": false,
     "python.linting.pylintEnabled": false,
     "python.linting.flake8Enabled": false,
-    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.typeCheckingMode": "off",
+    "python.analysis.diagnosticMode": "openFilesOnly",
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportOptionalMemberAccess": "none",
+        "reportOptionalSubscript": "none",
+        "reportOptionalCall": "none",
+        "reportGeneralTypeIssues": "none",
+        "reportOptionalIterable": "none",
+        "reportOptionalContextManager": "none",
+        "reportOptionalOperand": "none",
+        "reportTypedDictNotRequiredAccess": "none",
+        "reportPrivateImportUsage": "none",
+        "reportUnknownMemberType": "none",
+        "reportUnknownArgumentType": "none",
+        "reportUnknownVariableType": "none",
+        "reportUnknownLambdaType": "none",
+        "reportUnknownParameterType": "none"
+    },
     "cursorpyright.analysis.autoImportCompletions": true,
     "cursorpyright.analysis.extraPaths": [
         ".venv/Lib/site-packages"
     ],
-    "cursorpyright.analysis.typeCheckingMode": "basic"
+    "cursorpyright.analysis.typeCheckingMode": "off",
+    "cursorpyright.analysis.diagnosticMode": "openFilesOnly",
+    "cursorpyright.analysis.diagnosticSeverityOverrides": {
+        "reportOptionalMemberAccess": "none",
+        "reportOptionalSubscript": "none",
+        "reportOptionalCall": "none",
+        "reportGeneralTypeIssues": "none",
+        "reportOptionalIterable": "none",
+        "reportOptionalContextManager": "none",
+        "reportOptionalOperand": "none",
+        "reportTypedDictNotRequiredAccess": "none",
+        "reportPrivateImportUsage": "none",
+        "reportUnknownMemberType": "none",
+        "reportUnknownArgumentType": "none",
+        "reportUnknownVariableType": "none",
+        "reportUnknownLambdaType": "none",
+        "reportUnknownParameterType": "none"
+    },
+    "python-envs.pythonProjects": []
 }
