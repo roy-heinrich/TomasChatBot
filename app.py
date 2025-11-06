@@ -256,37 +256,59 @@ async def sql_injection_middleware(request: Request, call_next):
             status_code=500
         )
 
-# ✅ Enhanced CORS config for Railway (PRIMARY) and Render (BACKUP) deployments
+# ✅ Hardened CORS configuration (env-driven, no wildcards in production)
+# Set ALLOWED_ORIGINS in your environment as a comma-separated list of exact origins
+#   Example: ALLOWED_ORIGINS="https://yourdomain.com,https://www.yourdomain.com"
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
+
+# Development defaults (local testing only)
+_DEV_ORIGINS = [
+    "http://localhost",
+    "http://localhost:3000",
+    "http://localhost:8080",
+    "http://localhost:5000",
+    "http://localhost:8000",
+    "http://127.0.0.1",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8080",
+    "http://127.0.0.1:5000",
+    "http://127.0.0.1:8000",
+]
+
+_origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
+if _origins_env:
+    allowed_origins = [o.strip() for o in _origins_env.split(",") if o.strip()]
+else:
+    # If not explicitly provided, use permissive localhost-only defaults in non-production
+    allowed_origins = _DEV_ORIGINS if ENVIRONMENT != "production" else []
+    if ENVIRONMENT == "production":
+        logger.warning(
+            "CORS: ALLOWED_ORIGINS not set for production. Defaulting to no cross-origin access. "
+            "Set ALLOWED_ORIGINS to a comma-separated list of exact origins (e.g., https://yourdomain.com)."
+        )
+
+# Remove any wildcards or unsupported patterns
+allowed_origins = [o for o in allowed_origins if o != "*" and "*" not in o]
+
+# Credentials are allowed only when specific origins are configured
+allow_credentials_flag = bool(allowed_origins) and "*" not in allowed_origins
+
+# Restrict methods/headers to minimum necessary
+_allow_methods = ["GET", "POST", "OPTIONS"]
+_allow_headers = [
+    "Accept",
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Origin",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost",
-        "http://localhost:3000", 
-        "http://localhost:8080",
-        "http://localhost:5000",
-        "http://localhost:8000",
-        "http://127.0.0.1",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8080", 
-        "http://127.0.0.1:5000",
-        "http://127.0.0.1:8000",
-        "https://*.railway.app",  # Railway deployment URLs (PRIMARY)
-        "https://tomaschatbot.onrender.com",  # Render deployment URL (BACKUP)
-        "*"  # Allow all origins for development
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=[
-        "Accept",
-        "Accept-Language", 
-        "Content-Language",
-        "Content-Type",
-        "Authorization",
-        "X-Requested-With",
-        "Origin",
-        "Access-Control-Request-Method",
-        "Access-Control-Request-Headers"
-    ],
+    allow_origins=allowed_origins,
+    allow_credentials=allow_credentials_flag,
+    allow_methods=_allow_methods,
+    allow_headers=_allow_headers,
 )
 
 # -----------------------
