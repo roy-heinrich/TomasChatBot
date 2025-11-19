@@ -1483,9 +1483,11 @@ class NLUEngine:
         """Check if this is a greeting combined with a question"""
         # Common greeting words
         greeting_words = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", 
-                         "good afternoon", "good evening", "magandang umaga", "magandang hapon", 
-                         "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", 
-                         "evening", "greetings", "hiya", "wassup", "howdy"]
+                         "good afternoon", "good evening", "good day", "good night", "magandang umaga", 
+                         "magandang hapon", "magandang gabi", "maayong aga", "maayong hapon", 
+                         "maayong gab-i", "magandang araw", "maayong adlaw", "maayong gabii", 
+                         "maayong buntag", "morning", "afternoon", "evening", "night", "day",
+                         "greetings", "hiya", "wassup", "howdy", "hey there", "hello there", "hi there"]
         
         # Question words that indicate there's a real question
         question_words = ["what", "where", "when", "who", "how", "why", "which", "can", "could", 
