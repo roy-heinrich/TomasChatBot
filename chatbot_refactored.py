@@ -777,7 +777,7 @@ class ChatBot:
         
         # Multi-word greeting phrases that should be recognized as complete greetings
         multi_word_greetings = [
-            "good morning", "good afternoon", "good evening", "good day", "good night",
+            "good morning", "good afternoon", "good evening", "good day", "good night", "good noon",
             "magandang umaga", "magandang hapon", "magandang gabi", "magandang araw",
             "maayong aga", "maayong hapon", "maayong gab-i", "maayong adlaw", "maayong gabii", "maayong buntag",
             "hey there", "hello there", "hi there"
@@ -1168,6 +1168,7 @@ class ChatBot:
                 "word_count": len(query.split())
             }
             nlu_result = await self.nlu_engine.analyze_intent(query, nlu_context)
+            logger.info(f"🎯 NLU Intent: {nlu_result.intent.value if nlu_result else 'None'} for query: '{query}'")
             
             # Emergency detection is now handled by NLU engine with context awareness
             
@@ -1373,7 +1374,18 @@ class ChatBot:
                             any(phrase in query.lower() for phrase in tagalog_name_phrases) or
                             any(phrase in translated_query.lower() for phrase in english_name_phrases))
             
-            # Debug removed
+            # 🚨 CRITICAL FIX: Exclude greeting+name introductions from the name_query check
+            # "hello, my name is Heinz" should be a GREETING, not a name_query
+            # But "what is my name" should be a name_query
+            greeting_with_name_patterns = ["hello, my name", "hi, my name", "hi, i'm", "hello, i'm", 
+                                           "good morning, my name", "good afternoon, my name", "good evening, my name",
+                                           "kumusta, my name", "kumusta, i'm", "kumusta, ang pangalan", "kumusta, ang pang",
+                                           "magandang, my name", "maayong, my name"]
+            
+            if is_name_query and any(pattern in query.lower() for pattern in greeting_with_name_patterns):
+                # This is a greeting with name introduction, not a name query
+                # Let the normal NLU processing handle it
+                is_name_query = False
             
             if is_name_query:
                 # CRITICAL FIX: Get user name directly from conversation memory

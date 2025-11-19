@@ -306,16 +306,8 @@ class OptimizedNLUEngine(NLUEngine):
             # Fall back to full analysis for complex cases
             return await super()._analyze_single_intent(user_input, context)
         
-        # Check for elongated greetings (hi, hii, hiii, hiiii, etc.)
-        elongated_greeting_pattern = r'\b(h+i+|h+e+l+l+o+|h+e+y+)\b'
-        if re.search(elongated_greeting_pattern, user_lower):
-            return NLUResult(
-                intent=Intent.GREETING_EXCITED,
-                confidence=0.9,
-                entities=[]
-            )
-        
-        # Check for name introduction
+        # 🚨 CRITICAL FIX: Check for name introduction FIRST before elongated greeting check
+        # This ensures "hello, my name is Heinz" is recognized as greeting_with_name, not greeting_excited
         name_match = self.compiled_patterns['name_patterns'].search(user_lower)
         
         if name_match:
@@ -324,6 +316,16 @@ class OptimizedNLUEngine(NLUEngine):
                 intent=Intent.GREETING_WITH_NAME,
                 confidence=0.90,
                 entities=[ExtractedEntity(entity_type="name", value=name_match.group(1), confidence=0.9)]
+            )
+        
+        # Check for elongated greetings (hi, hii, hiii, hiiii, etc.)
+        # Only check this AFTER we've ruled out name introductions
+        elongated_greeting_pattern = r'\b(h+i+|h+e+l+l+o+|h+e+y+)\b'
+        if re.search(elongated_greeting_pattern, user_lower):
+            return NLUResult(
+                intent=Intent.GREETING_EXCITED,
+                confidence=0.9,
+                entities=[]
             )
         
         return NLUResult(

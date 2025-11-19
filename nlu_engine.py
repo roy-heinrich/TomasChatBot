@@ -1444,6 +1444,13 @@ class NLUEngine:
                            "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", 
                            "evening", "greetings", "hiya", "wassup", "howdy"]
         
+        # 🚨 CRITICAL FIX: Check for name introduction FIRST, before elongated greeting check
+        # This ensures "hello, my name is Heinz" is detected as greeting_with_name, not greeting_excited
+        if any(pattern in user_lower for pattern in ["my name is", "i am called", "i'm called", "im called", "ako si", "ngaean ko si", "ngaean ko"]):
+            intent = Intent.GREETING_WITH_NAME
+            confidence = 0.95
+            return {"intent": intent, "confidence": confidence}
+        
         # Check for elongated greetings (hi, hii, hiii, hiiii, etc.)
         import re
         elongated_greeting_pattern = r'\b(h+i+|h+e+l+l+o+|h+e+y+)\b'
@@ -1456,13 +1463,8 @@ class NLUEngine:
             if re.search(greeting_pattern, user_lower):
                 confidence = 0.8  # Base confidence for greeting detection
                 
-                # Check for name introduction first (more specific patterns)
-                if any(pattern in user_lower for pattern in ["my name is", "i am called", "i'm called", "im called", "ako si", "ngaean ko si", "ngaean ko"]):
-                    intent = Intent.GREETING_WITH_NAME
-                    confidence = 0.95
-                
                 # Detect greeting style/mood for dynamic personalization
-                elif any(word in user_lower for word in ["awesome", "great", "fantastic", "wonderful", "amazing", "excited", "!!!", "super", "really good"]):
+                if any(word in user_lower for word in ["awesome", "great", "fantastic", "wonderful", "amazing", "excited", "!!!", "super", "really good"]):
                     intent = Intent.GREETING_EXCITED
                     confidence = 0.9
                 elif any(word in user_lower for word in ["sir", "ma'am", "please", "good day", "greetings", "salutations", "formal"]):
@@ -1491,13 +1493,21 @@ class NLUEngine:
         
         # Question words that indicate there's a real question
         question_words = ["what", "where", "when", "who", "how", "why", "which", "can", "could", 
-                         "would", "should", "is", "are", "do", "does", "did", "will", "have", "has",
+                         "would", "should", "do", "does", "did", "will", "have", "has",
                          "ano", "saan", "kailan", "sino", "paano", "bakit", "alin", "pwed", "maaari", 
                          "gusto", "kailangan", "?", "time", "class", "start", "adviser", "grade"]
         
         # Check if query contains both greeting and question words
         has_greeting = any(word in user_lower for word in greeting_words)
         has_question = any(word in user_lower for word in question_words)
+        
+        # If it's a name introduction (contains "my name is" or "i am" or "i'm"), don't treat it as a greeting with question
+        # Even though "is" or "am" or "are" might be present
+        name_intro_patterns = ["my name is", "i am", "i'm", "ang pangalan ko ay", "ako si", "ako ay"]
+        has_name_intro = any(pattern in user_lower for pattern in name_intro_patterns)
+        
+        if has_name_intro:
+            return False
         
         return has_greeting and has_question
     
