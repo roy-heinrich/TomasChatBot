@@ -1464,8 +1464,16 @@ class ChatBot:
                     search_results = []
                     best_result = None
                     
-                    if self._is_simple_response(query):
-                        # Handle simple responses (yes, no, ok, etc.)
+                    # 🚨 FIX: Check for greetings FIRST before treating as simple_response
+                    # This ensures greetings are handled with proper responses, not as generic simple responses
+                    is_greeting = nlu_result and nlu_result.intent.value in ['greeting_simple', 'greeting_with_name', 'greeting_excited', 'greeting_formal', 'greeting_casual', 'greeting_returning_user']
+                    
+                    if is_greeting:
+                        # Skip simple_response handling for greetings - let them flow through to proper greeting response
+                        search_results = []
+                        best_result = None
+                    elif self._is_simple_response(query):
+                        # Handle simple responses (yes, no, ok, etc.) - but NOT greetings
                         context = await self._handle_simple_response(query, conversation_history, session_id)
                         if context:
                             # Return simple response directly without AI processing
@@ -2571,9 +2579,9 @@ class ChatBot:
         
         # Check for greeting patterns - these are NOT vague (they're complete expressions)
         greeting_patterns = [
-            'good morning', 'good afternoon', 'good evening', 'good day', 'good night',
-            'magandang umaga', 'magandang hapon', 'magandang gabi', 'magandang araw',
-            'maayong aga', 'maayong hapon', 'maayong gab-i', 'maayong adlaw',
+            'good morning', 'good afternoon', 'good evening', 'good noon', 'good day', 'good night',
+            'magandang umaga', 'magandang hapon', 'magandang gabi', 'magandang tanghali', 'magandang araw',
+            'maayong aga', 'maayong hapon', 'maayong gab-i', 'maayong tanghali', 'maayong adlaw',
             'maayong gabii', 'maayong buntag', 'hey there', 'hello there', 'hi there',
             'hello', 'hi', 'hey', 'kumusta', 'kamusta', 'hiya', 'howdy', 'greetings'
         ]

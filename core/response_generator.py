@@ -248,53 +248,87 @@ ANALYSIS REQUIRED:
 Provide a natural, helpful response based on the analysis:"""
     
     def _generate_greeting_response(self, query: str, lang: str, user_name: str, nlu_info: Dict) -> str:
-        """Generate proper greeting response with introduction"""
+        """Generate proper greeting response with introduction, matching the user's greeting style"""
+        
+        # Extract the greeting word/phrase from the user's query
+        query_lower = query.lower()
+        user_greeting = "Hi"  # Default for English
+        user_greeting_tl = "Kumusta"  # Default for Tagalog
+        
+        # Check for specific time-of-day greetings and extract them
+        time_greetings_map = {
+            'good morning': ('Good morning', 'Magandang umaga'),
+            'good afternoon': ('Good afternoon', 'Magandang hapon'),
+            'good evening': ('Good evening', 'Magandang gabi'),
+            'good noon': ('Good noon', 'Magandang tanghali'),
+            'magandang umaga': ('Good morning', 'Magandang umaga'),
+            'magandang hapon': ('Good afternoon', 'Magandang hapon'),
+            'magandang gabi': ('Good evening', 'Magandang gabi'),
+            'magandang tanghali': ('Good noon', 'Magandang tanghali'),
+            'maayong aga': ('Good morning', 'Maayong aga'),
+            'maayong hapon': ('Good afternoon', 'Maayong hapon'),
+            'maayong gab-i': ('Good evening', 'Maayong gab-i'),
+            'maayong gabii': ('Good evening', 'Maayong gabii'),
+            'maayong buntag': ('Good morning', 'Maayong buntag'),
+            'kumusta': ('Hey', 'Kumusta'),
+            'kamusta': ('Hey', 'Kamusta'),
+            'hiya': ('Hey', 'Hiya'),
+            'hello': ('Hello', 'Hello'),
+            'hi': ('Hi', 'Hi'),
+        }
+        
+        # Find matching greeting in user's query
+        for greeting_phrase, (en_greeting, tl_greeting) in time_greetings_map.items():
+            if greeting_phrase in query_lower:
+                user_greeting = en_greeting
+                user_greeting_tl = tl_greeting
+                break
         
         # Base introduction in both languages
         if lang in ["tl", "akl"]:
             # Tagalog/Aklanon greeting
             if user_name:
-                greeting = f"Kumusta, {user_name}! Ako si TOMAS, ang digital assistant ng Tomas SM. Bautista Elementary School."
+                greeting = f"{user_greeting_tl}, {user_name}! Ako si TOMAS, ang digital assistant ng Tomas SM. Bautista Elementary School."
             else:
-                greeting = "Kumusta! Ako si TOMAS, ang digital assistant ng Tomas SM. Bautista Elementary School."
+                greeting = f"{user_greeting_tl}! Ako si TOMAS, ang digital assistant ng Tomas SM. Bautista Elementary School."
             
             introduction = "Tumutulong ako sa mga tanong tungkol sa paaralan, mga guro, aktibidad, at iba pang impormasyon. Paano kita matutulungan ngayon?"
             
         else:
             # English greeting
             if user_name:
-                greeting = f"Hi {user_name}! I'm TOMAS, the digital assistant for Tomas SM. Bautista Elementary School."
+                greeting = f"{user_greeting} {user_name}! I'm TOMAS, the digital assistant for Tomas SM. Bautista Elementary School."
             else:
-                greeting = "Hi! I'm TOMAS, the digital assistant for Tomas SM. Bautista Elementary School."
+                greeting = f"{user_greeting}! I'm TOMAS, the digital assistant for Tomas SM. Bautista Elementary School."
             
             introduction = "I help with questions about the school, teachers, activities, and other information. How can I assist you today?"
         
-        # Customize based on greeting type
+        # Customize based on greeting type (only for excited/formal/casual when no specific time-of-day greeting)
         intent = nlu_info.get('intent', 'greeting_simple')
         
-        if intent == 'greeting_excited':
+        if intent == 'greeting_excited' and 'good' not in query_lower:
             if lang in ["tl", "akl"]:
-                greeting = greeting.replace("Kumusta", "Kumusta! Ang saya!")
+                greeting = greeting.replace(user_greeting_tl, f"{user_greeting_tl}! Ang saya!")
             else:
-                greeting = greeting.replace("Hi", "Hi! Great to see you!")
+                greeting = greeting.replace(user_greeting, f"{user_greeting}! Great to see you!")
         
-        elif intent == 'greeting_formal':
+        elif intent == 'greeting_formal' and 'good' not in query_lower:
             if lang in ["tl", "akl"]:
-                greeting = greeting.replace("Kumusta", "Magandang araw po")
+                greeting = greeting.replace(user_greeting_tl, "Magandang araw po")
             else:
-                greeting = greeting.replace("Hi", "Good day")
+                greeting = greeting.replace(user_greeting, "Good day")
         
-        elif intent == 'greeting_casual':
+        elif intent == 'greeting_casual' and 'good' not in query_lower:
             if lang in ["tl", "akl"]:
-                greeting = greeting.replace("Kumusta", "Kumusta!")
+                greeting = greeting.replace(user_greeting_tl, f"{user_greeting_tl}!")
             else:
-                greeting = greeting.replace("Hi", "Hey there!")
+                greeting = greeting.replace(user_greeting, "Hey there!")
         
-        elif intent == 'greeting_returning_user':
+        elif intent == 'greeting_returning_user' and 'good' not in query_lower:
             if lang in ["tl", "akl"]:
-                greeting = greeting.replace("Kumusta", "Kumusta! Welcome back!")
+                greeting = greeting.replace(user_greeting_tl, f"{user_greeting_tl}! Welcome back!")
             else:
-                greeting = greeting.replace("Hi", "Hi! Welcome back!")
+                greeting = greeting.replace(user_greeting, f"{user_greeting}! Welcome back!")
         
         return f"{greeting} {introduction}"
     

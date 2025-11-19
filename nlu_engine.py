@@ -920,6 +920,11 @@ class NLUEngine:
         
         for phrase, (intent, confidence) in exact_phrases.items():
             if phrase in user_lower:
+                # But check if this is a greeting + name introduction first
+                name_patterns = ["my name is", "i am called", "i'm called", "im called", "i'm", "ako si", "ngaean ko si", "ngaean ko", "ako ay"]
+                if any(pattern in user_lower for pattern in name_patterns):
+                    # This is a greeting with name, not just a simple greeting
+                    return NLUResult(Intent.GREETING_WITH_NAME, 0.95, [])
                 # logger.info(f"🎯 Exact phrase match: '{phrase}' → {intent.value}")
                 return NLUResult(intent, confidence, [])
         
@@ -1093,7 +1098,7 @@ class NLUEngine:
             return NLUResult(Intent.STAFF_INQUIRY, 0.7, [])
         
         # Priority 3: Enhanced greeting classification with mood/style detection
-        greeting_keywords = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", "good afternoon", "good evening", "magandang umaga", "magandang hapon", "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", "evening", "greetings", "hiya", "wassup", "howdy"]
+        greeting_keywords = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", "good afternoon", "good evening", "good noon", "magandang umaga", "magandang hapon", "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", "noon", "evening", "greetings", "hiya", "wassup", "howdy"]
         
         # Use word boundary matching to prevent substring matches
         import re
@@ -1118,7 +1123,7 @@ class NLUEngine:
         
         # Priority 4: Name queries - asking about their own name
         name_query_patterns = [
-            "what is my name", "whats my name", "tell me my name",
+            "what is my name", "whats my name", "what's my name", "tell me my name",
             "do you remember my name", "can you remember my name", 
             "sino ang pangalan ko", "ano ang pangalan ko", "pangalan ko",
             "sino ako", "who am i"
@@ -1184,6 +1189,8 @@ class NLUEngine:
             "school called", "school name", "name of school", "what is your school",
             "whats your school", "what's your school", "school's name", "name of your school",
             "what is the school", "what school", "which school",
+            # School overview and general information queries
+            "about the school", "school overview", "tell me about the school", "about your school",
             # Grade level queries - HIGH PRIORITY to prevent misclassification as greetings
             "grades", "grade levels", "what grades", "grade", "kindergarten", "elementary",
             "what grade levels", "grade level", "levels", "what levels"
@@ -1217,22 +1224,24 @@ class NLUEngine:
         if any(pattern in user_lower for pattern in general_info_patterns):
             return NLUResult(Intent.GENERAL_INFO, 0.8, [])
         
-        # Priority 14: Help requests
+        # Priority 14: Appreciation/Thanks (MOVED UP - should be checked before help_request)
+        appreciation_patterns = [
+            "thank you", "thanks", "salamat", "thank u", "thx", "maraming salamat",
+            "damo nga salamat", "salamat gid", "appreciate", "grateful", "damo", "marami"
+        ]
+        if any(pattern in user_lower for pattern in appreciation_patterns):
+            return NLUResult(Intent.APPRECIATION, 0.85, [])
+        
+        # Priority 15: Help requests (moved down after appreciation)
         help_patterns = [
             "help", "assist", "assistance", "support", "tulong", "guide",
             "help me", "can you help", "i need help", "tulungan mo ako",
             "guide me", "what should i do", "ano gagawin ko"
         ]
+        # Exclude appreciation queries from being classified as help
         if any(pattern in user_lower for pattern in help_patterns):
-            return NLUResult(Intent.HELP_REQUEST, 0.7, [])
-        
-        # Priority 15: Appreciation/Thanks
-        appreciation_patterns = [
-            "thank you", "thanks", "salamat", "thank u", "thx", "maraming salamat",
-            "appreciate", "grateful", "nice", "good", "great", "excellent"
-        ]
-        if any(pattern in user_lower for pattern in appreciation_patterns):
-            return NLUResult(Intent.APPRECIATION, 0.7, [])
+            if not any(ap in user_lower for ap in appreciation_patterns):
+                return NLUResult(Intent.HELP_REQUEST, 0.7, [])
         
         # Priority 16: Confirmation responses - Enhanced for multilingual but more specific
         confirmation_patterns = [
@@ -1440,20 +1449,21 @@ class NLUEngine:
         
         # Enhanced greeting classification with mood/style detection
         greeting_keywords = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", 
-                           "good afternoon", "good evening", "magandang umaga", "magandang hapon", 
-                           "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", 
+                           "good afternoon", "good evening", "good noon", "magandang umaga", "magandang hapon", 
+                           "maayong aga", "maayong hapon", "maayong gab-i", "morning", "afternoon", "noon",
                            "evening", "greetings", "hiya", "wassup", "howdy"]
         
         # 🚨 CRITICAL FIX: Check for name introduction FIRST, before elongated greeting check
         # This ensures "hello, my name is Heinz" is detected as greeting_with_name, not greeting_excited
-        if any(pattern in user_lower for pattern in ["my name is", "i am called", "i'm called", "im called", "ako si", "ngaean ko si", "ngaean ko"]):
+        if any(pattern in user_lower for pattern in ["my name is", "i am called", "i'm called", "im called", "i'm", "ako si", "ngaean ko si", "ngaean ko", "ako ay"]):
             intent = Intent.GREETING_WITH_NAME
             confidence = 0.95
             return {"intent": intent, "confidence": confidence}
         
-        # Check for elongated greetings (hi, hii, hiii, hiiii, etc.)
+        # Check for elongated greetings ONLY if they have multiple repeated letters
+        # hi, hii, hiii etc. (3+ i's) or helllo, hellooo, etc. (3+ repeated letters)
         import re
-        elongated_greeting_pattern = r'\b(h+i+|h+e+l+l+o+|h+e+y+)\b'
+        elongated_greeting_pattern = r'\b(h+i{3,}|h+e+l{3,}o+|h+e+y{3,})\b'
         if re.search(elongated_greeting_pattern, user_lower):
             confidence = 0.9  # High confidence for elongated greetings
             intent = Intent.GREETING_EXCITED  # Elongated greetings are usually excited
@@ -1470,7 +1480,8 @@ class NLUEngine:
                 elif any(word in user_lower for word in ["sir", "ma'am", "please", "good day", "greetings", "salutations", "formal"]):
                     intent = Intent.GREETING_FORMAL
                     confidence = 0.9
-                elif any(word in user_lower for word in ["hiya", "wassup", "howdy", "hey there", "casual"]):
+                elif any(word in user_lower for word in ["wassup", "howdy", "hey there", "casual"]):
+                    # Note: removed "hiya" from here since it's in greeting_keywords and should be simple
                     intent = Intent.GREETING_CASUAL
                     confidence = 0.9
                 elif any(word in user_lower for word in ["back", "again", "return", "here again", "returning"]):
