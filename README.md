@@ -63,7 +63,7 @@ A sophisticated, multilingual AI chatbot designed specifically for Tomas SM Baut
 - **AI Providers**: Groq, Cohere, Hugging Face
 - **NLP**: NLTK, TextBlob, custom regex patterns
 - **Caching**: Redis + in-memory caching
-- **Deployment**: Railway, Render, Docker support
+- **Deployment**: Heroku, Render
 
 ## 🚀 Quick Start
 
@@ -213,12 +213,12 @@ response = await chatbot.chat("What grade is my daughter in?", session_id="user1
 
 ## 🚀 Deployment
 
-### **Railway Deployment**
+### **Heroku Deployment**
 ```bash
-# Deploy to Railway
-railway login
-railway link
-railway up
+# Deploy to Heroku
+heroku login
+heroku create tomas-chatbot
+git push heroku main
 ```
 
 ### **Render Deployment**
@@ -227,15 +227,6 @@ railway up
 # Configure via Render dashboard with:
 # - Build Command: pip install -r requirements.txt
 # - Start Command: python app.py
-```
-
-### **Docker Deployment**
-```bash
-# Build Docker image
-docker build -t tomas-chatbot .
-
-# Run container
-docker run -p 8000:8000 --env-file .env tomas-chatbot
 ```
 
 ## 📈 Performance
