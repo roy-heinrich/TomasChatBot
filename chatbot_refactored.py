@@ -770,35 +770,59 @@ class ChatBot:
 
     def _is_pure_greeting(self, query: str, nlu_result) -> bool:
         """Check if this is a pure greeting (no question content) vs greeting + question"""
-        if not nlu_result or nlu_result.intent.value != 'greeting_simple':
+        if not nlu_result or not nlu_result.intent.value.startswith('greeting'):
             return False
         
         query_lower = query.lower().strip()
         
-        # Common greeting words
-        greeting_words = ["hi", "hello", "hey", "kamusta", "kumusta", "maayong", "good morning", 
-                         "good afternoon", "good evening", "good day", "good night", "magandang umaga", 
-                         "magandang hapon", "magandang gabi", "maayong aga", "maayong hapon", 
-                         "maayong gab-i", "magandang araw", "maayong adlaw", "maayong gabii", 
-                         "maayong buntag", "morning", "afternoon", "evening", "night", "day",
-                         "greetings", "hiya", "wassup", "howdy", "hey there", "hello there", "hi there"]
+        # Multi-word greeting phrases that should be recognized as complete greetings
+        multi_word_greetings = [
+            "good morning", "good afternoon", "good evening", "good day", "good night",
+            "magandang umaga", "magandang hapon", "magandang gabi", "magandang araw",
+            "maayong aga", "maayong hapon", "maayong gab-i", "maayong adlaw", "maayong gabii", "maayong buntag",
+            "hey there", "hello there", "hi there"
+        ]
         
-        # Question words that indicate there's a real question
+        # Single-word greeting words
+        single_word_greetings = [
+            "hi", "hello", "hey", "kamusta", "kumusta", "morning", "afternoon", "evening", "night", "day",
+            "greetings", "hiya", "wassup", "howdy", "yo"
+        ]
+        
+        # Question words that indicate there's a real question (actual words, not punctuation)
         question_words = ["what", "where", "when", "who", "how", "why", "which", "can", "could", 
                          "would", "should", "is", "are", "do", "does", "did", "will", "have", "has",
                          "ano", "saan", "kailan", "sino", "paano", "bakit", "alin", "pwed", "maaari", 
-                         "gusto", "kailangan", "?", "time", "class", "start", "adviser", "grade"]
+                         "gusto", "kailangan", "time", "class", "start", "adviser", "grade"]
         
-        # Check if query contains question words
-        has_question_content = any(word in query_lower for word in question_words)
+        # Check if query contains question words (must be actual words, not punctuation)
+        # Split and clean punctuation to check for real question words
+        words_only = query_lower.rstrip('!?.,:;').split()
+        has_question_content = any(word in question_words or word.rstrip('!?.,:;') in question_words 
+                                   for word in words_only)
         
         # If it has question content, it's not a pure greeting
         if has_question_content:
             return False
         
-        # Check if query is just greeting words (with minimal other content)
+        # Check if the entire query is a multi-word greeting
+        for multi_greeting in multi_word_greetings:
+            if query_lower == multi_greeting:
+                return True
+            # Also check if it's the multi-word greeting plus punctuation
+            if query_lower.rstrip('!?.,:;') == multi_greeting:
+                return True
+        
+        # Check if query is just a single-word greeting (with optional punctuation)
+        query_clean = query_lower.rstrip('!?.,:;')
+        if query_clean in single_word_greetings:
+            return True
+        
+        # For other cases, use the original logic as fallback
         words = query_lower.split()
-        greeting_word_count = sum(1 for word in words if any(greeting in word for greeting in greeting_words))
+        greeting_word_count = sum(1 for word in words 
+                                 if word in single_word_greetings or 
+                                 any(greeting in word for greeting in single_word_greetings))
         
         # If more than half the words are greeting words, it's likely a pure greeting
         return greeting_word_count >= len(words) * 0.5
