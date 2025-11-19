@@ -2557,7 +2557,18 @@ class ChatBot:
         if any(pattern in query_lower for pattern in appreciation_patterns):
             return False
         
-        # Very short queries (1-2 words) that aren't simple responses
+        # Check for greeting patterns - these are NOT vague (they're complete expressions)
+        greeting_patterns = [
+            'good morning', 'good afternoon', 'good evening', 'good day', 'good night',
+            'magandang umaga', 'magandang hapon', 'magandang gabi', 'magandang araw',
+            'maayong aga', 'maayong hapon', 'maayong gab-i', 'maayong adlaw',
+            'maayong gabii', 'maayong buntag', 'hey there', 'hello there', 'hi there',
+            'hello', 'hi', 'hey', 'kumusta', 'kamusta', 'hiya', 'howdy', 'greetings'
+        ]
+        if any(pattern in query_lower for pattern in greeting_patterns):
+            return False
+        
+        # Very short queries (1-2 words) that aren't simple responses and aren't greetings
         words = query_lower.split()
         if len(words) <= 2 and not self._is_simple_response(query):
             return True
