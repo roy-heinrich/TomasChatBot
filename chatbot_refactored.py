@@ -696,7 +696,9 @@ class ChatBot:
                 'schedule_inquiry', 'facility_inquiry', 'unknown'
             ]
             
-            if intent_requires_db and (not context or len(context.strip()) < 50):  # Insufficient context for info queries
+            # 🚨 FIXED: Reduced minimum context threshold from 50 to 20 characters
+            # Brief contact information (emails, short addresses) are legitimate and should be used
+            if intent_requires_db and (not context or len(context.strip()) < 20):  # Insufficient context for info queries
                 logger.warning(f"⚠️ Insufficient database context for query: '{question[:50]}...'")
                 # Return a safe response that doesn't hallucinate
                 response_text = f"I don't have specific information about that in my database. Please contact the school office for more details."
@@ -1830,7 +1832,9 @@ class ChatBot:
                     'schedule_inquiry', 'facility_inquiry', 'unknown'
                 ]
                 
-                if intent_requires_db and (not context or len(context.strip()) < 50):  # Insufficient context for info queries
+                # 🚨 FIXED: Reduced minimum context threshold from 50 to 20 characters
+                # Brief contact information (emails, short addresses) are legitimate and should be used
+                if intent_requires_db and (not context or len(context.strip()) < 20):  # Insufficient context for info queries
                     logger.warning(f"⚠️ Insufficient database context for query: '{query[:50]}...'")
                     # Return a safe response that doesn't hallucinate
                     response_text = f"I don't have specific information about that in my database. Please contact the school office for more details."
