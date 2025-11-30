@@ -1645,13 +1645,16 @@ class ChatBot:
                 # 🎯 REMOVED: Grade validation bypass - let all responses go through natural response generator
                 # This ensures grade responses are natural and conversational, not robotic
                 
-                # 🎯 FIX: Enhance context for language-specific responses
+                # 🔧 ENHANCED LANGUAGE GUARD (Priority 3 Fix)
+                # Prevent AI from switching languages based on low-confidence language detection
+                # Issue: Short English queries like "13 years old" were detected as Tagalog with low confidence
+                # This caused the already-correct English response to be translated to Tagalog
                 if response_lang == 'tl':
                     # Add explicit instruction for Tagalog responses
-                    context += "\n\nCRITICAL: You MUST respond in Tagalog. Use proper Tagalog grammar and natural sentence structure. Be conversational but professional."
+                    context += "\n\nCRITICAL LANGUAGE INSTRUCTION: You MUST respond in Tagalog ONLY. Do NOT respond in English. Use proper Tagalog grammar and natural sentence structure. Be conversational but professional. If you receive English context, respond in Tagalog."
                 elif response_lang == 'en':
                     # Add explicit instruction for English responses
-                    context += "\n\nCRITICAL: You MUST respond in English. Use proper English grammar and natural sentence structure. Be conversational but professional."
+                    context += "\n\nCRITICAL LANGUAGE INSTRUCTION: You MUST respond in English ONLY. Do NOT respond in Tagalog or any other language. Use proper English grammar and natural sentence structure. Be conversational but professional. Even if context mentions Tagalog, respond in English."
             else:
                 # Context-aware NLU determined not to use database context
                 # logger.info("🎯 Context-aware NLU: Not using database context")
@@ -1919,7 +1922,10 @@ class ChatBot:
                 pass
             
             # Apply context-aware translation if needed
-            if detected_lang != "en" and confidence < 0.8:
+            # 🔧 FIX: Only translate if VERY confident (> 0.85) that it's not English
+            # Changed from 0.8 to 0.85 to prevent translating English queries to Tagalog
+            # Issue: "13 years old" was detected as Tagalog with 0.45 confidence, then translated
+            if detected_lang != "en" and confidence > 0.85:
                 # logger.info("🌐 Applying context-aware translation")  # Commented out debug logs
                 # Handle both string and list responses
                 if isinstance(response_text, list):

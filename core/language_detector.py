@@ -387,6 +387,26 @@ class LanguageDetector:
     def _detect_with_patterns(self, text_lower: str) -> Tuple[str, float]:
         """Detect language using pattern matching"""
         try:
+            # 🔧 FIX: For very short queries (< 3 words), bias toward English
+            # Issue: "13 years old" was detected as Tagalog
+            words = text_lower.split()
+            if len(words) < 3:
+                # Short queries: very conservative - only mark as non-English if there are CLEAR markers
+                tagalog_markers = ['ang', 'ng', 'sa', 'ay', 'po', 'ino', 'sino', 'ano', 'bakit', 'kailan', 'saan']
+                aklanon_markers = ['sang', 'nga', 'ngaa', 'gid', 'dein', 'diin', 'siin']
+                
+                has_tagalog_marker = any(marker in words for marker in tagalog_markers)
+                has_aklanon_marker = any(marker in words for marker in aklanon_markers)
+                
+                if has_aklanon_marker:
+                    return "akl", 0.85  # Strong Aklanon signal
+                elif has_tagalog_marker:
+                    return "tl", 0.85   # Strong Tagalog signal
+                else:
+                    # Default to English for short queries without clear markers
+                    # This prevents "13 years old", "grade 2", etc. from being misdetected
+                    return "en", 0.75
+            
             # Check for greeting patterns first (more specific)
             english_greetings = ["good morning", "good afternoon", "good evening", "good day", "hello", "hi there", "hey there"]
             tagalog_greetings = ["kumusta", "kamusta", "magandang umaga", "magandang hapon", "magandang gabi"]

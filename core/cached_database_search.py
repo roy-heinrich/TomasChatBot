@@ -6,6 +6,7 @@ import logging
 import json
 import hashlib
 import asyncio
+import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from core.database_search import DatabaseSearchEngine
@@ -50,10 +51,26 @@ class CachedDatabaseSearch(DatabaseSearchEngine):
             # 3. Local Redis (for development only)
             
             if redis_url:
-                self.redis = redis.from_url(redis_url, decode_responses=True)
+                # Add connection pool parameters for cloud stability
+                self.redis = redis.from_url(
+                    redis_url, 
+                    decode_responses=True,
+                    socket_keepalive=True,
+                    socket_keepalive_options={
+                        1: 1  # TCP_KEEPIDLE
+                    }
+                )
                 logger.info("✅ Redis initialized from provided URL")
             elif os.environ.get('REDIS_URL'):
-                self.redis = redis.from_url(os.environ.get('REDIS_URL'), decode_responses=True)
+                # Add connection pool parameters for cloud stability
+                self.redis = redis.from_url(
+                    os.environ.get('REDIS_URL'), 
+                    decode_responses=True,
+                    socket_keepalive=True,
+                    socket_keepalive_options={
+                        1: 1  # TCP_KEEPIDLE
+                    }
+                )
                 logger.info("✅ Redis initialized from REDIS_URL environment variable")
             else:
                 # Development fallback - try local Redis
@@ -128,6 +145,10 @@ class CachedDatabaseSearch(DatabaseSearchEngine):
                 return json.loads(cached_data)
         except Exception as e:
             logger.warning(f"Redis get error: {e}")
+            # Try to reconnect on connection errors
+            if "connection" in str(e).lower() or "closed" in str(e).lower():
+                logger.info("🔄 Attempting to reconnect to Redis...")
+                self._initialize_redis(os.environ.get('REDIS_URL'))
         
         return None
     
@@ -142,6 +163,10 @@ class CachedDatabaseSearch(DatabaseSearchEngine):
             return True
         except Exception as e:
             logger.warning(f"Redis store error: {e}")
+            # Try to reconnect on connection errors
+            if "connection" in str(e).lower() or "closed" in str(e).lower():
+                logger.info("🔄 Attempting to reconnect to Redis...")
+                self._initialize_redis(os.environ.get('REDIS_URL'))
             return False
     
     async def search_prompts_three_tier(self, query: str, limit: int = 20, intent: str = None, 
