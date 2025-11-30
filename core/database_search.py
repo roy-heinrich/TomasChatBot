@@ -8,6 +8,7 @@ from supabase import create_client, Client
 from .supabase_pool import execute_supabase_query, get_supabase_client
 import re
 from difflib import SequenceMatcher
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -913,8 +914,9 @@ class DatabaseSearchEngine:
             exact_phrase = ' '.join(words)
             try:
                 result = self.supabase.table("chatbot_prompts") \
-                    .select("*") \
+                    .select("id, keywords, response") \
                     .text_search("search_tsv", exact_phrase) \
+                    .limit(5) \
                     .execute()
                 
                 if result.data and len(result.data) > 0:
@@ -929,8 +931,9 @@ class DatabaseSearchEngine:
             for word in list(words[:3]):  # Only check first 3 words for performance
                 try:
                     res = self.supabase.table("chatbot_prompts") \
-                        .select("*") \
+                        .select("id, keywords, response") \
                         .text_search("search_tsv", word) \
+                        .limit(5) \
                         .execute()
                     
                     for item in res.data:
@@ -938,7 +941,7 @@ class DatabaseSearchEngine:
                             results.append(item)
                             seen_ids.add(item['id'])
                             
-                    if len(results) >= 10:  # Get more results for better scoring
+                    if len(results) >= 10:  # Cap for performance
                         break
                 except Exception:
                     continue
@@ -1396,6 +1399,9 @@ class DatabaseSearchEngine:
         Smart scoring with NLU-driven synonym expansion and SAFE grade-specific pre-filtering
         """
         try:
+            t_start = time.perf_counter()
+            soft_limit = max(1, min(limit or 20, 10))
+            time_budget_s = 0.5  # budget the search phase internal DB fetches
             # 1. Translate query for better database matching
             translated_query = self._translate_query_for_search(query)
             
@@ -1478,13 +1484,14 @@ class DatabaseSearchEngine:
                     # SIMPLIFIED: Direct drill search instead of complex full search
                     try:
                         drill_results = self.supabase.table("chatbot_prompts") \
-                            .select("*") \
+                            .select("id, keywords, response") \
                             .ilike("keywords", "%drill%") \
+                            .limit(soft_limit) \
                             .execute()
                         
                         if drill_results.data:
                             logger.info(f"Direct drill search found {len(drill_results.data)} results")
-                            return drill_results.data[:limit]
+                            return drill_results.data[:soft_limit]
                     except Exception as e:
                         logger.warning(f"Direct drill search failed: {e}")
                     
@@ -1512,7 +1519,7 @@ class DatabaseSearchEngine:
                         scored.append((score, result))
                     
                     scored.sort(reverse=True, key=lambda x: x[0])
-                    return list([result for score, result in scored if score > 0][:limit])
+                    return list([result for score, result in scored if score > 0][:soft_limit])
             else:
                 # No exact matches, skip expansion for now to avoid errors
                 logger.info(f"Search debug - Skipping expansion, using original query: {enhanced_query}")
@@ -1559,11 +1566,15 @@ class DatabaseSearchEngine:
                 failed_words = []
                 
                 for word in words:
+                        if time.perf_counter() - t_start > time_budget_s:
+                            logger.info("⏱️ Search time budget reached; stopping further text_search calls")
+                            break
                         try:
                             # Use text_search on search_tsv column
                             res = self.supabase.table("chatbot_prompts") \
-                                .select("*") \
+                                .select("id, keywords, response") \
                                 .text_search("search_tsv", word) \
+                                .limit(soft_limit) \
                                 .execute()
                             
                             for item in res.data:
@@ -1582,8 +1593,9 @@ class DatabaseSearchEngine:
                     try:
                         # Direct search for drill-related content
                         res = self.supabase.table("chatbot_prompts") \
-                            .select("*") \
+                            .select("id, keywords, response") \
                             .ilike("keywords", "%drill%") \
+                            .limit(soft_limit) \
                             .execute()
                         
                         for item in res.data:
@@ -1651,7 +1663,7 @@ class DatabaseSearchEngine:
                     scored.append((score, result))
                 
                 scored.sort(reverse=True, key=lambda x: x[0])
-                results = [result for score, result in scored if score > 0][:limit]
+                results = [result for score, result in scored if score > 0][:soft_limit]
                 
                 # Validate results to ensure they match query intent
                 validated_results = self._validate_search_results(query, results)
@@ -1664,6 +1676,9 @@ class DatabaseSearchEngine:
     async def _search_prompts_traditional(self, query: str, limit: int = 20, intent: str = None) -> List[Dict[str, Any]]:
         """Traditional keyword-based search with fuzzy matching"""
         try:
+            t_start = time.perf_counter()
+            soft_limit = max(1, min(limit or 20, 10))
+            time_budget_s = 0.5
             all_results = []
             
             # Translate query for better matching
@@ -1682,8 +1697,9 @@ class DatabaseSearchEngine:
             if clean_query:
                 try:
                     result = self.supabase.table("chatbot_prompts") \
-                        .select("keywords, response, search_tsv") \
+                        .select("id, keywords, response") \
                         .text_search("search_tsv", clean_query) \
+                        .limit(soft_limit) \
                         .execute()
                     
                     if result.data:
@@ -1701,8 +1717,9 @@ class DatabaseSearchEngine:
                         # logger.info(f"🔍 SYNONYM EXPANSION: '{query}' -> '{expanded_query}'")
                         # Search with expanded query
                         expanded_result = self.supabase.table("chatbot_prompts") \
-                            .select("keywords, response, search_tsv") \
+                            .select("id, keywords, response") \
                             .text_search("search_tsv", expanded_query) \
+                            .limit(soft_limit) \
                             .execute()
                         
                         if expanded_result.data:
@@ -1718,8 +1735,9 @@ class DatabaseSearchEngine:
                         if ultra_clean_words:
                             ultra_clean_query = ' & '.join(ultra_clean_words)
                             result = self.supabase.table("chatbot_prompts") \
-                                .select("keywords, response, search_tsv") \
+                                .select("id, keywords, response") \
                                 .text_search("search_tsv", ultra_clean_query) \
+                                .limit(soft_limit) \
                                 .execute()
                             
                             if result.data:
@@ -1736,9 +1754,14 @@ class DatabaseSearchEngine:
                     clean_word = re.sub(r'[^a-zA-Z0-9]', '', word)
                     if clean_word and len(clean_word) > 1:
                         try:
+                            # Respect time budget in the word loop
+                            if time.perf_counter() - t_start > time_budget_s:
+                                logger.info("⏱️ Traditional search time budget reached; stopping word-level text_search calls")
+                                break
                             result = self.supabase.table("chatbot_prompts") \
-                                .select("keywords, response, search_tsv") \
+                                .select("id, keywords, response") \
                                 .text_search("search_tsv", clean_word) \
+                                .limit(soft_limit) \
                                 .execute()
                             
                             if result.data:
@@ -1751,8 +1774,9 @@ class DatabaseSearchEngine:
                                 ultra_clean_word = re.sub(r'[^a-zA-Z]', '', word)
                                 if ultra_clean_word and len(ultra_clean_word) > 1:
                                     result = self.supabase.table("chatbot_prompts") \
-                                        .select("keywords, response, search_tsv") \
+                                        .select("id, keywords, response") \
                                         .text_search("search_tsv", ultra_clean_word) \
+                                        .limit(soft_limit) \
                                         .execute()
                                     
                                     if result.data:
@@ -1764,8 +1788,9 @@ class DatabaseSearchEngine:
             # Strategy 3: Keyword-based search
             try:
                 result = self.supabase.table("chatbot_prompts") \
-                    .select("keywords, response, search_tsv") \
+                    .select("id, keywords, response") \
                     .text_search("search_tsv", translated_query) \
+                    .limit(soft_limit) \
                     .execute()
                 
                 if result.data:
@@ -1777,30 +1802,30 @@ class DatabaseSearchEngine:
             # 🎯 Strategy 4: FUZZY SEARCH - Get ALL entries and let scoring handle it
             # This ensures we don't miss entries due to typos
             try:
-                result = self.supabase.table("chatbot_prompts") \
-                    .select("keywords, response, search_tsv") \
-                    .execute()
-                
-                if result.data:
-                    # Filter to only school-related entries to avoid noise
-                    school_related = []
-                    for entry in result.data:
-                        keywords = (entry.get('keywords') or '').lower()
-                        response = (entry.get('response') or '').lower()
-                        
-                        # Check if entry is school-related
-                        school_terms = ['school', 'student', 'teacher', 'grade', 'class', 'activity', 'activities', 
-                                       'event', 'program', 'curriculum', 'education', 'learning']
-                        
-                        if any(term in keywords or term in response for term in school_terms):
-                            school_related.append(entry)
+                # Skip heavy fallback if we're already over budget
+                if time.perf_counter() - t_start <= time_budget_s:
+                    result = self.supabase.table("chatbot_prompts") \
+                        .select("id, keywords, response") \
+                        .limit(200) \
+                        .execute()
                     
-                    all_results.extend(school_related)
-                    # logger.info(f"🎯 Found {len(school_related)} school-related entries for fuzzy matching")
-                    # Debug: Log school activities entries
-                    # for entry in school_related[:3]:  # Log first 3 entries
-                    #     logger.info(f"🎯 School entry: Keywords='{entry.get('keywords', '')[:50]}...' Response='{entry.get('response', '')[:50]}...'")
-                    pass
+                    if result.data:
+                        # Filter to only school-related entries to avoid noise
+                        school_related = []
+                        for entry in result.data:
+                            keywords = (entry.get('keywords') or '').lower()
+                            response = (entry.get('response') or '').lower()
+                            
+                            # Check if entry is school-related
+                            school_terms = ['school', 'student', 'teacher', 'grade', 'class', 'activity', 'activities', 
+                                           'event', 'program', 'curriculum', 'education', 'learning']
+                            
+                            if any(term in keywords or term in response for term in school_terms):
+                                school_related.append(entry)
+                        
+                        all_results.extend(school_related)
+                else:
+                    logger.info("⏭️ Skipping fuzzy fallback due to time budget")
             except Exception as e:
                 logger.warning(f"Fuzzy search failed: {e}")
             
@@ -1814,7 +1839,7 @@ class DatabaseSearchEngine:
                     unique_results.append(result)
             
             # logger.info(f"📊 Total unique results found: {len(unique_results)}")
-            return list(unique_results[:limit * 5])  # Return more results for better scoring
+            return list(unique_results[:soft_limit * 3])  # Bounded return size for scoring
             
         except Exception as e:
             logger.warning(f"Database search failed: {e}")

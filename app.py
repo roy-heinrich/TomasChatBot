@@ -663,34 +663,48 @@ async def comprehensive_test(request: Request):
     try:
         body = await request.json()
         test_suite = body.get("test_suite", "all")
+        # Desired number of test questions; default to 15
+        count = body.get("count") or body.get("limit")
+        if not isinstance(count, int) or count <= 0:
+            import os
+            # Allow override via env; fallback to 15
+            count = int(os.environ.get("KPI_TEST_COUNT", 15))
         
         # Mock test results for now
         results = {
             "summary": {
-                "total_tests": 10,
-                "passed": 8,
-                "failed": 2,
-                "success_rate": 80,
+                "total_tests": count,
+                # Keep a simple pass/fail distribution based on count
+                "passed": max(0, count - 2),
+                "failed": min(2, count),
+                "success_rate": int(round(((max(0, count - 2)) / max(1, count)) * 100)),
                 "average_response_time": 150
             },
-            "results": [
-                {
-                    "test_name": "Language Detection",
-                    "result": {"status": "pass", "message": "All languages detected correctly"},
-                    "response_time": 120
-                },
-                {
-                    "test_name": "Database Search",
-                    "result": {"status": "pass", "message": "Search functionality working"},
-                    "response_time": 180
-                },
-                {
-                    "test_name": "Security Tests",
-                    "result": {"status": "fail", "message": "Some security checks failed"},
-                    "response_time": 200
-                }
-            ]
+            # Produce a results list with length == count (mocked entries)
+            "results": []
         }
+        # Populate mocked individual results deterministically
+        base_cases = [
+            ("Language Detection", "pass", "All languages detected correctly", 120),
+            ("Database Search", "pass", "Search functionality working", 180),
+            ("Security Tests", "fail", "Some security checks failed", 200),
+            ("Entity Extraction", "pass", "Entities extracted with high precision", 160),
+            ("Intent Classification", "pass", "Intents classified accurately", 170),
+            ("Latency p95", "info", "Measured under current load", 190),
+            ("Cache Hit Rate", "info", "Cache hit rate reported", 140),
+            ("Translation", "pass", "Translation works for mixed-language queries", 175),
+            ("Response Generation", "pass", "Responses generated coherently", 210),
+            ("Memory Update", "pass", "Conversation memory updated", 130)
+        ]
+        # Cycle through base_cases to fill up to count
+        for i in range(count):
+            name, status, message, rt = base_cases[i % len(base_cases)]
+            # Add a test index suffix for uniqueness
+            results["results"].append({
+                "test_name": f"{name} #{i+1}",
+                "result": {"status": status, "message": message},
+                "response_time": rt
+            })
         
         return results
     except Exception as e:
@@ -755,15 +769,13 @@ async def cache_status():
             
             if chatbot.database_search.redis_available and chatbot.database_search.redis:
                 try:
-                    keys: Any = chatbot.database_search.redis.keys("search:*")
-                    if keys is not None and hasattr(keys, '__len__') and not isinstance(keys, str):
-                        cache_info["cache_entries"] = len(keys)
-                        cache_info["message"] = f"Redis cache active with {len(keys)} entries"
-                    else:
-                        cache_info["cache_entries"] = 0
-                        cache_info["message"] = "Redis cache active with 0 entries"
-                except:
-                    cache_info["message"] = "Redis cache active but unable to count entries"
+                    # Count all cache keys with 'search:' prefix (consistent naming)
+                    keys_search = chatbot.database_search.redis.keys("search:*")
+                    total_keys = len(keys_search) if keys_search and not isinstance(keys_search, str) else 0
+                    cache_info["cache_entries"] = total_keys
+                    cache_info["message"] = f"Redis cache active with {total_keys} entries"
+                except Exception as e:
+                    cache_info["message"] = f"Redis cache active but unable to count entries: {e}"
             else:
                 cache_info["message"] = "Using direct database queries (no caching)"
         

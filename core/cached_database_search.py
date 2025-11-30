@@ -22,7 +22,7 @@ class CachedDatabaseSearch(DatabaseSearchEngine):
         supabase_key = os.environ.get("SUPABASE_KEY")
         super().__init__(supabase_url, supabase_key)
         
-        self.cache_ttl = 3600  # 1 hour cache
+        self.cache_ttl = 7200  # 2 hour cache (increased for better cache hit rate)
         self.redis = None
         self.redis_available = False
         
@@ -149,9 +149,8 @@ class CachedDatabaseSearch(DatabaseSearchEngine):
                                       nlu_result = None) -> List[Dict[str, Any]]:
         """Search using three-tier search strategy with caching"""
         try:
-            # Create cache key for three-tier search
+            # Create cache key for three-tier search (use consistent 'search:' prefix for all searches)
             cache_key = self._create_cache_key(query, intent, limit, conversation_history, nlu_result)
-            cache_key = f"three_tier_{cache_key}"
             
             # Try to get from cache first
             cached_result = self._get_from_cache(cache_key)

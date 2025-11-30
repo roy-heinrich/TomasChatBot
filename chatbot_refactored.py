@@ -7,6 +7,7 @@ import logging
 import asyncio
 from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import dataclass
+import time
 from dotenv import load_dotenv
 from supabase import create_client
 
@@ -41,7 +42,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ChatResponse:
-    """Clean response structure"""
+    """Clean response structure
+    Added performance_metrics for per-phase latency instrumentation (seconds).
+    Keys examples: total, preprocess, language_detect, nlu, entities, memory_update,
+    search, response_generate, personalization, translation.
+    """
     response: List[str]  # Can be single message or split messages
     entities: List[Dict[str, Any]]
     detected_language: str
@@ -49,6 +54,7 @@ class ChatResponse:
     is_split: bool
     message_count: int
     intent: Optional[str] = None  # Add intent field
+    performance_metrics: Optional[Dict[str, float]] = None
 
 class ChatBot:
     """Clean, refactored chatbot with fixed underlying issues"""
@@ -110,16 +116,13 @@ class ChatBot:
         try:
             # Set shorter TTL for grade-related queries to prevent stale results
             if hasattr(self.database_search, 'cache_ttl'):
-                # Reduce TTL for grade queries to 30 minutes instead of 1 hour
-                self.database_search.cache_ttl = 1800  # 30 minutes
+                # Increase TTL to 2 hours for better cache hit rate
+                self.database_search.cache_ttl = 7200  # 2 hours
             
-            # Setup automatic cache invalidation on startup
-            if hasattr(self.database_search, 'redis') and self.database_search.redis_available:
-                # Clear any existing stale cache on startup
-                self.database_search.redis.flushall()
-                logger.info("🗑️ Cleared all caches on startup to prevent stale results")
-            
-            logger.info("✅ Automatic cache management setup complete")
+            # 🚨 OPTIMIZATION: Don't flush cache on startup - this kills performance
+            # Allow Redis to persist cache entries across restarts
+            # Only invalidate grade-specific caches if needed, not all caches
+            logger.info("✅ Automatic cache management setup complete (cache preservation enabled)")
         except Exception as e:
             logger.warning(f"Cache management setup failed: {e}")
     
@@ -570,6 +573,14 @@ class ChatBot:
                                      total_questions: int = 1) -> ChatResponse:
         """Process a single question with multi-question context"""
         try:
+            # Initialize performance timing
+            t_start = time.perf_counter()
+            phase_times = {}
+            
+            def mark(phase_name: str):
+                """Mark a checkpoint in the processing timeline"""
+                phase_times[phase_name] = time.perf_counter() - t_start
+            
             # 0. Typo correction for individual questions
             question = self._correct_common_typos(question)
             
@@ -697,6 +708,8 @@ class ChatBot:
             # Split response if needed
             split_messages = response_text if isinstance(response_text, list) else [response_text]
             
+            mark('finalize')
+            phase_times['total'] = time.perf_counter() - t_start
             return ChatResponse(
                 response=split_messages,
                 entities=[{"entity_type": e.entity_type, "value": e.value, "confidence": e.confidence} for e in entities],
@@ -704,7 +717,8 @@ class ChatBot:
                 language_confidence=confidence,
                 is_split=len(split_messages) > 1,
                 message_count=len(split_messages),
-                intent=nlu_result.intent.value if nlu_result and nlu_result.intent else 'unknown'
+                intent=nlu_result.intent.value if nlu_result and nlu_result.intent else 'unknown',
+                performance_metrics=phase_times
             )
             
         except Exception as e:
@@ -1065,12 +1079,22 @@ class ChatBot:
                    user_timezone: str = None, session_id: str = None) -> ChatResponse:
         """Main chat method - Groq-first approach for natural responses with multi-question support"""
         try:
+            # --- Performance instrumentation setup ---
+            t_start = time.perf_counter()
+            t_last = t_start
+            phase_times: Dict[str, float] = {}
+            def mark(name: str):
+                nonlocal t_last
+                now = time.perf_counter()
+                phase_times[name] = phase_times.get(name, 0.0) + (now - t_last)
+                t_last = now
             # Initialize cache manager on first async call
             if not self._cache_manager_initialized:
                 try:
                     from automatic_cache_manager import setup_automatic_cache_management
                     await setup_automatic_cache_management(self)
                     self._cache_manager_initialized = True
+                    mark('cache_manager_init')
                 except Exception as e:
                     logger.warning(f"Cache manager initialization failed: {e}")
                     self._cache_manager_initialized = True  # Don't retry
@@ -1091,11 +1115,13 @@ class ChatBot:
                     language_confidence=1.0,
                     is_split=False,
                     message_count=1,
-                    intent="security_block"
+                    intent="security_block",
+                    performance_metrics={'total': time.perf_counter() - t_start, **phase_times}
                 )
             
             # 🚀 QUERY PRE-PROCESSING CACHE (Grade-Aware)
             preprocessed = await preprocess_query(query)
+            mark('preprocess')
             logger.info(f"🔍 Preprocessed: {preprocessed.query_type} (grade: {preprocessed.extracted_grade}, confidence: {preprocessed.confidence:.2f})")
             
             # Use preprocessed results to optimize processing
@@ -1108,6 +1134,7 @@ class ChatBot:
             # 0.1. Typo correction
             original_query = query
             query = self._correct_common_typos(query)
+            mark('typo_correction')
             
             
             # 0.1. Multi-question detection and processing
@@ -1131,6 +1158,7 @@ class ChatBot:
                 )
             # 1. Use reliable language detection only
             detected_lang, confidence = self.language_detector.detect_language(query)
+            mark('language_detect')
             # logger.info(f"🌍 Language detection: {detected_lang} (confidence: {confidence:.2f})")
             
             # Map detected language to response language
@@ -1168,6 +1196,7 @@ class ChatBot:
                 "word_count": len(query.split())
             }
             nlu_result = await self.nlu_engine.analyze_intent(query, nlu_context)
+            mark('nlu')
             logger.info(f"🎯 NLU Intent: {nlu_result.intent.value if nlu_result else 'None'} for query: '{query}'")
             
             # Emergency detection is now handled by NLU engine with context awareness
@@ -1226,6 +1255,7 @@ class ChatBot:
             
             # 3. Enhanced entity extraction with relationships
             entities = self.entity_extractor.extract_entities(query, nlu_result.intent.value if nlu_result else None)
+            mark('entities')
             
             # Entity extraction completed
             
@@ -1286,6 +1316,7 @@ class ChatBot:
                 user_memory = self.conversation_memory.update_user_memory(
                     session_id, user_name, query, conversation_history
                 )
+                mark('memory_update')
                 # logger.info(f"🧠 Updated memory for user: {user_memory.name}, topics: {list(user_memory.topics.keys())}")  # Commented out debug logs
                 
                 # Debug: Check if name was actually stored
@@ -1489,10 +1520,12 @@ class ChatBot:
                         else:
                             # Fallback to regular search
                             search_results = await self._handle_multiple_grade_search(search_query, intent_name, conversation_history, nlu_result)
+                            mark('search')
                             best_result = search_results[0] if search_results else None
                     elif self._is_vague_query(query):
                         # Handle vague queries with suggestions
                         search_results = await self._handle_multiple_grade_search(search_query, intent_name, conversation_history, nlu_result)
+                        mark('search')
                         suggestions = await self._generate_query_suggestions(query, search_results)
                         if suggestions:
                             # Return suggestions directly without AI processing
@@ -1510,6 +1543,7 @@ class ChatBot:
                     else:
                         # Regular search for complex queries
                         search_results = await self._handle_multiple_grade_search(search_query, intent_name, conversation_history, nlu_result)
+                        mark('search')
                         best_result = search_results[0] if search_results else None
                     
                     # 🚨 AUTOMATIC: Invalidate cache if grade query returns wrong results
@@ -1802,6 +1836,7 @@ class ChatBot:
                     response_text = await self.response_generator.generate_response(
                         query, context, response_lang, conversation_history, nlu_info_dict, final_user_name, entities, float(confidence), None
                     )
+                    mark('response_generate')
                 
                 # Add Messenger link for contact escalation requests (only for non-hardcoded responses)
                 if nlu_result and nlu_result.intent.value == 'contact_escalation':
@@ -1859,6 +1894,7 @@ class ChatBot:
                         emotional_analysis=emotional_analysis,
                         language=response_lang
                     )
+                    mark('personalization')
                     
                     # Apply personalization to the response (only if it's a string)
                     if isinstance(response_text, str):
@@ -1893,6 +1929,7 @@ class ChatBot:
                         translated_message, translation_confidence = self.context_translator.translate_with_context(
                             message, detected_lang, conversation_history, session_id
                         )
+                        mark('translation')
                         if translation_confidence > 0.7:
                             translated_messages.append(translated_message)
                         else:
@@ -1903,6 +1940,7 @@ class ChatBot:
                     translated_response, translation_confidence = self.context_translator.translate_with_context(
                         response_text, detected_lang, conversation_history, session_id
                     )
+                    mark('translation')
                     if translation_confidence > 0.7:
                         response_text = translated_response
                     # logger.info(f"🌐 Context-aware translation applied (confidence: {translation_confidence:.2f})  # Commented out debug logs")
@@ -1934,6 +1972,8 @@ class ChatBot:
             # 6. Response is already split by generate_response
             split_messages = response_text if isinstance(response_text, list) else [response_text]
             
+            mark('finalize')
+            phase_times['total'] = time.perf_counter() - t_start
             return ChatResponse(
                 response=split_messages,
                 entities=[{"entity_type": e.entity_type, "value": e.value, "confidence": e.confidence} for e in entities],
@@ -1941,7 +1981,8 @@ class ChatBot:
                 language_confidence=confidence,
                 is_split=len(split_messages) > 1,
                 message_count=len(split_messages),
-                intent=nlu_result.intent.value if nlu_result and nlu_result.intent else 'unknown'
+                intent=nlu_result.intent.value if nlu_result and nlu_result.intent else 'unknown',
+                performance_metrics=phase_times
             )
             
         except Exception as e:
@@ -1955,7 +1996,21 @@ class ChatBot:
             except:
                 pass
             
-            return self._create_error_response(detected_lang if 'detected_lang' in locals() else "en")
+            # Provide minimal metrics on error path
+            try:
+                phase_times['total'] = time.perf_counter() - t_start
+            except Exception:
+                pass
+            return ChatResponse(
+                response=["An internal error occurred."],
+                entities=[],
+                detected_language=detected_lang if 'detected_lang' in locals() else "en",
+                language_confidence=confidence if 'confidence' in locals() else 0.0,
+                is_split=False,
+                message_count=1,
+                intent='error',
+                performance_metrics=phase_times if 'phase_times' in locals() else None
+            )
     
     def _create_response(self, response_text: str, entities: List[ExtractedEntity], 
                         detected_lang: str, confidence: float) -> ChatResponse:
